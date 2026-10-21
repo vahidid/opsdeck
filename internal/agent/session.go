@@ -83,6 +83,8 @@ type Deps struct {
 	StateDir   func(ws string) string
 	// DefaultModel returns the model for new sessions of a workspace.
 	DefaultModel func(w *workspace.Workspace) string
+	// Local returns the policy for this computer, nil when local access is off.
+	Local func() *LocalPolicy
 }
 
 // Manager owns sessions.

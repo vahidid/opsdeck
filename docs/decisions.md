@@ -21,6 +21,8 @@
 | 15 | Anthropic via the official Go SDK (streaming, adaptive thinking, effort, server-side refusal fallback); everything else via the OpenAI-compatible protocol | One code path for Claude features, broad coverage for local/other models |
 | 16 | Workspace MCP servers require local trust | A cloned workspace must not be able to run commands on this machine |
 | 17 | Git credentials reach `git` through stdin/env, never the command line or `.git/config` | The agent can deploy from private repos without seeing tokens |
+| 18 | The agent can work on this computer (files, commands, key import) behind consent: reads outside the workspace ask per folder, credential files per file, writes and commands always; opsdeck's own files are unreachable | Real tasks start from the user's machine (`~/.ssh`, project folders); a harness that cannot see them is not useful |
+| 19 | Secrets move from local files into the vault inside opsdeck (`vault_import_ssh_key`, `vault_add_item` with `file`/`generate`), never through the model | Keeps "secrets never reach the model" while letting the agent onboard credentials |
 
 ## Open
 

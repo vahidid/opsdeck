@@ -48,7 +48,8 @@ export type ProviderConfig = {
 export type InstalledAgent = { kind: AgentKind; name: string; command: string; args: string[] | null; path: string; version: string; login: string; models: string[] };
 export const AGENT_KINDS: AgentKind[] = ["claude-code", "codex", "gemini-cli", "acp"];
 export const isAgentKind = (t: string): t is AgentKind => (AGENT_KINDS as string[]).includes(t);
-export type Settings = { autoLockMinutes: number; defaultModel: string; providers: ProviderConfig[] };
+export type LocalAccess = { disabled: boolean; allowedDirs: string[]; autoReadCommands: boolean };
+export type Settings = { autoLockMinutes: number; defaultModel: string; providers: ProviderConfig[]; localAccess: LocalAccess };
 export type ModelInfo = { id: string; provider: string; model: string; label: string };
 
 export type WorkspaceSummary = {
@@ -208,6 +209,7 @@ export type AgentEvent =
       environment: string;
       reason: string;
       preview: string;
+      grantLabel?: string;
     })
   | (EventBase & { type: "approval_resolved"; approvalId: string; decision: string; note?: string })
   | (EventBase & { type: "status"; state: SessionState; usage?: Usage })

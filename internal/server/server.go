@@ -109,6 +109,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 			}
 			return ""
 		},
+		Local: s.localPolicy,
 	})
 	v.OnLock(func() {
 		// Locking ends all live access: agents, MCP servers, terminals and
@@ -124,6 +125,25 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// localPolicy is the agent's access to this computer (nil when turned off).
+// opsdeck's vault, state (login token, audit, sessions) and settings are
+// always out of reach of the file tools.
+func (s *Server) localPolicy() *agent.LocalPolicy {
+	la := s.cfg.Settings().LocalAccess
+	if la.Disabled {
+		return nil
+	}
+	home, _ := os.UserHomeDir()
+	vf, cf := s.dirs.VaultFile(), s.dirs.ConfigFile()
+	return &agent.LocalPolicy{
+		Home:             home,
+		AllowedDirs:      la.AllowedDirs,
+		AutoReadCommands: la.AutoReadCommands,
+		Forbidden: []string{vf, vf + "-wal", vf + "-shm", vf + "-journal", cf, cf + ".tmp", s.dirs.State,
+			filepath.Join(s.dirs.Data, "vault.db.tmp")},
+	}
 }
 
 // stateDir is a workspace's local-only state folder (<workspace>/.opsdeck).

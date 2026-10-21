@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -540,6 +541,23 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 	if in.AutoLockMinutes < 0 {
 		in.AutoLockMinutes = 0
 	}
+	home, _ := os.UserHomeDir()
+	dirs := []string{}
+	for _, d := range in.LocalAccess.AllowedDirs {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			continue
+		}
+		if d == "~" || strings.HasPrefix(d, "~/") || strings.HasPrefix(d, `~\`) {
+			d = filepath.Join(home, d[1:])
+		}
+		if !filepath.IsAbs(d) {
+			fail(w, fmt.Errorf("allowed folder %q must be an absolute path or start with ~/", d))
+			return
+		}
+		dirs = append(dirs, filepath.Clean(d))
+	}
+	in.LocalAccess.AllowedDirs = dirs
 	if err := s.cfg.SetSettings(in); err != nil {
 		fail(w, err)
 		return
@@ -747,12 +765,10 @@ func (s *Server) resPut(w http.ResponseWriter, r *http.Request, oldID string) {
 		fail(w, err)
 		return
 	}
-	cleanSpec(&res)
-	for k, v := range res.Spec {
-		if sv, ok := v.(string); ok && looksLikeSecret(k, sv) {
-			fail(w, fmt.Errorf("spec.%s looks like a literal secret; store it in the vault and use a vault:// reference", k))
-			return
-		}
+	res.CleanSpec()
+	if err := res.CheckNoLiteralSecrets(); err != nil {
+		fail(w, err)
+		return
 	}
 	if err := ws.PutResource(oldID, &res); err != nil {
 		fail(w, err)
@@ -772,35 +788,6 @@ func (s *Server) resPut(w http.ResponseWriter, r *http.Request, oldID string) {
 	}
 	s.record(r, ws.Name(), action, res.ID(), nil, nil)
 	writeJSON(w, 200, res)
-}
-
-func cleanSpec(r *workspace.Resource) {
-	for k, v := range r.Spec {
-		switch x := v.(type) {
-		case nil:
-			delete(r.Spec, k)
-		case string:
-			if strings.TrimSpace(x) == "" {
-				delete(r.Spec, k)
-			}
-		case []any:
-			if len(x) == 0 {
-				delete(r.Spec, k)
-			}
-		case float64:
-			if x == float64(int64(x)) {
-				r.Spec[k] = int(x)
-			}
-		}
-	}
-}
-
-func looksLikeSecret(key, val string) bool {
-	k := strings.ToLower(key)
-	if strings.HasPrefix(val, "vault://") {
-		return false
-	}
-	return strings.Contains(val, "PRIVATE KEY") || k == "password" || k == "token" || k == "secret" || k == "apikey"
 }
 
 func (s *Server) resDelete(w http.ResponseWriter, r *http.Request) {

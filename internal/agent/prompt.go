@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -37,6 +38,14 @@ MODE: AUTO. Changes on non-protected environments run without asking; destructiv
 		b.WriteString(`
 MODE: ASK. Read-only actions run directly; every change waits for the user's approval, so group related changes sensibly.
 `)
+	}
+
+	if lp := env.Local; lp != nil {
+		fmt.Fprintf(&b, `
+# This computer
+opsdeck runs on the user's own computer (%s, home %s). Besides the workspace hosts you can work here with the local_* tools: read, list and search files anywhere the user's account can (e.g. ~/.ssh/config, ~/.ssh/known_hosts, a project folder), write or edit files, and run local commands with local_exec. Reads outside the workspace folder (%s)%s ask the user once per folder; credential locations (~/.ssh, ~/.kube, ~/.aws, ...) ask per file; every write and every local command asks. Paths are absolute or start with ~/.
+Files holding private keys are never shown to you. To use the user's SSH key, import it with vault_import_ssh_key (opsdeck reads the file and stores it encrypted; you get the vault:// reference and public key), pin host keys the user already trusts with known_hosts_import, and add or update hosts with workspace_resource. Use vault_list to see existing credentials and vault_add_item to create new ones (generated or read from a file) without ever handling secret values.
+`, runtime.GOOS, lp.Home, w.Path, allowedNote(lp.AllowedDirs))
 	}
 
 	fmt.Fprintf(&b, "\n# Workspace: %s\n", firstNonEmpty(w.Metadata.Title, w.Name()))
@@ -90,6 +99,13 @@ MODE: ASK. Read-only actions run directly; every change waits for the user's app
 		b.WriteString(truncate(string(mem), 15000) + "\n")
 	}
 	return b.String()
+}
+
+func allowedNote(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	return " and the allowed folders (" + strings.Join(dirs, ", ") + ")"
 }
 
 func firstNonEmpty(s ...string) string {

@@ -40,6 +40,7 @@ type Env struct {
 	MemoryPath string
 	SessionID  string
 	Model      string
+	Local      *LocalPolicy // nil = no access to this computer outside the workspace
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -53,7 +54,15 @@ type Call struct {
 	Preview     string // shown in approval cards (command, diff...)
 	Reasons     []string
 	Credentials []string
-	Run         func(ctx context.Context) (string, error)
+	// Consent makes even a read ask (e.g. a local file outside the allowed
+	// folders); the text is the reason shown to the user.
+	Consent string
+	// Grant, when set, is what an "always allow" answer covers instead of the
+	// exact tool/target/match; GrantLabel describes it on the approval card.
+	Grant        string
+	GrantLabel   string
+	parentGrants []string // grants that also cover this call (a parent folder)
+	Run          func(ctx context.Context) (string, error)
 }
 
 // Tool is an agent tool.
@@ -208,6 +217,7 @@ func Tools() []Tool {
 		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
+		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(),
 	}
 }
 

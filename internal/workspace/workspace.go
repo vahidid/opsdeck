@@ -96,6 +96,44 @@ type Resource struct {
 	source string // file it was loaded from, relative to the workspace
 }
 
+// CleanSpec drops empty values and turns whole JSON numbers into ints.
+func (r *Resource) CleanSpec() {
+	for k, v := range r.Spec {
+		switch x := v.(type) {
+		case nil:
+			delete(r.Spec, k)
+		case string:
+			if strings.TrimSpace(x) == "" {
+				delete(r.Spec, k)
+			}
+		case []any:
+			if len(x) == 0 {
+				delete(r.Spec, k)
+			}
+		case float64:
+			if x == float64(int64(x)) {
+				r.Spec[k] = int(x)
+			}
+		}
+	}
+}
+
+// CheckNoLiteralSecrets rejects spec values that look like secrets: those
+// belong in the vault, referenced as vault://.
+func (r *Resource) CheckNoLiteralSecrets() error {
+	for k, v := range r.Spec {
+		val, ok := v.(string)
+		if !ok || strings.HasPrefix(val, "vault://") {
+			continue
+		}
+		lk := strings.ToLower(k)
+		if strings.Contains(val, "PRIVATE KEY") || lk == "password" || lk == "token" || lk == "secret" || lk == "apikey" {
+			return fmt.Errorf("spec.%s looks like a literal secret; store it in the vault and use a vault:// reference", k)
+		}
+	}
+	return nil
+}
+
 // ID is "<kind>/<name>".
 func (r *Resource) ID() string { return r.Kind + "/" + r.Name }
 

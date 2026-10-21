@@ -27,9 +27,22 @@ type Provider struct {
 }
 
 type Settings struct {
-	AutoLockMinutes int        `yaml:"autoLockMinutes" json:"autoLockMinutes"`
-	DefaultModel    string     `yaml:"defaultModel,omitempty" json:"defaultModel"`
-	Providers       []Provider `yaml:"providers" json:"providers"`
+	AutoLockMinutes int         `yaml:"autoLockMinutes" json:"autoLockMinutes"`
+	DefaultModel    string      `yaml:"defaultModel,omitempty" json:"defaultModel"`
+	Providers       []Provider  `yaml:"providers" json:"providers"`
+	LocalAccess     LocalAccess `yaml:"localAccess" json:"localAccess"`
+}
+
+// LocalAccess controls the agent's tools for this computer (files outside the
+// workspace and local commands). Every write and every local command needs
+// approval unless the user allowed it; reads outside AllowedDirs ask once
+// per folder.
+type LocalAccess struct {
+	Disabled bool `yaml:"disabled,omitempty" json:"disabled"`
+	// AllowedDirs can be read (listed, searched) without asking.
+	AllowedDirs []string `yaml:"allowedDirs,omitempty" json:"allowedDirs"`
+	// AutoReadCommands runs local commands classified read-only without asking.
+	AutoReadCommands bool `yaml:"autoReadCommands,omitempty" json:"autoReadCommands"`
 }
 
 type file struct {
@@ -81,6 +94,7 @@ func (s *Store) Settings() Settings {
 	defer s.mu.Unlock()
 	c := s.f.Settings
 	c.Providers = append([]Provider(nil), c.Providers...)
+	c.LocalAccess.AllowedDirs = append([]string{}, c.LocalAccess.AllowedDirs...)
 	return c
 }
 

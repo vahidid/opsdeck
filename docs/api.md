@@ -58,7 +58,10 @@ Item types: `ssh-key`, `login`, `token`, `kubeconfig`, `vpn`, `certificate`, `fi
 type Settings = { autoLockMinutes: number; defaultModel: string;
   providers: { id: string; type: "anthropic"|"openai"; name: string; baseUrl: string;
                apiKeyRef: string;   // vault ref, e.g. vault://global/anthropic-key ; empty for Ollama
-               models: string[] }[] }
+               models: string[] }[];
+  localAccess: { disabled: boolean;        // agent access to this computer (default on)
+                 allowedDirs: string[];    // readable without asking; "~/..." is expanded
+                 autoReadCommands: boolean } } // run read-only local_exec commands without asking
 ```
 Local agent providers use `type: "claude-code" | "codex" | "gemini-cli" | "acp"` with
 `command`, `args`, `env` (no base URL or key). Their sessions reach opsdeck's tools through
@@ -175,6 +178,9 @@ type HostStats = { hostname; os; kernel; uptimeSec: number; load: number[]; cpus
 → `text/event-stream`, each event `data: {"line": "..."}`; `event: end` on finish, `event: error` with `{"message"}`.
 
 ## Agent
+
+`approval_request` events carry `grantLabel` when "always allow" covers more than the exact
+call (e.g. every read in a folder).
 
 | Method | Path | |
 |---|---|---|

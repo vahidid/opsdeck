@@ -55,7 +55,14 @@ func (m *Manager) Send(ws, id, text string) error {
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
 	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Vault: m.deps.Vault, MCP: m.deps.MCP,
-		MemoryPath: w.MemoryPath()}
+		MemoryPath: w.MemoryPath(), Local: m.local()}
+}
+
+func (m *Manager) local() *LocalPolicy {
+	if m.deps.Local == nil {
+		return nil
+	}
+	return m.deps.Local()
 }
 
 func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, text string) {
@@ -190,6 +197,9 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 // toolset returns built-in tools plus the workspace's MCP tools.
 func (m *Manager) toolset(w *workspace.Workspace) ([]llm.Tool, map[string]Tool) {
 	all := Tools()
+	if m.local() != nil {
+		all = append(all, LocalTools()...)
+	}
 	for _, mt := range m.deps.MCP.Tools(w) {
 		mt := mt
 		all = append(all, Tool{
@@ -280,7 +290,7 @@ func (m *Manager) runTool(ctx context.Context, s *Session, env *Env, w *workspac
 		s.setState("waiting_approval")
 		s.emit("approval_request", map[string]any{"approvalId": approvalID, "callId": c.ID, "tool": c.Name, "input": inputView,
 			"risk": call.Risk, "target": call.Target, "environment": call.Environment, "reason": d.Reason,
-			"reasons": call.Reasons, "preview": m.redactor.Redact(call.Preview)}, true)
+			"reasons": call.Reasons, "preview": m.redactor.Redact(call.Preview), "grantLabel": call.GrantLabel}, true)
 		s.save()
 		var a approval
 		var answered bool

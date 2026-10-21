@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Bot, Cpu, KeyRound, Moon, Plus, Save, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
+import { Bot, Cpu, KeyRound, Laptop, Moon, Plus, Save, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
-import { Badge, Button, Card, ChipInput, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select } from "../components/ui";
+import { Badge, Button, Card, ChipInput, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { VaultItemModal } from "../components/VaultItemForm";
 import { passwordStrength } from "../lib/format";
@@ -23,6 +23,13 @@ const AGENT_PRESETS: { kind: AgentKind; label: string; id: string; command: stri
   { kind: "gemini-cli", label: "Gemini CLI", id: "gemini", command: "gemini", args: [], models: ["default"], login: "Uses your Google account through Gemini CLI. Run `gemini` once and sign in." },
   { kind: "acp", label: "Other ACP agent (opencode, Qwen Code…)", id: "acp-agent", command: "", args: [], models: ["default"], login: "Any agent that speaks the Agent Client Protocol, e.g. `opencode acp`." },
 ];
+
+const NO_LOCAL: Settings["localAccess"] = { disabled: false, allowedDirs: [], autoReadCommands: false };
+const normSettings = (v: Settings): Settings => ({
+  ...v,
+  providers: v.providers ?? [],
+  localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
+});
 
 const KIND_LABEL: Record<string, string> = {
   anthropic: "Anthropic API",
@@ -55,7 +62,7 @@ export function AppSettingsPage() {
     api
       .settings()
       .then((v) => {
-        const norm = { ...v, providers: v.providers ?? [] };
+        const norm = normSettings(v);
         setS(norm);
         setOrig(JSON.stringify(norm));
       })
@@ -94,7 +101,7 @@ export function AppSettingsPage() {
     setSaving(true);
     try {
       const v = await api.saveSettings(s);
-      const norm = { ...v, providers: v.providers ?? [] };
+      const norm = normSettings(v);
       setS(norm);
       setOrig(JSON.stringify(norm));
       toast.success("Settings saved");
@@ -282,6 +289,49 @@ export function AppSettingsPage() {
               </FormField>
             </div>
           )}
+        </Card>
+
+        <Card
+          title={
+            <>
+              <Laptop className="size-4 text-muted" /> This computer
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="text-xs text-muted leading-relaxed">
+              Lets the agent work with this machine like a coding harness does: read your files (e.g. <span className="font-mono">~/.ssh/config</span>,{" "}
+              <span className="font-mono">known_hosts</span>, a project folder), write files, run local commands, and import your SSH keys straight into the
+              vault without the model ever seeing them. Reads outside the workspace ask once per folder, credential files ask per file, and every write and
+              command asks for approval. opsdeck's own vault, login token and settings are never accessible.
+            </div>
+            <Toggle
+              checked={!s.localAccess.disabled}
+              onChange={(v) => setS({ ...s, localAccess: { ...s.localAccess, disabled: !v } })}
+              label="Allow the agent to access this computer"
+            />
+            {!s.localAccess.disabled && (
+              <>
+                <FormField label="Folders the agent may read without asking" help="Absolute paths or ~/… — e.g. ~/projects. Credential files inside them (.env, keys) still ask.">
+                  <ChipInput
+                    mono
+                    value={s.localAccess.allowedDirs}
+                    onChange={(v) => setS({ ...s, localAccess: { ...s.localAccess, allowedDirs: v } })}
+                    placeholder="~/projects"
+                  />
+                </FormField>
+                <Toggle
+                  checked={s.localAccess.autoReadCommands}
+                  onChange={(v) => setS({ ...s, localAccess: { ...s.localAccess, autoReadCommands: v } })}
+                  label={
+                    <span>
+                      Run read-only local commands without asking <span className="text-faint">(ls, cat, git status… — they can read any file your account can)</span>
+                    </span>
+                  }
+                />
+              </>
+            )}
+          </div>
         </Card>
 
         <Card

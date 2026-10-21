@@ -108,6 +108,9 @@ external infrastructure needed.
 - Kubeconfigs that use `exec` auth plugins run those plugins on this machine.
 - MCP servers from a workspace only start after you save them in Workspace settings on
   this machine (protects you from commands in a cloned workspace).
+- The agent's access to this computer (Settings → This computer) is on by default: it can
+  read files with consent, and every local write or command asks. Turn it off there if you
+  only want it to work on workspace hosts.
 - Tested on Linux; macOS and Windows builds compile but have not been exercised yet.
 
 ## Documents

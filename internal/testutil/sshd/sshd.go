@@ -25,7 +25,8 @@ type Server struct {
 	Addr     string
 	listener net.Listener
 	cfg      *ssh.ServerConfig
-	Dir      string // working directory for commands
+	Dir      string        // working directory for commands
+	HostKey  ssh.PublicKey // the server's host key
 	wg       sync.WaitGroup
 }
 
@@ -68,7 +69,7 @@ func Start(addr string, o Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{Addr: ln.Addr().String(), listener: ln, cfg: cfg, Dir: o.Dir}
+	s := &Server{Addr: ln.Addr().String(), listener: ln, cfg: cfg, Dir: o.Dir, HostKey: hostKey.PublicKey()}
 	go s.serve()
 	return s, nil
 }

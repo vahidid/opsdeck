@@ -36,6 +36,8 @@ func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted m
 	}
 	if d.Effect == "" {
 		switch {
+		case c.Risk == RiskRead && c.Consent != "":
+			d = Decision{"ask", c.Consent}
 		case c.Risk == RiskRead:
 			d = Decision{"allow", "read-only"}
 		case c.Risk == RiskDestructive:
@@ -48,7 +50,7 @@ func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted m
 			d = Decision{"ask", "changes need approval in ask mode"}
 		}
 	}
-	if d.Effect == "ask" && c.Risk != RiskDestructive && granted[grantKey(tool, c)] {
+	if d.Effect == "ask" && c.Risk != RiskDestructive && isGranted(tool, c, granted) {
 		d = Decision{"allow", "allowed for this session"}
 	}
 	if d.Effect == "allow" && v != nil {
@@ -63,8 +65,24 @@ func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted m
 
 // grantKey scopes an "always allow" answer to the same tool, target, risk
 // and exact command/action, so one approval never covers different commands.
+// Tools can widen it on purpose (e.g. local reads: one folder for all read tools).
 func grantKey(tool string, c *Call) string {
+	if c.Grant != "" {
+		return c.Grant + "|" + c.Risk
+	}
 	return tool + "|" + c.Target + "|" + c.Risk + "|" + c.Match
+}
+
+func isGranted(tool string, c *Call, granted map[string]bool) bool {
+	if granted[grantKey(tool, c)] {
+		return true
+	}
+	for _, g := range c.parentGrants {
+		if granted[g+"|"+c.Risk] {
+			return true
+		}
+	}
+	return false
 }
 
 func ruleMatches(r workspace.Rule, tool string, c *Call) bool {

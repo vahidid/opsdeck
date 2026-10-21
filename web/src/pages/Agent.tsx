@@ -997,6 +997,7 @@ function ApprovalBox({
             )}
           </div>
           {approval.reason && <div className="text-xs text-muted mt-0.5">{approval.reason}</div>}
+          {approval.grantLabel && !destructive && <div className="text-[11px] text-faint mt-0.5">“Always allow” = {approval.grantLabel.replace(/^Always allow /, "")}</div>}
         </div>
         <Badge tone={riskTone(approval.risk)}>{approval.risk}</Badge>
       </div>
@@ -1034,7 +1035,7 @@ function ApprovalBox({
               Approve
             </Button>
             {!destructive && (
-              <Button size="sm" loading={busy === "always"} disabled={!!busy} onClick={() => void decide("always")} title="Don't ask again for this tool and target in this session">
+              <Button size="sm" loading={busy === "always"} disabled={!!busy} onClick={() => void decide("always")} title={approval.grantLabel || "Don't ask again for this tool and target in this session"}>
                 Always allow in session
               </Button>
             )}

@@ -80,6 +80,7 @@ func TestEndToEnd(t *testing.T) {
 	defer srv.Close()
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
+	srv.agents.SetMCPBase(ts.URL + "/mcp/")
 	jar, _ := cookiejar.New(nil)
 	c := &client{t: t, base: ts.URL, http: &http.Client{Jar: jar, Timeout: 60 * time.Second}}
 
@@ -520,6 +521,56 @@ esac
 	}
 	if cfg, _ := os.ReadFile(filepath.Join(dest, ".git", "config")); strings.Contains(string(cfg), "SuperSecret") {
 		t.Fatal("token persisted in .git/config")
+	}
+
+	// --- an external agent (fake Claude Code) working through the MCP bridge
+	settings["providers"] = []map[string]any{{"id": "cc", "type": "claude-code", "name": "Claude Code", "command": os.Args[0],
+		"env": map[string]string{"OPSDECK_FAKE_CLAUDE": "1"}, "models": []string{"default"}}}
+	c.must("PUT", "/api/settings", settings, nil)
+	var s3 map[string]any
+	c.must("POST", "/api/workspaces/acme/sessions", map[string]any{"model": "cc/default", "mode": "ask"}, &s3)
+	sid3 := s3["id"].(string)
+	marker := filepath.Join(workdir, "from-claude")
+	c.must("POST", "/api/workspaces/acme/sessions/"+sid3+"/messages", map[string]string{"text": "run app-1 echo via-bridge\nrun app-1 touch " + marker}, nil)
+	var s3full struct {
+		Session map[string]any
+		Events  []map[string]any
+	}
+	approvedExt := false
+	for i := 0; i < 200; i++ {
+		c.must("GET", "/api/workspaces/acme/sessions/"+sid3, nil, &s3full)
+		for _, ev := range s3full.Events {
+			if ev["type"] == "approval_request" && !approvedExt {
+				approvedExt = true
+				c.must("POST", "/api/workspaces/acme/sessions/"+sid3+"/approvals/"+ev["approvalId"].(string), map[string]string{"decision": "approve"}, nil)
+			}
+		}
+		if s3full.Session["state"] == "idle" && len(s3full.Events) > 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !approvedExt {
+		t.Fatalf("external agent's change did not ask for approval: %v", s3full.Events)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("approved command from the external agent did not run: %v", s3full.Events)
+	}
+	reply := ""
+	for _, ev := range s3full.Events {
+		if ev["type"] == "assistant" {
+			reply = ev["text"].(string)
+		}
+		if ev["type"] == "error" {
+			t.Fatalf("external agent error: %v", ev["message"])
+		}
+	}
+	if !strings.Contains(reply, "via-bridge") || !strings.HasPrefix(fmt.Sprint(s3full.Session["external"]), "cc:") {
+		t.Fatalf("external reply/session: %q %v", reply, s3full.Session["external"])
+	}
+	// The bridge token only works while a turn runs.
+	if res, err := http.Post(ts.URL+"/mcp/"+strings.Repeat("a", 48), "application/json", strings.NewReader("{}")); err != nil || res.StatusCode != 401 {
+		t.Fatalf("bridge without a valid token must be refused: %v %v", err, res.StatusCode)
 	}
 
 	// --- audit

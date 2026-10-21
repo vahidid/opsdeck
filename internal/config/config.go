@@ -10,7 +10,9 @@ import (
 )
 
 // Provider is a model provider. Type "anthropic" uses the Messages API;
-// "openai" is any OpenAI-compatible Chat Completions API.
+// "openai" is any OpenAI-compatible Chat Completions API; "claude-code",
+// "codex", "gemini-cli" and "acp" run a locally installed agent CLI with the
+// user's own login (see internal/extagent).
 type Provider struct {
 	ID        string   `yaml:"id" json:"id"`
 	Type      string   `yaml:"type" json:"type"`
@@ -18,6 +20,10 @@ type Provider struct {
 	BaseURL   string   `yaml:"baseUrl" json:"baseUrl"`
 	APIKeyRef string   `yaml:"apiKeyRef,omitempty" json:"apiKeyRef"`
 	Models    []string `yaml:"models" json:"models"`
+	// External agents (claude-code, codex, gemini-cli, acp): the local CLI to run.
+	Command string            `yaml:"command,omitempty" json:"command"`
+	Args    []string          `yaml:"args,omitempty" json:"args"`
+	Env     map[string]string `yaml:"env,omitempty" json:"env"`
 }
 
 type Settings struct {

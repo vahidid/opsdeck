@@ -105,3 +105,30 @@ Why not just a plugin/MCP pack on top of opencode or Claude Code: the core guara
 (redaction of every model input, use-vs-reveal, per-environment risk policy, audit
 journal) must live **inside the loop**. A plugin can't enforce them. We can still ship an
 MCP server so those harnesses can use opsdeck workspaces too.
+
+## Local agent CLIs as the model
+
+Instead of a model API, a session can use an agent CLI installed on this machine with
+the user's own login. opsdeck stays the harness around it:
+
+```
+opsdeck session ──► agent CLI (own loop, own login)
+      ▲                   │ only tools: MCP server "opsdeck"
+      │                   ▼
+      └──── /mcp/ bridge (per-turn bearer token) ──► runTool: risk → rules → approval → run → redact → audit
+```
+
+| Agent | How it is run | Built-in tools off | Context between turns |
+|---|---|---|---|
+| Claude Code | `claude -p --output-format stream-json`, MCP via `--mcp-config` (http) | `--tools ""`, `--strict-mcp-config`, `--allowedTools mcp__opsdeck__*`, `--permission-mode dontAsk`, no settings/hooks/CLAUDE.md | `--session-id` / `--resume` |
+| Codex (ChatGPT) | `codex exec --json`, MCP via `-c mcp_servers.opsdeck.*` (bearer from env) | `--disable shell_tool,unified_exec,…`, no web search, `--ignore-user-config`, read-only sandbox + `approval_policy=never` (blocks `apply_patch`) | `codex exec resume <thread>` |
+| Gemini CLI | `gemini --acp` | private settings (`GEMINI_CLI_SYSTEM_SETTINGS_PATH`): `tools.core` = opsdeck tools only, built-ins excluded, opsdeck server trusted | ACP `session/load` |
+| Any ACP agent | its ACP command (e.g. `opencode acp`, `qwen --acp`, `copilot --acp`) | client offers no fs/terminal; permission requests granted only for opsdeck tools | ACP `session/load` |
+
+Agents that only launch stdio MCP servers get `opsdeck mcp-stdio`, a relay to the bridge
+(token passed in the environment). The bridge refuses requests with an `Origin` header
+(browsers) and tokens are valid only while that session's turn runs.
+
+Logins stay inside each vendor's own CLI; opsdeck never reads or stores them. Using your
+own subscription through the official, unmodified CLI on your own machine is what each
+vendor's terms allow; don't share one login across other people's requests.

@@ -21,6 +21,11 @@ plus a complete local workbench that is just as useful without AI.
   that works through infra tools: `exec` (single host or groups), `read_file`/`edit_file`
   with diffs and backups, `docker`, `kubernetes`, `net_check`, `git_sync`, docs, skills,
   memory, and any MCP server you attach to the workspace.
+- **Local agents** — besides model APIs, the agent can be a CLI you already use with
+  your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** (Google
+  account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
+  built-in tools are switched off; they work only through opsdeck's tools (served to
+  them over MCP), so approvals, redaction and audit still apply.
 - **Safety** — every tool call is classified (`read` / `change` / `destructive`; shell
   commands are parsed); Plan / Ask / Auto modes; protected environments; per-workspace
   permission rules; approvals with previews; secrets redacted from everything the model
@@ -42,7 +47,9 @@ The first screen creates the vault (master password; there is no recovery). Then
 3. **Resources → Add resource** → hosts with address, port, user, credential, and `via`
    if they sit behind a bastion or VPN. Add a **WireGuard network** by storing the
    `.conf` as a *VPN config* vault item.
-4. **App settings → Model providers** → add a provider; the API key is stored in the vault.
+4. **App settings → Model providers** → add an API provider (key stored in the vault), or
+   under **Local agents** pick an installed CLI (Claude Code, Codex, Gemini CLI…) that
+   you have already signed in to.
 5. **Agent** → ask: *"Check disk and memory on all prod hosts"*, or *"Clone shop from
    GitLab onto test-1 and run it as a single container"*.
 

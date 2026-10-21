@@ -115,6 +115,16 @@ func (r *Router) Resolve(id string) (Provider, string, error) {
 	return nil, "", fmt.Errorf("provider %s has unknown type %q", p.ID, p.Type)
 }
 
+// Lookup returns the provider config and bare model of "providerId/model".
+func (r *Router) Lookup(id string) (config.Provider, string, bool) {
+	pid, model, ok := strings.Cut(id, "/")
+	if !ok {
+		return config.Provider{}, "", false
+	}
+	p, ok := r.providers[pid]
+	return p, model, ok
+}
+
 // ModelInfo is listed for model pickers.
 type ModelInfo struct {
 	ID       string `json:"id"`

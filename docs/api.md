@@ -52,6 +52,7 @@ Item types: `ssh-key`, `login`, `token`, `kubeconfig`, `vpn`, `certificate`, `fi
 
 | GET/PUT | `/api/settings` | `Settings` |
 | GET | `/api/models` | → `[{id: "providerId/model", provider, model, label}]` |
+| GET | `/api/agents/detect` | → `[{kind, name, command, args, path, version, login, models}]` agent CLIs found on PATH |
 
 ```ts
 type Settings = { autoLockMinutes: number; defaultModel: string;
@@ -59,6 +60,10 @@ type Settings = { autoLockMinutes: number; defaultModel: string;
                apiKeyRef: string;   // vault ref, e.g. vault://global/anthropic-key ; empty for Ollama
                models: string[] }[] }
 ```
+Local agent providers use `type: "claude-code" | "codex" | "gemini-cli" | "acp"` with
+`command`, `args`, `env` (no base URL or key). Their sessions reach opsdeck's tools through
+the MCP bridge at `/mcp/` (streamable HTTP, `Authorization: Bearer <per-turn token>`).
+
 `type: "openai"` = any OpenAI-compatible API (OpenAI, OpenRouter, Ollama `http://localhost:11434/v1`, LM Studio, Gemini compat, DeepSeek, Groq...).
 
 ## Workspaces

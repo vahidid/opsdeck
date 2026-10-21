@@ -31,6 +31,7 @@ import type {
   VaultStatus,
   Workspace,
   WorkspaceSummary,
+  InstalledAgent,
 } from "./types";
 
 export class ApiError extends Error {
@@ -134,6 +135,7 @@ export const api = {
   // settings
   settings: () => get<Settings>("/api/settings"),
   saveSettings: (s: Settings) => put<Settings>("/api/settings", s),
+  detectAgents: () => arr(get<InstalledAgent[]>("/api/agents/detect")),
   models: () => arr(get<ModelInfo[]>("/api/models")),
 
   // workspaces

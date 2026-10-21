@@ -119,6 +119,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		s.hub.CloseAll()
 		s.audit.Record(audit.Entry{Actor: "system", Action: "vault.lock"})
 	})
+	s.agents.SetMCPBase("http://127.0.0.1:" + strconv.Itoa(opts.Port) + "/mcp/")
 	if s.token, err = loadToken(filepath.Join(dirs.State, "server.token")); err != nil {
 		return nil, err
 	}
@@ -184,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	s.routes(mux)
 	dist, _ := fs.Sub(distFS, "dist")
 	static := http.FileServer(http.FS(dist))
+	// MCP bridge for external agents (bearer token per running session).
+	mux.Handle("/mcp/", s.agents.MCPHandler())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			writeErr(w, http.StatusNotFound, "not found")

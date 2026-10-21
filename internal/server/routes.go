@@ -17,6 +17,7 @@ import (
 	"opsdeck/internal/agent"
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/extagent"
 	"opsdeck/internal/kube"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
@@ -50,6 +51,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// settings
 	mux.HandleFunc("GET /api/settings", u(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.cfg.Settings()) }))
 	mux.HandleFunc("PUT /api/settings", u(s.settingsPut))
+	mux.HandleFunc("GET /api/agents/detect", u(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		writeJSON(w, 200, extagent.Detect(ctx))
+	}))
 	mux.HandleFunc("GET /api/models", u(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, llm.ListModels(s.cfg.Settings().Providers))
 	}))
@@ -514,9 +520,16 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seen[p.ID] = true
-		if p.Type != "anthropic" && p.Type != "openai" {
-			fail(w, fmt.Errorf("provider %s: type must be anthropic or openai", p.ID))
+		if p.Type != "anthropic" && p.Type != "openai" && !extagent.IsKind(p.Type) {
+			fail(w, fmt.Errorf("provider %s: type must be anthropic, openai, claude-code, codex, gemini-cli or acp", p.ID))
 			return
+		}
+		if p.Type == extagent.ACP && p.Command == "" {
+			fail(w, fmt.Errorf("provider %s: an ACP agent needs a command", p.ID))
+			return
+		}
+		if extagent.IsKind(p.Type) && len(p.Models) == 0 {
+			p.Models = []string{"default"}
 		}
 		if p.APIKeyRef != "" && !strings.HasPrefix(p.APIKeyRef, "vault://") {
 			fail(w, fmt.Errorf("provider %s: the API key must be a vault:// reference", p.ID))

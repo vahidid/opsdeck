@@ -28,6 +28,7 @@ Usage:
   opsdeck [serve] [flags]   start the server and open the UI (default)
   opsdeck url               print the login URL
   opsdeck paths             show where data is stored
+  opsdeck mcp-stdio --url URL stdio relay to a session's MCP bridge (used by external agents)
   opsdeck version
 
 Flags for serve:
@@ -39,6 +40,7 @@ func main() {
 	port := flag.Int("port", 7788, "listen port (always bound to 127.0.0.1)")
 	noOpen := flag.Bool("no-open", false, "do not open the browser")
 	devOrigin := flag.String("dev-origin", "", "extra allowed Origin for UI development, e.g. http://localhost:5173")
+	mcpURL := flag.String("url", "", "opsdeck MCP endpoint (mcp-stdio)")
 	flag.Usage = usage
 	args := os.Args[1:]
 	cmd := "serve"
@@ -62,6 +64,12 @@ func main() {
 		}
 		fmt.Println(srv.URL())
 		srv.Close()
+		return
+	case "mcp-stdio":
+		if err := mcpStdio(*mcpURL); err != nil {
+			fmt.Fprintln(os.Stderr, "opsdeck mcp-stdio:", err)
+			os.Exit(1)
+		}
 		return
 	case "serve":
 	default:

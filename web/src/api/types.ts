@@ -33,14 +33,21 @@ export type ItemInput = {
   policy?: ItemPolicy;
 };
 
+export type AgentKind = "claude-code" | "codex" | "gemini-cli" | "acp";
 export type ProviderConfig = {
   id: string;
-  type: "anthropic" | "openai";
+  type: "anthropic" | "openai" | AgentKind;
   name: string;
   baseUrl: string;
   apiKeyRef: string;
   models: string[];
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
 };
+export type InstalledAgent = { kind: AgentKind; name: string; command: string; args: string[] | null; path: string; version: string; login: string; models: string[] };
+export const AGENT_KINDS: AgentKind[] = ["claude-code", "codex", "gemini-cli", "acp"];
+export const isAgentKind = (t: string): t is AgentKind => (AGENT_KINDS as string[]).includes(t);
 export type Settings = { autoLockMinutes: number; defaultModel: string; providers: ProviderConfig[] };
 export type ModelInfo = { id: string; provider: string; model: string; label: string };
 

@@ -12,6 +12,7 @@ import (
 
 	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/extagent"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
 	"opsdeck/internal/workspace"
@@ -46,7 +47,7 @@ func (m *Manager) Send(ws, id, text string) error {
 		return ErrBusy
 	}
 	ctx, cancel := context.WithCancel(connect.WithActor(context.Background(), connect.Actor{Kind: "agent", Session: id}))
-	s.cancel = cancel
+	s.cancel, s.runCtx = cancel, ctx
 	s.mu.Unlock()
 	go m.run(ctx, s, w, text)
 	return nil
@@ -93,7 +94,12 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 	s.setState("running")
 	s.save()
 
-	provider, model, err := m.deps.Router().Resolve(modelID)
+	router := m.deps.Router()
+	if p, model, ok := router.Lookup(modelID); ok && extagent.IsKind(p.Type) {
+		m.runExternal(ctx, s, w, text, p, model)
+		return
+	}
+	provider, model, err := router.Resolve(modelID)
 	if err != nil {
 		s.emit("error", map[string]any{"message": err.Error()}, true)
 		return

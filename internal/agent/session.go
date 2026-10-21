@@ -38,6 +38,9 @@ type Info struct {
 	Created   time.Time `json:"created"`
 	Updated   time.Time `json:"updated"`
 	Usage     llm.Usage `json:"usage"`
+	// External agent conversation ("<provider>:<id>") when the model is a
+	// local agent CLI; it keeps the agent's own context between turns.
+	External string `json:"external,omitempty"`
 }
 
 // Session is one conversation with the agent inside a workspace.
@@ -49,6 +52,7 @@ type Session struct {
 	granted  map[string]bool
 	subs     map[chan Event]struct{}
 	cancel   context.CancelFunc
+	runCtx   context.Context // context of the running turn (used by the MCP bridge)
 	pending  map[string]chan approval
 	path     string
 	nextID   int
@@ -87,6 +91,7 @@ type Manager struct {
 	redactor *Redactor
 	mu       sync.Mutex
 	sessions map[string]*Session // ws/id
+	bridges  bridges
 }
 
 func NewManager(d Deps) *Manager {

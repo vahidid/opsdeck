@@ -75,8 +75,8 @@ state directory); the browser keeps it as an HttpOnly cookie. Requests with a fo
 | What | Where (Linux; macOS/Windows use their app-data folders) |
 |---|---|
 | Vault | `~/.local/share/opsdeck/vault.db` |
-| Workspaces | `~/.local/share/opsdeck/workspaces/<name>/` (or any imported folder) |
-| Sessions, memory, known_hosts, audit | `~/.local/state/opsdeck/` |
+| Workspaces — inventory, docs, runbooks, agent reports, memory, sessions | `~/.local/share/opsdeck/workspaces/<name>/` (or any imported folder); see [docs/workspace.md](docs/workspace.md) |
+| Audit journal | `~/.local/state/opsdeck/audit/` |
 | Settings | `~/.config/opsdeck/config.yaml` |
 
 `OPSDECK_HOME=/some/dir` puts everything under one directory.

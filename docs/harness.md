@@ -36,6 +36,7 @@ Built-in tools:
 | `inventory` — resources, environments, paths, network status | read |
 | `read_doc`, `load_skill`, `memory` | read |
 | `write_doc` — record runbooks/notes in the workspace | change |
+| `write_report` — save findings as `reports/<date>-<title>.md` (never overwrites) | read (local only, allowed in plan mode) |
 | `exec(target, command)` — host, group or list; parallel fan-out | classified per command |
 | `read_file`, `list_dir` (SFTP) | read |
 | `write_file`, `edit_file` — diff preview, atomic write, automatic backup | change |

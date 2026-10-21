@@ -3,9 +3,11 @@ package workspace
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -27,9 +29,10 @@ func (w *Workspace) docPath(rel string) (string, error) {
 	}
 	ok := rel == "OPSDECK.md" ||
 		(strings.HasPrefix(rel, "docs/") && strings.HasSuffix(rel, ".md")) ||
+		(strings.HasPrefix(rel, "reports/") && strings.HasSuffix(rel, ".md")) ||
 		(strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") == 1)
 	if !ok {
-		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md or skills/*.md")
+		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md or skills/*.md")
 	}
 	abs := filepath.Join(w.Path, filepath.FromSlash(rel))
 	// Refuse paths that leave the workspace through symlinks.
@@ -64,14 +67,16 @@ func (w *Workspace) Docs() []Doc {
 	if info, err := os.Stat(filepath.Join(w.Path, "OPSDECK.md")); err == nil {
 		add(filepath.Join(w.Path, "OPSDECK.md"), info)
 	}
-	filepath.WalkDir(filepath.Join(w.Path, "docs"), func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
-			if info, err := d.Info(); err == nil {
-				add(p, info)
+	for _, dir := range []string{"docs", "reports"} {
+		filepath.WalkDir(filepath.Join(w.Path, dir), func(p string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && strings.HasSuffix(p, ".md") {
+				if info, err := d.Info(); err == nil {
+					add(p, info)
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 	matches, _ := filepath.Glob(filepath.Join(w.Path, "skills", "*.md"))
 	for _, m := range matches {
 		if info, err := os.Stat(m); err == nil {
@@ -98,6 +103,9 @@ func mdTitle(path string) string {
 		line := strings.TrimSpace(sc.Text())
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimPrefix(line, "# ")
+		}
+		if v, ok := strings.CutPrefix(line, "title:"); ok {
+			return strings.Trim(strings.TrimSpace(v), `"`)
 		}
 		if strings.HasPrefix(line, "name:") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "name:"))
@@ -180,4 +188,119 @@ func (w *Workspace) Skills() []Skill {
 		out = append(out, s)
 	}
 	return out
+}
+
+// ReportMeta describes who/what produced a report.
+type ReportMeta struct {
+	Title   string
+	Session string
+	Model   string
+	Tags    []string
+}
+
+var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// WriteReport stores a new report as reports/<date>-<slug>.md and returns
+// its workspace-relative path. Reports are never overwritten.
+func (w *Workspace) WriteReport(meta ReportMeta, body string, now time.Time) (string, error) {
+	title := strings.TrimSpace(meta.Title)
+	if title == "" {
+		return "", errors.New("title is required")
+	}
+	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
+	if len(slug) > 60 {
+		slug = strings.Trim(slug[:60], "-")
+	}
+	if slug == "" {
+		slug = "report"
+	}
+	dir := filepath.Join(w.Path, "reports", now.Format("2006"), now.Format("01"))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	base := now.Format("2006-01-02-1504") + "-" + slug
+	path := filepath.Join(dir, base+".md")
+	for i := 2; ; i++ {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		path = filepath.Join(dir, fmt.Sprintf("%s-%d.md", base, i))
+	}
+	var b strings.Builder
+	b.WriteString("---\n")
+	fmt.Fprintf(&b, "title: %q\n", title)
+	fmt.Fprintf(&b, "created: %s\n", now.UTC().Format(time.RFC3339))
+	if meta.Session != "" {
+		fmt.Fprintf(&b, "session: %s\n", meta.Session)
+	}
+	if meta.Model != "" {
+		fmt.Fprintf(&b, "model: %s\n", meta.Model)
+	}
+	if len(meta.Tags) > 0 {
+		fmt.Fprintf(&b, "tags: [%s]\n", strings.Join(meta.Tags, ", "))
+	}
+	b.WriteString("---\n\n")
+	if !strings.HasPrefix(strings.TrimSpace(body), "# ") {
+		b.WriteString("# " + title + "\n\n")
+	}
+	b.WriteString(strings.TrimSpace(body) + "\n")
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		return "", err
+	}
+	rel, _ := filepath.Rel(w.Path, path)
+	return filepath.ToSlash(rel), nil
+}
+
+// RecentReports returns up to n reports, newest first.
+func (w *Workspace) RecentReports(n int) []Doc {
+	var out []Doc
+	for _, d := range w.Docs() {
+		if strings.HasPrefix(d.Path, "reports/") {
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path > out[j].Path })
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
+}
+
+// AdoptLegacyState moves state kept outside the folder by older versions
+// (sessions, known_hosts, memory) into the workspace folder.
+func (w *Workspace) AdoptLegacyState(oldDir string) error {
+	if _, err := os.Stat(oldDir); err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(w.StateDir(), 0o700); err != nil {
+		return err
+	}
+	moves := map[string]string{
+		filepath.Join(oldDir, "sessions"):    filepath.Join(w.StateDir(), "sessions"),
+		filepath.Join(oldDir, "known_hosts"): filepath.Join(w.StateDir(), "known_hosts"),
+		filepath.Join(oldDir, "memory.md"):   w.MemoryPath(),
+	}
+	for from, to := range moves {
+		if _, err := os.Stat(from); err != nil {
+			continue
+		}
+		if _, err := os.Stat(to); err == nil && !strings.HasSuffix(to, "MEMORY.md") {
+			continue // never overwrite
+		}
+		if strings.HasSuffix(to, "MEMORY.md") {
+			old, _ := os.ReadFile(from)
+			cur, _ := os.ReadFile(to)
+			merged := strings.TrimRight(string(cur), "\n") + "\n\n" + strings.TrimSpace(string(old)) + "\n"
+			if err := os.WriteFile(to, []byte(strings.TrimLeft(merged, "\n")), 0o600); err != nil {
+				return err
+			}
+			os.Remove(from)
+			continue
+		}
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+	}
+	os.Remove(oldDir) // only succeeds when empty
+	return nil
 }

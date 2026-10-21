@@ -71,6 +71,17 @@ type Workspace struct {
 
 func (w *Workspace) Name() string { return w.Metadata.Name }
 
+// Everything about a project lives in its folder:
+//
+//	workspace.yaml, resources/   inventory (no secrets)
+//	OPSDECK.md, docs/, skills/   instructions, documentation, runbooks
+//	MEMORY.md                    what the agent learned about the project
+//	reports/                     analyses and results written by the agent
+//	.opsdeck/                    local-only state, git-ignored: sessions, known_hosts
+func (w *Workspace) StateDir() string   { return filepath.Join(w.Path, ".opsdeck") }
+func (w *Workspace) MemoryPath() string { return filepath.Join(w.Path, "MEMORY.md") }
+func (w *Workspace) ReportsDir() string { return filepath.Join(w.Path, "reports") }
+
 // Resource is one entry of the inventory.
 type Resource struct {
 	Kind        string         `yaml:"kind" json:"kind"`
@@ -325,6 +336,8 @@ func (m *Manager) Create(meta Meta) (*Workspace, error) {
 	}
 	os.MkdirAll(filepath.Join(dir, "resources"), 0o700)
 	os.MkdirAll(filepath.Join(dir, "skills"), 0o700)
+	os.MkdirAll(filepath.Join(dir, "reports"), 0o700)
+	os.MkdirAll(filepath.Join(dir, ".opsdeck"), 0o700)
 	w := &Workspace{
 		APIVersion: "opsdeck/v1", Kind: "Workspace", Metadata: meta, Path: dir,
 		Environments: []Environment{{Name: "dev"}, {Name: "staging"}, {Name: "prod", Protected: true}},
@@ -334,7 +347,8 @@ func (m *Manager) Create(meta Meta) (*Workspace, error) {
 	}
 	writeIfMissing(filepath.Join(dir, "OPSDECK.md"), fmt.Sprintf(opsdeckTemplate, meta.Title))
 	writeIfMissing(filepath.Join(dir, "docs", "README.md"), "# "+meta.Title+"\n\nProject documentation: architecture, contacts, runbooks.\n")
-	writeIfMissing(filepath.Join(dir, ".gitignore"), ".opsdeck/\n")
+	writeIfMissing(filepath.Join(dir, ".gitignore"), "# local-only: agent sessions, pinned host keys\n.opsdeck/\n")
+	writeIfMissing(filepath.Join(dir, "MEMORY.md"), "# Memory\n\nFacts the agent learned about this project.\n")
 	return Load(dir)
 }
 

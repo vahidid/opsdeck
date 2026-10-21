@@ -413,6 +413,10 @@ esac
 	fake2 := fakellm.New([]fakellm.Turn{
 		{Tools: []fakellm.ToolCall{{Name: "git_sync", Args: map[string]any{"repo": "shop", "host": "app-1", "path": dest}}}},
 		{Tools: []fakellm.ToolCall{{Name: "git_sync", Args: map[string]any{"repo": "shop", "host": "app-1", "path": dest}}}},
+		{Tools: []fakellm.ToolCall{
+			{Name: "write_report", Args: map[string]any{"title": "Shop deployment on app-1", "content": "Cloned shop into the apps dir.", "tags": []string{"deploy"}}},
+			{Name: "memory", Args: map[string]any{"action": "append", "content": "shop is deployed from GitRemote/shop into ~/apps/shop on app-1"}},
+		}},
 		{Text: "Cloned."},
 	})
 	defer fake2.Close()
@@ -443,8 +447,9 @@ esac
 		}
 		if ev["type"] == "tool_result" {
 			results++
-			if out := ev["output"].(string); ev["isError"] == true || !strings.Contains(out, "HEAD ") {
-				t.Fatalf("git_sync failed: %s", out)
+			out := ev["output"].(string)
+			if ev["isError"] == true || (!strings.HasPrefix(out, "saved") && !strings.Contains(out, "HEAD ")) {
+				t.Fatalf("tool failed: %s", out)
 			}
 		}
 		b, _ := json.Marshal(ev)
@@ -452,8 +457,36 @@ esac
 			t.Fatal("git token leaked into events")
 		}
 	}
-	if results != 2 {
-		t.Fatalf("expected clone + update, got %d results", results)
+	if results != 4 {
+		t.Fatalf("expected clone, update, report, memory: got %d results", results)
+	}
+	// Everything the agent produced lives in the workspace folder.
+	wsDir := filepath.Join(home, "data", "workspaces", "acme")
+	reports, _ := filepath.Glob(filepath.Join(wsDir, "reports", "*", "*", "*-shop-deployment-on-app-1.md"))
+	if len(reports) != 1 {
+		t.Fatalf("report not written: %v", reports)
+	}
+	if b, _ := os.ReadFile(reports[0]); !strings.Contains(string(b), "session: "+sid2) || !strings.Contains(string(b), "Cloned shop") {
+		t.Fatalf("report content: %s", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(wsDir, "MEMORY.md")); !strings.Contains(string(b), "GitRemote/shop") {
+		t.Fatalf("memory not in workspace: %s", b)
+	}
+	for _, p := range []string{".opsdeck/sessions/" + sid2 + ".json", ".opsdeck/known_hosts"} {
+		if _, err := os.Stat(filepath.Join(wsDir, p)); err != nil {
+			t.Fatalf("%s not in workspace folder: %v", p, err)
+		}
+	}
+	var docsList []map[string]any
+	c.must("GET", "/api/workspaces/acme/docs", nil, &docsList)
+	foundReport := false
+	for _, d := range docsList {
+		if strings.HasPrefix(d["path"].(string), "reports/") && d["title"] == "Shop deployment on app-1" {
+			foundReport = true
+		}
+	}
+	if !foundReport {
+		t.Fatalf("report not listed in docs: %v", docsList)
 	}
 	if cfg, _ := os.ReadFile(filepath.Join(dest, ".git", "config")); strings.Contains(string(cfg), "SuperSecret") {
 		t.Fatal("token persisted in .git/config")

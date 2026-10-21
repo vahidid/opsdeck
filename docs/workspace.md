@@ -6,24 +6,34 @@ documentation.
 
 ## Layout on disk
 
+A workspace is one folder that holds everything about the project — what you
+write and what the agent produces:
+
 ```
 acme/
-├── workspace.yaml        # identity, environments, settings, permissions
+├── workspace.yaml        # identity, environments, defaults, permissions, MCP servers
+├── resources/            # inventory: hosts, networks, panels, clusters… (YAML)
 ├── OPSDECK.md            # instructions for the agent (like CLAUDE.md / AGENTS.md)
-├── resources/            # one or more YAML files, any split you like
-│   ├── networks.yaml
-│   ├── hosts.yaml
-│   └── panels.yaml
-├── docs/                 # free Markdown: runbooks, topology notes, contacts
-│   ├── README.md
-│   └── runbooks/deploy.md
-├── skills/               # workspace-specific agent skills (optional)
-├── mcp.yaml              # external MCP servers for this workspace (optional)
-└── .opsdeck/             # ignored by git: local-only overrides
+├── docs/                 # documentation and runbooks (Markdown) — yours and the agent's (write_doc)
+├── skills/               # reusable procedures the agent can load
+├── reports/              # analyses, audits, incident write-ups, plans saved by the agent
+│   └── 2026/10/2026-10-21-0930-disk-and-memory-audit-of-prod.md
+├── MEMORY.md             # facts the agent learned about this project (memory tool)
+├── .gitignore            # ignores .opsdeck/
+└── .opsdeck/             # local-only, not shared: agent sessions (transcripts), pinned host keys
+    ├── sessions/
+    └── known_hosts
 ```
 
-No secrets anywhere in this directory. It can live inside the app's data folder or in
-any directory the user registers (e.g. a git repo shared by the team).
+Everything except `.opsdeck/` can be committed to git and shared with the team.
+**No secrets are ever stored in the folder** — only `vault://` references; secrets stay
+in each person's local vault. Command output in sessions and reports is redacted.
+
+Reports carry front matter (`title`, `created`, `session`, `model`, `tags`) so you can
+trace a result back to the agent session that produced it.
+
+Still outside the folder: the vault (one per machine, with a separate scope per
+workspace) and the global audit journal.
 
 ## workspace.yaml
 

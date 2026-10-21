@@ -916,7 +916,7 @@ func (s *Server) memoryGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	b, _ := os.ReadFile(s.agents.MemoryPath(ws.Name()))
+	b, _ := os.ReadFile(ws.MemoryPath())
 	writeJSON(w, 200, map[string]string{"content": string(b)})
 }
 
@@ -930,9 +930,7 @@ func (s *Server) memoryPut(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	p := s.agents.MemoryPath(ws.Name())
-	os.MkdirAll(s.dirs.WorkspaceState(ws.Name()), 0o700)
-	if err := os.WriteFile(p, []byte(in.Content), 0o600); err != nil {
+	if err := os.WriteFile(ws.MemoryPath(), []byte(in.Content), 0o600); err != nil {
 		fail(w, err)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestManagerAndValidation(t *testing.T) {
@@ -110,6 +111,27 @@ func TestManagerAndValidation(t *testing.T) {
 		t.Fatal("reserved name accepted")
 	}
 	os.RemoveAll(bad)
+	// Legacy state outside the folder is adopted.
+	legacy := filepath.Join(t.TempDir(), "acme")
+	os.MkdirAll(filepath.Join(legacy, "sessions"), 0o700)
+	os.WriteFile(filepath.Join(legacy, "sessions", "s1.json"), []byte("{}"), 0o600)
+	os.WriteFile(filepath.Join(legacy, "known_hosts"), []byte("h key\n"), 0o600)
+	os.WriteFile(filepath.Join(legacy, "memory.md"), []byte("- old fact\n"), 0o600)
+	must(w.AdoptLegacyState(legacy))
+	for _, p := range []string{".opsdeck/sessions/s1.json", ".opsdeck/known_hosts"} {
+		if _, err := os.Stat(filepath.Join(w.Path, p)); err != nil {
+			t.Fatalf("%s not moved", p)
+		}
+	}
+	if b, _ := os.ReadFile(w.MemoryPath()); !strings.Contains(string(b), "old fact") {
+		t.Fatalf("memory not merged: %s", b)
+	}
+	if _, err := os.Stat(legacy); err == nil {
+		t.Fatal("legacy dir should be removed")
+	}
+	if p, err := w.WriteReport(ReportMeta{Title: "Disk usage / prod!"}, "body", time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC)); err != nil || p != "reports/2026/10/2026-10-21-0930-disk-usage-prod.md" {
+		t.Fatalf("report path %q %v", p, err)
+	}
 	must(m.Delete("acme"))
 	if _, err := m.Get("acme"); err == nil {
 		t.Fatal("not deleted")

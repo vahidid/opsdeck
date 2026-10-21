@@ -20,6 +20,7 @@ How to work:
 - Environments marked PROTECTED are production-like: be conservative, verify before and after every change, and prefer reversible steps.
 - When a step fails, read the error and diagnose before retrying. Don't repeat the same failing command.
 - Remember durable facts about this project (layout, conventions, gotchas) with the memory tool; never store secrets there.
+- Everything you produce belongs to the workspace: save investigation and analysis results with write_report, and procedures worth repeating as runbooks with write_doc (docs/runbooks/).
 - Finish with a short report: what you did, the result (with evidence), and anything left to do.
 `, w.Name(), firstNonEmpty(w.Metadata.Title, w.Name()))
 
@@ -67,7 +68,7 @@ MODE: ASK. Read-only actions run directly; every change waits for the user's app
 	if len(docs) > 1 {
 		b.WriteString("\n## Documentation (read with read_doc)\n")
 		for _, d := range docs {
-			if d.Path != "OPSDECK.md" && !strings.HasPrefix(d.Path, "skills/") {
+			if d.Path != "OPSDECK.md" && !strings.HasPrefix(d.Path, "skills/") && !strings.HasPrefix(d.Path, "reports/") {
 				fmt.Fprintf(&b, "- %s — %s\n", d.Path, d.Title)
 			}
 		}
@@ -76,6 +77,12 @@ MODE: ASK. Read-only actions run directly; every change waits for the user's app
 		b.WriteString("\n## Skills (load with load_skill before following one)\n")
 		for _, s := range skills {
 			fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
+		}
+	}
+	if reports := w.RecentReports(10); len(reports) > 0 {
+		b.WriteString("\n## Recent reports (read with read_doc)\n")
+		for _, d := range reports {
+			fmt.Fprintf(&b, "- %s — %s\n", d.Path, d.Title)
 		}
 	}
 	if mem, err := os.ReadFile(env.MemoryPath); err == nil && strings.TrimSpace(string(mem)) != "" {

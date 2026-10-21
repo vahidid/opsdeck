@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Brain, FilePlus2, FileText, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Brain, ClipboardList, FilePlus2, FileText, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { DocInfo } from "../api/types";
 import { useWs } from "../context/app";
@@ -43,13 +43,15 @@ export function DocsPage() {
 
   const groups = useMemo(() => {
     const docs = list.data ?? [];
-    const g: Record<string, DocInfo[]> = { root: [], docs: [], skills: [] };
+    const g: Record<string, DocInfo[]> = { root: [], docs: [], skills: [], reports: [] };
     for (const d of docs) {
       if (d.path.startsWith("skills/")) g.skills.push(d);
+      else if (d.path.startsWith("reports/")) g.reports.push(d);
       else if (d.path.startsWith("docs/")) g.docs.push(d);
       else g.root.push(d);
     }
     Object.values(g).forEach((l) => l.sort((a, b) => a.path.localeCompare(b.path)));
+    g.reports.reverse(); // newest first (paths start with the date)
     if (!g.root.some((d) => d.path === "OPSDECK.md")) g.root.unshift({ path: "OPSDECK.md", title: "Agent instructions", size: 0, updated: "" });
     return g;
   }, [list.data]);
@@ -121,6 +123,19 @@ export function DocsPage() {
               <DocLink key={d.path} active={sel === d.path} onClick={() => void choose(d.path)} icon={<FileText />} label={d.path.replace(/^docs\//, "")} />
             ))}
           </Group>
+          <Group label="Reports">
+            {groups.reports.length === 0 && <div className="text-[11px] text-faint px-2">Analyses and results the agent saves</div>}
+            {groups.reports.map((d) => (
+              <DocLink
+                key={d.path}
+                active={sel === d.path}
+                onClick={() => void choose(d.path)}
+                icon={<ClipboardList />}
+                label={d.title}
+                sub={d.path.match(/(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})/)?.slice(1).join(" ").replace(/ (\d{2}) (\d{2})$/, " $1:$2") ?? d.path}
+              />
+            ))}
+          </Group>
           <Group label="Skills">
             {groups.skills.length === 0 && <div className="text-[11px] text-faint px-2">Reusable procedures for the agent</div>}
             {groups.skills.map((d) => (
@@ -182,7 +197,7 @@ export function DocsPage() {
               </div>
             ) : content.trim() ? (
               <div className="max-w-3xl px-8 py-6">
-                <Markdown>{content}</Markdown>
+                <Markdown>{stripFrontMatter(content)}</Markdown>
               </div>
             ) : (
               <EmptyState icon={<FileText />} title="Empty" action={<Button onClick={() => setEdit("")}>Start writing</Button>}>
@@ -294,4 +309,9 @@ function NewDocModal({ open, onClose, onCreate }: { open: boolean; onClose: () =
       </div>
     </Modal>
   );
+}
+
+/** Reports start with YAML front matter (title, session, model); hide it when rendering. */
+function stripFrontMatter(md: string): string {
+  return md.replace(/^---\n[\s\S]*?\n---\n+/, "");
 }

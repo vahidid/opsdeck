@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -55,12 +54,7 @@ func (m *Manager) Send(ws, id, text string) error {
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
 	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Vault: m.deps.Vault, MCP: m.deps.MCP,
-		MemoryPath: filepath.Join(m.deps.StateDir(w.Name()), "memory.md")}
-}
-
-// MemoryPath is where a workspace's agent memory lives.
-func (m *Manager) MemoryPath(ws string) string {
-	return filepath.Join(m.deps.StateDir(ws), "memory.md")
+		MemoryPath: w.MemoryPath()}
 }
 
 func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, text string) {
@@ -105,6 +99,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		return
 	}
 	env := m.env(w)
+	env.SessionID, env.Model = s.info.ID, modelID
 	m.deps.MCP.Ensure(ctx, w)
 	tools, toolMap := m.toolset(w)
 

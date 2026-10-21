@@ -37,6 +37,8 @@ type Env struct {
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
 	MemoryPath string
+	SessionID  string
+	Model      string
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -202,7 +204,7 @@ func unifiedDiff(path, before, after string) string {
 // Tools returns the built-in tool set.
 func Tools() []Tool {
 	return []Tool{
-		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(),
+		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
 	}
@@ -1069,4 +1071,33 @@ func gitAuthHeader(it vault.Item, field string) string {
 		return ""
 	}
 	return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+secret))
+}
+
+func toolWriteReport() Tool {
+	return Tool{
+		Def: llm.Tool{Name: "write_report", Description: "Save the result of an investigation, analysis, audit, incident or plan as a new Markdown report in the workspace (reports/<year>/<month>/<date>-<title>.md). Use it whenever the work produced findings worth keeping; include evidence (commands and key output), conclusions and next steps. Reports are never overwritten.",
+			Schema: obj(map[string]any{
+				"title":   str("Short descriptive title, e.g. \"nginx 502 on app-1 — root cause\""),
+				"content": str("Full Markdown body"),
+				"tags":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags, e.g. incident, audit, plan"},
+			}, "title", "content")},
+		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
+			var in struct {
+				Title, Content string
+				Tags           []string
+			}
+			if err := decode(input, &in); err != nil {
+				return nil, err
+			}
+			// A new local file that is never fed back into prompts: allowed in
+			// every mode, including plan mode (to save the plan itself).
+			return &Call{Risk: RiskRead, Target: "reports", Match: in.Title, Run: func(ctx context.Context) (string, error) {
+				path, err := env.WS.WriteReport(workspace.ReportMeta{Title: in.Title, Session: env.SessionID, Model: env.Model, Tags: in.Tags}, in.Content, time.Now())
+				if err != nil {
+					return "", err
+				}
+				return "saved " + path, nil
+			}}, nil
+		},
+	}
 }

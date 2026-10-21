@@ -80,7 +80,13 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	}
 	s := &Server{dirs: dirs, cfg: cfg, vault: v, audit: al, port: opts.Port, devOrigin: opts.DevOrigin}
 	s.ws = workspace.NewManager(dirs.Workspaces(), cfg.ExternalWorkspaces(), cfg.SetExternalWorkspaces)
-	s.hub = connect.NewHub(v, dirs.WorkspaceState)
+	// Older versions kept per-workspace state outside the folder; adopt it.
+	for _, w := range s.ws.List() {
+		if err := w.AdoptLegacyState(dirs.WorkspaceState(w.Name())); err != nil {
+			log.Printf("workspace %s: moving legacy state: %v", w.Name(), err)
+		}
+	}
+	s.hub = connect.NewHub(v, s.stateDir)
 	s.docker = docker.New(s.hub)
 	s.kube = kube.New(s.hub, v)
 	s.mcp = mcpx.New(v)
@@ -89,7 +95,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.agents = agent.NewManager(agent.Deps{
 		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, Vault: v, MCP: s.mcp, Audit: al,
 		Router:   s.router,
-		StateDir: dirs.WorkspaceState,
+		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {
 			if w.Settings.DefaultModel != "" {
 				return w.Settings.DefaultModel
@@ -117,6 +123,14 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// stateDir is a workspace's local-only state folder (<workspace>/.opsdeck).
+func (s *Server) stateDir(ws string) string {
+	if w, err := s.ws.Get(ws); err == nil {
+		return w.StateDir()
+	}
+	return s.dirs.WorkspaceState(ws)
 }
 
 func (s *Server) router() *llm.Router {

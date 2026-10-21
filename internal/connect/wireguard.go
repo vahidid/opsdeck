@@ -1,0 +1,250 @@
+package connect
+
+import (
+	"bufio"
+	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"net"
+	"net/netip"
+	"strconv"
+	"strings"
+	"time"
+
+	"golang.zx2c4.com/wireguard/conn"
+	"golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/tun/netstack"
+)
+
+// wgConfig is a parsed wg-quick configuration.
+type wgConfig struct {
+	PrivateKey string
+	Addresses  []netip.Addr
+	DNS        []netip.Addr
+	MTU        int
+	Peers      []wgPeer
+}
+
+type wgPeer struct {
+	PublicKey    string
+	PresharedKey string
+	Endpoint     string
+	AllowedIPs   []string
+	Keepalive    int
+}
+
+func parseWGConfig(text string) (*wgConfig, error) {
+	cfg := &wgConfig{MTU: 1420}
+	section := ""
+	var peer *wgPeer
+	sc := bufio.NewScanner(strings.NewReader(text))
+	for line := 1; sc.Scan(); line++ {
+		l := strings.TrimSpace(sc.Text())
+		if i := strings.IndexAny(l, "#;"); i >= 0 {
+			l = strings.TrimSpace(l[:i])
+		}
+		if l == "" {
+			continue
+		}
+		if strings.HasPrefix(l, "[") {
+			section = strings.ToLower(strings.Trim(l, "[]"))
+			if section == "peer" {
+				cfg.Peers = append(cfg.Peers, wgPeer{})
+				peer = &cfg.Peers[len(cfg.Peers)-1]
+			}
+			continue
+		}
+		k, v, ok := strings.Cut(l, "=")
+		if !ok {
+			return nil, fmt.Errorf("line %d: expected key = value", line)
+		}
+		k, v = strings.ToLower(strings.TrimSpace(k)), strings.TrimSpace(v)
+		switch section {
+		case "interface":
+			switch k {
+			case "privatekey":
+				cfg.PrivateKey = v
+			case "address":
+				for _, a := range splitList(v) {
+					p, err := netip.ParsePrefix(a)
+					if err != nil {
+						addr, err2 := netip.ParseAddr(a)
+						if err2 != nil {
+							return nil, fmt.Errorf("line %d: bad address %q", line, a)
+						}
+						cfg.Addresses = append(cfg.Addresses, addr)
+						continue
+					}
+					cfg.Addresses = append(cfg.Addresses, p.Addr())
+				}
+			case "dns":
+				for _, a := range splitList(v) {
+					if addr, err := netip.ParseAddr(a); err == nil {
+						cfg.DNS = append(cfg.DNS, addr)
+					}
+				}
+			case "mtu":
+				if n, err := strconv.Atoi(v); err == nil {
+					cfg.MTU = n
+				}
+			}
+		case "peer":
+			switch k {
+			case "publickey":
+				peer.PublicKey = v
+			case "presharedkey":
+				peer.PresharedKey = v
+			case "endpoint":
+				peer.Endpoint = v
+			case "allowedips":
+				peer.AllowedIPs = append(peer.AllowedIPs, splitList(v)...)
+			case "persistentkeepalive":
+				peer.Keepalive, _ = strconv.Atoi(v)
+			}
+		}
+	}
+	if cfg.PrivateKey == "" {
+		return nil, fmt.Errorf("[Interface] PrivateKey is missing")
+	}
+	if len(cfg.Addresses) == 0 {
+		return nil, fmt.Errorf("[Interface] Address is missing")
+	}
+	if len(cfg.Peers) == 0 {
+		return nil, fmt.Errorf("no [Peer] section")
+	}
+	return cfg, nil
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func keyHex(b64 string) (string, error) {
+	b, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(b) != 32 {
+		return "", fmt.Errorf("invalid WireGuard key")
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (c *wgConfig) uapi(ctx context.Context) (string, error) {
+	var b strings.Builder
+	k, err := keyHex(c.PrivateKey)
+	if err != nil {
+		return "", fmt.Errorf("PrivateKey: %w", err)
+	}
+	fmt.Fprintf(&b, "private_key=%s\nreplace_peers=true\n", k)
+	for _, p := range c.Peers {
+		pk, err := keyHex(p.PublicKey)
+		if err != nil {
+			return "", fmt.Errorf("peer PublicKey: %w", err)
+		}
+		fmt.Fprintf(&b, "public_key=%s\n", pk)
+		if p.PresharedKey != "" {
+			psk, err := keyHex(p.PresharedKey)
+			if err != nil {
+				return "", fmt.Errorf("PresharedKey: %w", err)
+			}
+			fmt.Fprintf(&b, "preshared_key=%s\n", psk)
+		}
+		if p.Endpoint != "" {
+			host, port, err := net.SplitHostPort(p.Endpoint)
+			if err != nil {
+				return "", fmt.Errorf("endpoint %q: %w", p.Endpoint, err)
+			}
+			ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+			if err != nil || len(ips) == 0 {
+				return "", fmt.Errorf("resolve endpoint %s: %v", host, err)
+			}
+			ip := ips[0]
+			for _, cand := range ips {
+				if cand.Is4() {
+					ip = cand
+					break
+				}
+			}
+			fmt.Fprintf(&b, "endpoint=%s\n", net.JoinHostPort(ip.Unmap().String(), port))
+		}
+		if p.Keepalive > 0 {
+			fmt.Fprintf(&b, "persistent_keepalive_interval=%d\n", p.Keepalive)
+		}
+		for _, a := range p.AllowedIPs {
+			fmt.Fprintf(&b, "allowed_ip=%s\n", a)
+		}
+	}
+	return b.String(), nil
+}
+
+// wgTunnel is a userspace WireGuard interface with its own TCP/IP stack:
+// no root, no system routes, and many can run side by side.
+type wgTunnel struct {
+	dev  *device.Device
+	tnet *netstack.Net
+	addr string
+}
+
+func startWireGuard(ctx context.Context, confText string) (*wgTunnel, error) {
+	cfg, err := parseWGConfig(confText)
+	if err != nil {
+		return nil, err
+	}
+	ipc, err := cfg.uapi(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tunDev, tnet, err := netstack.CreateNetTUN(cfg.Addresses, cfg.DNS, cfg.MTU)
+	if err != nil {
+		return nil, err
+	}
+	logger := &device.Logger{Verbosef: device.DiscardLogf, Errorf: device.DiscardLogf}
+	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), logger)
+	if err := dev.IpcSet(ipc); err != nil {
+		dev.Close()
+		return nil, fmt.Errorf("configure wireguard: %w", err)
+	}
+	if err := dev.Up(); err != nil {
+		dev.Close()
+		return nil, err
+	}
+	return &wgTunnel{dev: dev, tnet: tnet, addr: cfg.Addresses[0].String()}, nil
+}
+
+func (t *wgTunnel) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return t.tnet.DialContext(ctx, network, addr)
+}
+
+func (t *wgTunnel) Close() { t.dev.Close() }
+
+// stats returns the most recent handshake and transfer counters.
+func (t *wgTunnel) stats() (lastHandshake time.Time, rx, tx int64) {
+	s, err := t.dev.IpcGet()
+	if err != nil {
+		return
+	}
+	var sec int64
+	for _, line := range strings.Split(s, "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		n, _ := strconv.ParseInt(v, 10, 64)
+		switch k {
+		case "last_handshake_time_sec":
+			if n > sec {
+				sec = n
+			}
+		case "rx_bytes":
+			rx += n
+		case "tx_bytes":
+			tx += n
+		}
+	}
+	if sec > 0 {
+		lastHandshake = time.Unix(sec, 0)
+	}
+	return
+}

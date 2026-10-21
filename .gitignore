@@ -1,0 +1,12 @@
+# build outputs
+/bin/
+/dist/
+internal/server/dist/*
+!internal/server/dist/.keep
+
+# web
+web/node_modules/
+
+# local
+*.log
+.DS_Store

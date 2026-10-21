@@ -79,11 +79,14 @@ type Settings = { autoLockMinutes: number; defaultModel: string;
 | GET | `/api/workspaces/{ws}/validate` | → `[{level: "error"\|"warning", resource, message}]` |
 | GET | `/api/workspaces/{ws}/topology` | → `{nodes: [{id, kind, name, environment, label}], edges: [{from, to}]}` (edge = "from is reached via to") |
 | GET | `/api/workspaces/{ws}/resolve/{kind}/{name}` | → `{path: [{kind, name, label}]}` (outermost hop first) |
-| GET | `/api/workspaces/{ws}/docs` | → `[{path, title, size, updated}]` — `OPSDECK.md`, `docs/**.md`, `skills/*.md` |
+| GET | `/api/workspaces/{ws}/docs` | → `[{path, title, size, updated}]` — `OPSDECK.md`, `docs/**.md`, `reports/**.md`, `skills/*.md` |
 | GET | `/api/workspaces/{ws}/docs/file?path=` | → `{path, content}` |
 | PUT | `/api/workspaces/{ws}/docs/file` | `{path, content}` |
 | DELETE | `/api/workspaces/{ws}/docs/file?path=` | |
 | GET/PUT | `/api/workspaces/{ws}/memory` | `{content}` (agent memory, markdown) |
+| GET | `/api/workspaces/{ws}/artifacts` | → `[{path, size, updated}]` newest first (`artifacts/INDEX.md` first) |
+| GET | `/api/workspaces/{ws}/artifacts/file?path=` | → `{path, content, truncated}` |
+| DELETE | `/api/workspaces/{ws}/artifacts/file?path=` | |
 | GET | `/api/workspaces/{ws}/skills` | → `[{name, description, path}]` |
 | GET | `/api/workspaces/{ws}/mcp` | → `[{name, status, error, tools: [{name, description, readOnly}]}]` |
 

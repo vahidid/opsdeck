@@ -18,6 +18,9 @@ acme/
 ├── skills/               # reusable procedures the agent can load
 ├── reports/              # analyses, audits, incident write-ups, plans saved by the agent
 │   └── 2026/10/2026-10-21-0930-disk-and-memory-audit-of-prod.md
+├── artifacts/            # evidence files (save_artifact): config snapshots, full command output, generated files
+│   ├── INDEX.md          #   what was saved, when, from where, by which session, and why
+│   └── 2026-10-21/app-1/etc/nginx/nginx.conf
 ├── MEMORY.md             # facts the agent learned about this project (memory tool)
 ├── .gitignore            # ignores .opsdeck/
 └── .opsdeck/             # local-only, not shared: agent sessions (transcripts), pinned host keys
@@ -28,6 +31,9 @@ acme/
 Everything except `.opsdeck/` can be committed to git and shared with the team.
 **No secrets are ever stored in the folder** — only `vault://` references; secrets stay
 in each person's local vault. Command output in sessions and reports is redacted.
+
+Artifacts are text only (max 5 MB each), redacted before they are written, and never
+overwritten (a second snapshot of the same file on the same day gets a time suffix).
 
 Reports carry front matter (`title`, `created`, `session`, `model`, `tags`) so you can
 trace a result back to the agent session that produced it.

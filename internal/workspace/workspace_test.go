@@ -132,6 +132,33 @@ func TestManagerAndValidation(t *testing.T) {
 	if p, err := w.WriteReport(ReportMeta{Title: "Disk usage / prod!"}, "body", time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC)); err != nil || p != "reports/2026/10/2026-10-21-0930-disk-usage-prod.md" {
 		t.Fatalf("report path %q %v", p, err)
 	}
+	// Artifacts: sanitised paths, never overwritten, text only.
+	now := time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC)
+	if p := ArtifactPath(now, "app-1", "/etc/../nginx/ng inx.conf"); p != "artifacts/2026-10-21/app-1/etc/nginx/ng_inx.conf" {
+		t.Fatalf("artifact path %q", p)
+	}
+	if p := ArtifactPath(now, "../x", "../../a"); p != "artifacts/2026-10-21/x/a" {
+		t.Fatalf("artifact path %q", p)
+	}
+	p1, err := w.SaveArtifact("artifacts/2026-10-21/app-1/a.txt", []byte("one"), ArtifactMeta{Source: "text"}, now)
+	must(err)
+	p2, err := w.SaveArtifact("artifacts/2026-10-21/app-1/a.txt", []byte("two"), ArtifactMeta{Source: "text"}, now)
+	must(err)
+	if p1 == p2 {
+		t.Fatal("artifact overwritten")
+	}
+	if _, err := w.SaveArtifact("artifacts/x.bin", []byte{0xff, 0x00, 0x01}, ArtifactMeta{}, now); err == nil {
+		t.Fatal("binary accepted")
+	}
+	if _, err := w.SaveArtifact("docs/x.md", []byte("x"), ArtifactMeta{}, now); err == nil {
+		t.Fatal("artifact outside artifacts/ accepted")
+	}
+	if len(w.Artifacts()) != 3 { // two files + INDEX.md
+		t.Fatalf("artifacts: %+v", w.Artifacts())
+	}
+	if c, _, err := w.ReadArtifact(p2, 100); err != nil || c != "two" {
+		t.Fatalf("read artifact: %q %v", c, err)
+	}
 	must(m.Delete("acme"))
 	if _, err := m.Get("acme"); err == nil {
 		t.Fatal("not deleted")

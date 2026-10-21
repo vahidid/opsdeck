@@ -73,6 +73,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/docs/file", u(s.docGet))
 	mux.HandleFunc("PUT /api/workspaces/{ws}/docs/file", u(s.docPut))
 	mux.HandleFunc("DELETE /api/workspaces/{ws}/docs/file", u(s.docDelete))
+	mux.HandleFunc("GET /api/workspaces/{ws}/artifacts", u(s.artifactsList))
+	mux.HandleFunc("GET /api/workspaces/{ws}/artifacts/file", u(s.artifactGet))
+	mux.HandleFunc("DELETE /api/workspaces/{ws}/artifacts/file", u(s.artifactDelete))
 	mux.HandleFunc("GET /api/workspaces/{ws}/memory", u(s.memoryGet))
 	mux.HandleFunc("PUT /api/workspaces/{ws}/memory", u(s.memoryPut))
 	mux.HandleFunc("GET /api/workspaces/{ws}/skills", u(s.skillsList))
@@ -908,6 +911,42 @@ func (s *Server) docDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.record(r, ws.Name(), "doc.delete", p, nil, nil)
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) artifactsList(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.workspace(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, 200, ws.Artifacts())
+}
+
+func (s *Server) artifactGet(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.workspace(w, r)
+	if !ok {
+		return
+	}
+	p := r.URL.Query().Get("path")
+	c, trunc, err := ws.ReadArtifact(p, 2<<20)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"path": p, "content": c, "truncated": trunc})
+}
+
+func (s *Server) artifactDelete(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.workspace(w, r)
+	if !ok {
+		return
+	}
+	p := r.URL.Query().Get("path")
+	if err := ws.DeleteArtifact(p); err != nil {
+		fail(w, err)
+		return
+	}
+	s.record(r, ws.Name(), "artifact.delete", p, nil, nil)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

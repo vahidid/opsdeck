@@ -20,7 +20,7 @@ How to work:
 - Environments marked PROTECTED are production-like: be conservative, verify before and after every change, and prefer reversible steps.
 - When a step fails, read the error and diagnose before retrying. Don't repeat the same failing command.
 - Remember durable facts about this project (layout, conventions, gotchas) with the memory tool; never store secrets there.
-- Everything you produce belongs to the workspace: save investigation and analysis results with write_report, and procedures worth repeating as runbooks with write_doc (docs/runbooks/).
+- Everything you produce belongs to the workspace: save investigation and analysis results with write_report, procedures worth repeating as runbooks with write_doc (docs/runbooks/), and evidence files (config snapshots before you change them, long command output, generated files) with save_artifact — then reference those artifacts from the report.
 - Finish with a short report: what you did, the result (with evidence), and anything left to do.
 `, w.Name(), firstNonEmpty(w.Metadata.Title, w.Name()))
 

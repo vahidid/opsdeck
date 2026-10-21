@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Brain, ClipboardList, FilePlus2, FileText, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Brain, ClipboardList, FileArchive, FilePlus2, FileText, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { DocInfo } from "../api/types";
 import { useWs } from "../context/app";
@@ -14,6 +14,7 @@ const MEMORY = "__memory__";
 export function DocsPage() {
   const { name: ws } = useWs();
   const list = useAsync(() => api.docs(ws), [ws]);
+  const artifacts = useAsync(() => api.artifacts(ws), [ws]);
   const [sel, setSel] = useState<string>("OPSDECK.md");
   const [content, setContent] = useState<string | null>(null);
   const [edit, setEdit] = useState<string | null>(null);
@@ -23,6 +24,8 @@ export function DocsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const editing = edit !== null;
+  const isArtifact = sel.startsWith("artifacts/");
+  const [truncated, setTruncated] = useState(false);
   const dirty = editing && edit !== content;
 
   useEffect(() => {
@@ -30,8 +33,14 @@ export function DocsPage() {
     setContent(null);
     setEdit(null);
     setLoadErr("");
-    const p = sel === MEMORY ? api.memory(ws) : api.doc(ws, sel);
-    p.then((d) => !cancel && setContent(d.content ?? "")).catch((e) => {
+    setTruncated(false);
+    const p: Promise<{ content: string; truncated?: boolean }> =
+      sel === MEMORY ? api.memory(ws) : sel.startsWith("artifacts/") ? api.artifact(ws, sel) : api.doc(ws, sel);
+    p.then((d) => {
+      if (cancel) return;
+      setContent(d.content ?? "");
+      setTruncated(!!d.truncated);
+    }).catch((e) => {
       if (cancel) return;
       if (sel === "OPSDECK.md") setContent("");
       else setLoadErr(errMsg(e));
@@ -81,10 +90,12 @@ export function DocsPage() {
   async function remove() {
     if (!(await confirm({ title: `Delete ${sel}?`, danger: true, confirmLabel: "Delete" }))) return;
     try {
-      await api.deleteDoc(ws, sel);
+      if (isArtifact) await api.deleteArtifact(ws, sel);
+      else await api.deleteDoc(ws, sel);
       toast.success("Deleted", sel);
       setSel("OPSDECK.md");
       void list.reload();
+      void artifacts.reload();
     } catch (e) {
       toast.error("Delete failed", errMsg(e));
     }
@@ -136,6 +147,19 @@ export function DocsPage() {
               />
             ))}
           </Group>
+          <Group label="Artifacts">
+            {(artifacts.data ?? []).length === 0 && <div className="text-[11px] text-faint px-2">Evidence files the agent keeps</div>}
+            {(artifacts.data ?? []).map((a) => (
+              <DocLink
+                key={a.path}
+                active={sel === a.path}
+                onClick={() => void choose(a.path)}
+                icon={a.path === "artifacts/INDEX.md" ? <ClipboardList /> : <FileArchive />}
+                label={a.path === "artifacts/INDEX.md" ? "Index" : a.path.split("/").pop() ?? a.path}
+                sub={a.path === "artifacts/INDEX.md" ? "what was saved, when and why" : a.path.replace(/^artifacts\//, "").split("/").slice(0, -1).join("/")}
+              />
+            ))}
+          </Group>
           <Group label="Skills">
             {groups.skills.length === 0 && <div className="text-[11px] text-faint px-2">Reusable procedures for the agent</div>}
             {groups.skills.map((d) => (
@@ -148,6 +172,7 @@ export function DocsPage() {
         <div className="flex items-center gap-2 px-5 h-12 border-b border-line shrink-0">
           <span className="font-mono text-[13px] truncate">{title}</span>
           {dirty && <Badge tone="warn">unsaved</Badge>}
+          {truncated && <Badge tone="warn">first 2 MB</Badge>}
           {list.data?.find((d) => d.path === sel)?.updated && (
             <span className="text-[11px] text-faint">updated {timeAgo(list.data.find((d) => d.path === sel)!.updated)}</span>
           )}
@@ -168,9 +193,11 @@ export function DocsPage() {
                   Delete
                 </Button>
               )}
-              <Button size="sm" icon={<Pencil className="size-3.5" />} onClick={() => setEdit(content ?? "")} disabled={content === null}>
-                Edit
-              </Button>
+              {!isArtifact && (
+                <Button size="sm" icon={<Pencil className="size-3.5" />} onClick={() => setEdit(content ?? "")} disabled={content === null}>
+                  Edit
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -195,6 +222,8 @@ export function DocsPage() {
                   }}
                 />
               </div>
+            ) : isArtifact && !sel.endsWith(".md") ? (
+              <pre className="px-6 py-5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-all text-fg">{content}</pre>
             ) : content.trim() ? (
               <div className="max-w-3xl px-8 py-6">
                 <Markdown>{stripFrontMatter(content)}</Markdown>

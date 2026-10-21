@@ -34,8 +34,11 @@ func (w *Workspace) docPath(rel string) (string, error) {
 	if !ok {
 		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md or skills/*.md")
 	}
-	abs := filepath.Join(w.Path, filepath.FromSlash(rel))
-	// Refuse paths that leave the workspace through symlinks.
+	return w.contained(filepath.Join(w.Path, filepath.FromSlash(rel)))
+}
+
+// contained refuses paths that leave the workspace, including through symlinks.
+func (w *Workspace) contained(abs string) (string, error) {
 	root, err := filepath.EvalSymlinks(w.Path)
 	if err != nil {
 		return "", err

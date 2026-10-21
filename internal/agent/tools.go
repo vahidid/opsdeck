@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -204,7 +205,7 @@ func unifiedDiff(path, before, after string) string {
 // Tools returns the built-in tool set.
 func Tools() []Tool {
 	return []Tool{
-		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(),
+		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
 	}
@@ -1101,3 +1102,106 @@ func toolWriteReport() Tool {
 		},
 	}
 }
+
+func toolSaveArtifact() Tool {
+	return Tool{
+		Def: llm.Tool{Name: "save_artifact", Description: "Keep a file as evidence in the workspace (artifacts/<date>/...): source=file copies a text file from a host (e.g. a config snapshot before changing it); source=command saves the FULL output of a command run on a host (it is not sent back to you, only a short preview); source=text saves content you produced (a generated config, a diff, a CSV). Secrets are redacted before saving. Text only, up to 5 MB. Reference saved artifacts from your reports.",
+			Schema: obj(map[string]any{
+				"source":  enum("What to save", "file", "command", "text"),
+				"host":    str("Host name (for file and command)"),
+				"path":    str("Absolute remote path (for file)"),
+				"command": str("Shell command whose output to save (for command)"),
+				"content": str("Content to save (for text)"),
+				"name":    str("File name for command/text artifacts, e.g. nginx-T.txt or upstreams.csv"),
+				"note":    str("Short note for the artifacts index: why this was saved"),
+			}, "source")},
+		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
+			var in struct{ Source, Host, Path, Command, Content, Name, Note string }
+			if err := decode(input, &in); err != nil {
+				return nil, err
+			}
+			redact := NewRedactor(env.Vault.SecretValues).Redact
+			now := time.Now()
+			save := func(rel, content, source string) (string, error) {
+				content = redact(content)
+				path, err := env.WS.SaveArtifact(rel, []byte(content), workspace.ArtifactMeta{Source: source, Session: env.SessionID, Note: in.Note}, now)
+				if err != nil {
+					return "", err
+				}
+				preview := content
+				if len(preview) > 1500 {
+					preview = preview[:1500] + "\n…"
+				}
+				return fmt.Sprintf("saved %s (%d bytes)\npreview:\n%s", path, len(content), preview), nil
+			}
+			name := in.Name
+			switch in.Source {
+			case "text":
+				if name == "" {
+					return nil, errors.New("name is required for text artifacts")
+				}
+				return &Call{Risk: RiskRead, Target: "artifacts", Match: name, Run: func(ctx context.Context) (string, error) {
+					return save(workspace.ArtifactPath(now, "", name), in.Content, "text")
+				}}, nil
+			case "file", "command":
+				h, err := env.host(in.Host)
+				if err != nil {
+					return nil, err
+				}
+				envName, protected := targetInfo(env.WS, h)
+				if in.Source == "file" {
+					if !strings.HasPrefix(in.Path, "/") {
+						return nil, errors.New("path must be absolute")
+					}
+					return &Call{Risk: RiskRead, Target: "host/" + h.Name, Environment: envName, Protected: protected, Match: in.Path, Credentials: env.creds(h),
+						Run: func(ctx context.Context) (string, error) {
+							content, trunc, err := env.Hub.ReadFile(ctx, env.WS, h, in.Path, workspace.MaxArtifactSize)
+							if err != nil {
+								return "", fmt.Errorf("%v (if permission denied, use source=command with 'sudo -n cat %s')", err, in.Path)
+							}
+							if trunc {
+								return "", fmt.Errorf("%s is larger than 5 MB", in.Path)
+							}
+							return save(workspace.ArtifactPath(now, h.Name, in.Path), content, "file "+h.Name+":"+in.Path)
+						}}, nil
+				}
+				if strings.TrimSpace(in.Command) == "" {
+					return nil, errors.New("command is required")
+				}
+				if name == "" {
+					name = strings.Trim(slugRe.ReplaceAllString(strings.ToLower(in.Command), "-"), "-")
+					if len(name) > 50 {
+						name = name[:50]
+					}
+					name += ".txt"
+				}
+				risk, reasons := ClassifyCommand(in.Command)
+				return &Call{Risk: risk, Reasons: reasons, Target: "host/" + h.Name, Environment: envName, Protected: protected, Match: in.Command,
+					Preview: "$ " + in.Command + "\n\non: " + h.Name + " → artifacts/…/" + name, Credentials: env.creds(h),
+					Run: func(ctx context.Context) (string, error) {
+						ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+						defer cancel()
+						res, err := env.Hub.Exec(ctx, env.WS, h, in.Command, nil, workspace.MaxArtifactSize)
+						if err != nil && res.DurationMs == 0 {
+							return "", err
+						}
+						out := res.Stdout
+						if res.Stderr != "" {
+							out += "\n--- stderr ---\n" + res.Stderr
+						}
+						if res.Truncated {
+							out += "\n--- output truncated at 5 MB ---\n"
+						}
+						msg, err := save(workspace.ArtifactPath(now, h.Name, name), out, fmt.Sprintf("command %s: %s (exit %d)", h.Name, in.Command, res.ExitCode))
+						if err != nil {
+							return "", err
+						}
+						return fmt.Sprintf("exit code: %d\n%s", res.ExitCode, msg), nil
+					}}, nil
+			}
+			return nil, fmt.Errorf("unknown source %q (file, command or text)", in.Source)
+		},
+	}
+}
+
+var slugRe = regexp.MustCompile(`[^a-z0-9]+`)

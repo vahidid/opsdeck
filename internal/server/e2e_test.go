@@ -417,6 +417,11 @@ esac
 			{Name: "write_report", Args: map[string]any{"title": "Shop deployment on app-1", "content": "Cloned shop into the apps dir.", "tags": []string{"deploy"}}},
 			{Name: "memory", Args: map[string]any{"action": "append", "content": "shop is deployed from GitRemote/shop into ~/apps/shop on app-1"}},
 		}},
+		{Tools: []fakellm.ToolCall{
+			{Name: "save_artifact", Args: map[string]any{"source": "file", "host": "app-1", "path": filepath.Join(dest, "Dockerfile"), "note": "image base"}},
+			{Name: "save_artifact", Args: map[string]any{"source": "command", "host": "app-1", "command": "cat " + secretFile, "name": "leak.txt"}},
+			{Name: "save_artifact", Args: map[string]any{"source": "text", "name": "../../escape.csv", "content": "host,disk\napp-1,41%"}},
+		}},
 		{Text: "Cloned."},
 	})
 	defer fake2.Close()
@@ -448,7 +453,7 @@ esac
 		if ev["type"] == "tool_result" {
 			results++
 			out := ev["output"].(string)
-			if ev["isError"] == true || (!strings.HasPrefix(out, "saved") && !strings.Contains(out, "HEAD ")) {
+			if ev["isError"] == true || (!strings.Contains(out, "saved") && !strings.Contains(out, "HEAD ")) {
 				t.Fatalf("tool failed: %s", out)
 			}
 		}
@@ -457,8 +462,33 @@ esac
 			t.Fatal("git token leaked into events")
 		}
 	}
-	if results != 4 {
-		t.Fatalf("expected clone, update, report, memory: got %d results", results)
+	if results != 7 {
+		t.Fatalf("expected clone, update, report, memory, 3 artifacts: got %d results", results)
+	}
+	var arts []map[string]any
+	c.must("GET", "/api/workspaces/acme/artifacts", nil, &arts)
+	paths := []string{}
+	for _, a := range arts {
+		paths = append(paths, a["path"].(string))
+	}
+	joined := strings.Join(paths, "\n")
+	for _, want := range []string{"artifacts/INDEX.md", "/app-1/" + strings.TrimPrefix(filepath.ToSlash(dest), "/") + "/Dockerfile", "/app-1/leak.txt", "/escape.csv"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("artifact %s missing in:\n%s", want, joined)
+		}
+	}
+	for _, p := range paths {
+		if strings.Contains(p, "..") {
+			t.Fatalf("unsafe artifact path %s", p)
+		}
+		var fc map[string]any
+		c.must("GET", "/api/workspaces/acme/artifacts/file?path="+p, nil, &fc)
+		if strings.Contains(fc["content"].(string), "S3cr3t-P4ssw0rd!") {
+			t.Fatalf("secret saved unredacted in %s", p)
+		}
+	}
+	if idx, _ := os.ReadFile(filepath.Join(home, "data", "workspaces", "acme", "artifacts", "INDEX.md")); !strings.Contains(string(idx), "image base") || !strings.Contains(string(idx), sid2) {
+		t.Fatalf("index: %s", idx)
 	}
 	// Everything the agent produced lives in the workspace folder.
 	wsDir := filepath.Join(home, "data", "workspaces", "acme")

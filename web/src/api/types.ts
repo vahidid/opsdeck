@@ -49,7 +49,13 @@ export type InstalledAgent = { kind: AgentKind; name: string; command: string; a
 export const AGENT_KINDS: AgentKind[] = ["claude-code", "codex", "gemini-cli", "acp"];
 export const isAgentKind = (t: string): t is AgentKind => (AGENT_KINDS as string[]).includes(t);
 export type LocalAccess = { disabled: boolean; allowedDirs: string[]; autoReadCommands: boolean };
-export type Settings = { autoLockMinutes: number; defaultModel: string; providers: ProviderConfig[]; localAccess: LocalAccess };
+export type Settings = {
+  autoLockMinutes: number;
+  defaultModel: string;
+  providers: ProviderConfig[];
+  localAccess: LocalAccess;
+  vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none" };
+};
 export type ModelInfo = { id: string; provider: string; model: string; label: string };
 
 export type WorkspaceSummary = {
@@ -93,13 +99,14 @@ export type Resource = {
 export type KindField = {
   key: string;
   label: string;
-  type: "string" | "number" | "text" | "secretRef" | "list" | "select" | "resourceRef";
+  type: "string" | "number" | "bool" | "text" | "secretRef" | "list" | "select" | "resourceRef";
   required?: boolean;
   placeholder?: string;
   help?: string;
   options?: string[];
   refKinds?: string[];
   itemTypes?: string[];
+  default?: string;
 };
 export type KindSchema = {
   kind: string;
@@ -127,11 +134,27 @@ export type McpStatus = {
 export type NetworkStatus = {
   name: string;
   kind: string;
-  status: "down" | "up" | "error";
-  error: string;
-  since: string;
-  address: string;
+  mode: "" | "userspace" | "system";
+  status: "down" | "connecting" | "auth" | "up" | "error";
+  error?: string;
+  authUrl?: string;
+  since?: string;
+  address?: string;
+  interface?: string;
+  server?: string;
+  detail?: string;
+  proxy?: string;
+  lastHandshake?: string;
+  rxBytes: number;
+  txBytes: number;
+  missing?: string;
+  usedBy: string[];
 };
+
+export const NETWORK_KINDS = ["WireGuard", "Tailscale", "NetBird", "OpenVPN", "OpenConnect", "OpenFortiVPN", "SocksProxy"];
+export type VpnDriver = { kind: string; label: string; modes: string[]; missing: Record<string, string> };
+export type VpnDrivers = { drivers: VpnDriver[]; privileged: boolean; elevate: string; os: string };
+export type LogLine = { time: string; text: string };
 
 export type CheckResult = { reachable: boolean; latencyMs: number; error: string; path: PathHop[] | string[] | null };
 export type HostStats = {

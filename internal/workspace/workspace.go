@@ -150,6 +150,22 @@ func (r *Resource) Str(key string) string {
 	return ""
 }
 
+// Bool returns a boolean spec field, or def when unset.
+func (r *Resource) Bool(key string, def bool) bool {
+	switch v := r.Spec[key].(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(v) {
+		case "true", "yes", "on", "1":
+			return true
+		case "false", "no", "off", "0":
+			return false
+		}
+	}
+	return def
+}
+
 // Int returns a numeric spec field or def.
 func (r *Resource) Int(key string, def int) int {
 	switch v := r.Spec[key].(type) {
@@ -222,7 +238,7 @@ func (w *Workspace) FindRef(ref string) *Resource {
 	switch strings.ToLower(kind) {
 	case "network", "net":
 		for _, r := range w.Resources {
-			if r.Name == name && isNetworkKind(r.Kind) {
+			if r.Name == name && IsNetworkKind(r.Kind) {
 				return r
 			}
 		}
@@ -579,9 +595,10 @@ func (w *Workspace) DeleteResource(id string) error {
 }
 
 func defaultFile(kind string) string {
-	switch kind {
-	case "WireGuard", "SocksProxy":
+	if IsNetworkKind(kind) {
 		return "resources/networks.yaml"
+	}
+	switch kind {
 	case "Host", "HostGroup":
 		return "resources/hosts.yaml"
 	case "KubernetesCluster":

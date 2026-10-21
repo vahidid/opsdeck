@@ -1,4 +1,6 @@
 import type {
+  LogLine,
+  VpnDrivers,
   AgentEvent,
   AuditEntry,
   AuditVerify,
@@ -173,6 +175,8 @@ export const api = {
   networks: (ws: string) => arr(get<NetworkStatus[]>(`${W(ws)}/networks`)),
   networkUp: (ws: string, name: string) => post(`${W(ws)}/networks/${e(name)}/up`),
   networkDown: (ws: string, name: string) => post(`${W(ws)}/networks/${e(name)}/down`),
+  networkLog: (ws: string, name: string, lines = 300) => arr(get<LogLine[]>(`${W(ws)}/networks/${e(name)}/log?lines=${lines}`)),
+  vpnDrivers: () => get<VpnDrivers>(`/api/vpn/drivers`),
 
   // hosts
   checkHost: (ws: string, host: string) => post<CheckResult>(`${H(ws, host)}/check`),

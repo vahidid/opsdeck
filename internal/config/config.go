@@ -31,6 +31,14 @@ type Settings struct {
 	DefaultModel    string      `yaml:"defaultModel,omitempty" json:"defaultModel"`
 	Providers       []Provider  `yaml:"providers" json:"providers"`
 	LocalAccess     LocalAccess `yaml:"localAccess" json:"localAccess"`
+	VPN             VPN         `yaml:"vpn" json:"vpn"`
+}
+
+// VPN holds machine-level VPN settings.
+type VPN struct {
+	// Elevate runs system-mode VPN clients (openvpn, openconnect, wg-quick)
+	// with: auto (sudo -n when opsdeck is not root), sudo, pkexec or none.
+	Elevate string `yaml:"elevate,omitempty" json:"elevate"`
 }
 
 // LocalAccess controls the agent's tools for this computer (files outside the

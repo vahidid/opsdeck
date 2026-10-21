@@ -500,7 +500,7 @@ func toolKnownHostsImport() Tool {
 
 func toolWorkspaceResource() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "workspace_resource", Description: "Read or change the workspace inventory. action=get returns one resource as YAML; action=apply creates or replaces a resource (the full object: kind, name, environment, tags, via, description, spec); action=delete removes one. Kinds and their spec fields: Host{address, port, user, auth: vault://..., roles}, HostGroup{hosts, roles, tags}, WireGuard{config: vault://...}, SocksProxy{address, auth}, Panel{url, ...}, GitRemote{url, auth}, Database{...}, KubernetesCluster{...}. via is network/<name> or host/<jump>. Never put secrets in spec: use vault:// references.",
+		Def: llm.Tool{Name: "workspace_resource", Description: "Read or change the workspace inventory. action=get returns one resource as YAML; action=apply creates or replaces a resource (the full object: kind, name, environment, tags, via, description, spec); action=delete removes one. Kinds and their spec fields: Host{address, port, user, auth: vault://..., roles}, HostGroup{hosts, roles, tags}, VPN profiles WireGuard{config, mode, proxyPort}, Tailscale{controlUrl, authKey, hostname, acceptRoutes, ephemeral, proxyPort}, NetBird{managementUrl, setupKey, hostname, mode, proxyPort}, OpenVPN{config, auth, allowScripts}, OpenConnect{protocol: anyconnect|fortinet|gp|pulse|nc|f5|array, server, auth, authGroup, serverCert, cookie, mode, proxyPort}, OpenFortiVPN{server, auth, authGroup, serverCert} (mode is userspace or system), SocksProxy{address, auth}, Panel{url, ...}, GitRemote{url, auth}, Database{...}, KubernetesCluster{...}. via is network/<name> or host/<jump>. Never put secrets in spec: use vault:// references.",
 			Schema: obj(map[string]any{
 				"action":   enum("Action", "get", "apply", "delete"),
 				"id":       str("<kind>/<name> for get and delete"),
@@ -581,10 +581,10 @@ func toolWorkspaceResource() Tool {
 						}
 						if oldID != "" {
 							// connection settings may have changed
-							switch r.Kind {
-							case "Host":
+							switch {
+							case r.Kind == "Host":
 								env.Hub.Disconnect(env.WS.Name(), r.Name)
-							case "WireGuard", "SocksProxy":
+							case workspace.IsNetworkKind(r.Kind):
 								env.Hub.NetworkDown(env.WS.Name(), r.Name)
 							}
 						}

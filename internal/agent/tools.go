@@ -217,7 +217,7 @@ func Tools() []Tool {
 		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
-		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(),
+		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 	}
 }
 
@@ -227,7 +227,7 @@ func toolInventory() Tool {
 	return Tool{
 		Def: llm.Tool{Name: "inventory", Description: "List the workspace's resources (hosts, groups, networks, panels, clusters, databases, git remotes) with addresses, environments, roles and how each is reached. Never contains secrets. Filter by kind, environment or a text query.",
 			Schema: obj(map[string]any{
-				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, SocksProxy, Panel, GitRemote, Database, KubernetesCluster"),
+				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, GitRemote, Database, KubernetesCluster"),
 				"environment": str("Optional environment filter"),
 				"query":       str("Optional case-insensitive text to match in name, address, tags, roles or description"),
 			})},
@@ -248,7 +248,14 @@ func renderInventory(env *Env, kind, envName, query string) string {
 	q := strings.ToLower(query)
 	netStatus := map[string]string{}
 	for _, n := range env.Hub.Networks(env.WS) {
-		netStatus[n.Name] = n.Status
+		st := n.Status
+		if n.Mode != "" {
+			st += " mode=" + n.Mode
+		}
+		if n.Status == "up" && n.Address != "" {
+			st += " vpn-address=" + n.Address
+		}
+		netStatus[n.Name] = st
 	}
 	count := 0
 	for _, r := range env.WS.Resources {
@@ -288,7 +295,7 @@ func renderInventory(env *Env, kind, envName, query string) string {
 			path, _ := connect.DescribePath(env.WS, r)
 			attrs = append(attrs, "reached via "+strings.Join(path, " → "))
 		}
-		if st, ok := netStatus[r.Name]; ok && (r.Kind == "WireGuard" || r.Kind == "SocksProxy") {
+		if st, ok := netStatus[r.Name]; ok && workspace.IsNetworkKind(r.Kind) {
 			attrs = append(attrs, "status="+st)
 		}
 		if r.Kind == "HostGroup" {

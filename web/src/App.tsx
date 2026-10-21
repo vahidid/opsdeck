@@ -9,6 +9,7 @@ import { Boot } from "./pages/Boot";
 import { CreateWorkspaceModal, Shell } from "./pages/Shell";
 import { OverviewPage } from "./pages/Overview";
 import { ResourcesPage } from "./pages/Resources";
+import { VPNPage } from "./pages/VPN";
 import { TerminalPage } from "./pages/Terminal";
 import { DockerPage } from "./pages/Docker";
 import { KubernetesPage } from "./pages/Kubernetes";
@@ -94,6 +95,7 @@ function WorkspaceRoutes() {
           <Route path="agent" element={<AgentPage />} />
           <Route path="agent/:sid" element={<AgentPage />} />
           <Route path="resources" element={<ResourcesPage />} />
+          <Route path="vpn" element={<VPNPage />} />
           <Route path="terminal" element={<TerminalPage />} />
           <Route path="docker" element={<DockerPage />} />
           <Route path="kubernetes" element={<KubernetesPage />} />

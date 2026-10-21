@@ -4,15 +4,20 @@ An AI agent harness for infrastructure — like Claude Code / opencode, but its 
 servers, networks/VPNs, containers, clusters and logs instead of a code repository —
 plus a complete local workbench that is just as useful without AI.
 
-- **Workspaces** — one per project: hosts, groups, WireGuard/SOCKS networks, jump hosts,
+- **Workspaces** — one per project: hosts, groups, VPN profiles and proxies, jump hosts,
   web panels, Git repos, databases, Kubernetes clusters, docs and runbooks. Plain YAML +
   Markdown, git-friendly, **never contain secrets**.
 - **Vault** — local, encrypted (Argon2id → XChaCha20-Poly1305, a separate key per
   workspace): SSH keys (generate/import), logins with TOTP, API tokens, kubeconfigs,
   VPN configs, certificates, secret files. Secrets are *used* by opsdeck, never shown to
   the agent.
-- **Reachability** — `via: network/office-wg` or `via: host/bastion`; opsdeck brings up
-  userspace WireGuard tunnels (no root, many at once) and chains SSH jump hosts
+- **VPNs** — WireGuard, Tailscale/Headscale, NetBird, OpenVPN, Cisco AnyConnect, ocserv,
+  FortiGate, GlobalProtect, Pulse, F5 and SOCKS, each in **userspace** mode (network stack
+  inside opsdeck: no root, many at once, optional local SOCKS5 proxy for other apps) or
+  **system** mode (TUN with system routes, through sudo/pkexec). A VPN page per workspace
+  with connect/disconnect, login links, logs and live status — see [docs/vpn.md](docs/vpn.md).
+- **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
+  the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
 - **Workbench** — SSH terminals in the browser, remote file browser/editor, quick host
   stats, live log streaming (journald, files, containers), Docker and Kubernetes views,
@@ -33,7 +38,7 @@ plus a complete local workbench that is just as useful without AI.
 
 ## Quick start
 
-Requirements to build: Go 1.24+ (the toolchain auto-downloads 1.26), Node 20+.
+Requirements to build: Go 1.24+ (the toolchain auto-downloads 1.27), Node 20+. Optional for VPNs: openvpn, openconnect (+ ocproxy), openfortivpn, wireguard-tools.
 
 ```bash
 make build          # builds the web UI and bin/opsdeck
@@ -102,7 +107,9 @@ external infrastructure needed.
 
 ## Status and known limits
 
-- OpenVPN networks are not supported yet (WireGuard and SOCKS5 are).
+- OpenVPN, OpenConnect (AnyConnect/ocserv/FortiGate/…) and openfortivpn profiles need those
+  programs installed (`ocproxy` for OpenConnect userspace mode); Tailscale, NetBird and
+  WireGuard are built in. OpenVPN and openfortivpn only run in system mode.
 - Docker is driven through the `docker` CLI on the host over SSH (retries with `sudo -n`).
 - PuTTY `.ppk` keys must be converted to OpenSSH format first.
 - Kubeconfigs that use `exec` auth plugins run those plugins on this machine.
@@ -119,5 +126,6 @@ external infrastructure needed.
 - [docs/harness.md](docs/harness.md) — agent loop, tools, permissions
 - [docs/vault.md](docs/vault.md) — vault design
 - [docs/workspace.md](docs/workspace.md) — workspace model and files
+- [docs/vpn.md](docs/vpn.md) — VPN drivers, userspace vs system mode, credentials
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

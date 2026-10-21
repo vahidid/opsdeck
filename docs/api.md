@@ -59,6 +59,7 @@ type Settings = { autoLockMinutes: number; defaultModel: string;
   providers: { id: string; type: "anthropic"|"openai"; name: string; baseUrl: string;
                apiKeyRef: string;   // vault ref, e.g. vault://global/anthropic-key ; empty for Ollama
                models: string[] }[];
+  vpn: { elevate: "auto"|"sudo"|"pkexec"|"none" };   // how system-mode VPN clients get root
   localAccess: { disabled: boolean;        // agent access to this computer (default on)
                  allowedDirs: string[];    // readable without asking; "~/..." is expanded
                  autoReadCommands: boolean } } // run read-only local_exec commands without asking
@@ -112,12 +113,14 @@ type KindSchema = { kind: string; label: string; category: "compute"|"network"|"
                     canVia: boolean; fields: { key: string; label: string; type: "string"|"number"|"text"|"secretRef"|"list"|"select"|"resourceRef";
                     required?: boolean; placeholder?: string; help?: string; options?: string[]; refKinds?: string[]; itemTypes?: string[] }[] }
 ```
-Kinds: `Host`, `HostGroup`, `WireGuard`, `SocksProxy`, `Panel`, `GitRemote`, `KubernetesCluster`.
+Kinds: `Host`, `HostGroup`, network kinds `WireGuard`, `Tailscale`, `NetBird`, `OpenVPN`, `OpenConnect`, `OpenFortiVPN`, `SocksProxy` (see [vpn.md](vpn.md)), `Panel`, `GitRemote`, `Database`, `KubernetesCluster`. Field types: string, number, bool, text, secretRef, list, select, resourceRef (`default` gives the implicit value).
 
 ## Networks
 
-| GET | `/api/workspaces/{ws}/networks` | → `[{name, kind, status: "down"\|"up"\|"error", error, since, address}]` |
-| POST | `/api/workspaces/{ws}/networks/{name}/up` / `/down` | |
+| GET | `/api/workspaces/{ws}/networks` | → `[{name, kind, mode: "userspace"\|"system"\|"", status: "down"\|"connecting"\|"auth"\|"up"\|"error", error, authUrl, since, address, interface, server, detail, proxy, lastHandshake, rxBytes, txBytes, missing, usedBy}]` |
+| POST | `/api/workspaces/{ws}/networks/{name}/up` / `/down` | `up` waits up to ~20 s; slower connects continue in the background (`connecting` / `auth`) |
+| GET | `/api/workspaces/{ws}/networks/{name}/log?lines=N` | → `[{time, text}]` |
+| GET | `/api/vpn/drivers` | → `{drivers: [{kind, label, modes, missing: {mode: reason}}], privileged, elevate, os}` |
 
 Networks used by `via` are brought up automatically when needed.
 

@@ -96,7 +96,7 @@ var Types = []TypeDef{
 		{Name: "context", Label: "Default context"},
 	}},
 	{Type: "vpn", Label: "VPN config", Fields: []FieldDef{
-		{Name: "config", Label: "WireGuard config (.conf)", Secret: true, Multiline: true, Required: true},
+		{Name: "config", Label: "Config file (WireGuard .conf / OpenVPN .ovpn)", Secret: true, Multiline: true, Required: true},
 	}},
 	{Type: "certificate", Label: "Certificate", Fields: []FieldDef{
 		{Name: "certificate", Label: "Certificate chain (PEM)", Multiline: true, Required: true},

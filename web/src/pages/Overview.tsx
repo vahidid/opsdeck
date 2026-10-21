@@ -10,6 +10,7 @@ import { Badge, Button, Card, EmptyState, IconButton, StatusDot, cx } from "../c
 import { useToast } from "../components/overlay";
 import { useAsync, useInterval } from "../hooks";
 import { fmtTime, timeAgo } from "../lib/format";
+import { netStateLabel, netTone, vpnLabel } from "./VPN";
 
 export function OverviewPage() {
   const { kinds } = useApp();
@@ -22,7 +23,7 @@ export function OverviewPage() {
   const nets = useAsync(() => api.networks(ws), [ws]);
   const audit = useAsync(() => api.audit({ workspace: ws, limit: 12 }), [ws]);
   const [netBusy, setNetBusy] = useState<string | null>(null);
-  useInterval(() => void nets.reload(), 10000);
+  useInterval(() => void nets.reload(), (nets.data ?? []).some((n) => n.status === "connecting" || n.status === "auth") ? 2000 : 8000);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -33,7 +34,7 @@ export function OverviewPage() {
   async function toggleNet(n: NetworkStatus) {
     setNetBusy(n.name);
     try {
-      if (n.status === "up") await api.networkDown(ws, n.name);
+      if (n.status === "up" || n.status === "connecting" || n.status === "auth") await api.networkDown(ws, n.name);
       else await api.networkUp(ws, n.name);
       await nets.reload();
     } catch (e) {
@@ -130,34 +131,61 @@ export function OverviewPage() {
         </Card>
 
         <div className="space-y-4">
-          <Card title="Networks" bodyClass="p-0">
+          <Card
+            title="VPN & networks"
+            bodyClass="p-0"
+            actions={
+              <Link to="../vpn" className="text-[11px] text-accent hover:underline">
+                Manage
+              </Link>
+            }
+          >
             {(nets.data ?? []).length === 0 ? (
-              <div className="p-4 text-xs text-faint">No WireGuard / proxy networks in this workspace.</div>
+              <div className="p-4 text-xs text-faint">
+                No VPN profiles yet.{" "}
+                <Link to="../vpn" className="text-accent hover:underline">
+                  Add WireGuard, Tailscale, NetBird, OpenVPN, AnyConnect, FortiGate…
+                </Link>
+              </div>
             ) : (
               <ul>
-                {nets.data!.map((n) => (
-                  <li key={n.name} className="flex items-center gap-2.5 px-3 h-11 border-b border-line last:border-0">
-                    <StatusDot tone={n.status === "up" ? "ok" : n.status === "error" ? "err" : "neutral"} />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-medium truncate">{n.name}</div>
-                      <div className="text-[11px] text-faint truncate">
-                        {n.kind}
-                        {n.status === "up" && n.address ? ` · ${n.address}` : ""}
-                        {n.status === "up" && n.since ? ` · up ${timeAgo(n.since).replace(" ago", "")}` : ""}
-                        {n.status === "error" && n.error ? ` · ${n.error}` : ""}
+                {nets.data!.map((n) => {
+                  const active = n.status === "up" || n.status === "connecting" || n.status === "auth";
+                  const r = resources.find((x) => x.name === n.name && x.kind === n.kind);
+                  return (
+                    <li key={n.name} className="flex items-center gap-2.5 px-3 min-h-11 py-1.5 border-b border-line last:border-0">
+                      <StatusDot tone={netTone(n.status)} pulse={n.status === "connecting" || n.status === "auth"} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-medium truncate">
+                          {n.name} <span className="text-[11px] font-normal text-faint">{vpnLabel(r, n.kind)}{n.mode ? ` · ${n.mode}` : ""}</span>
+                        </div>
+                        <div className={cx("text-[11px] truncate", n.status === "error" ? "text-err" : "text-faint")} title={n.error}>
+                          {netStateLabel(n)}
+                          {n.status === "up" && n.address ? ` · ${n.address}` : ""}
+                          {n.status === "up" && n.since ? ` · ${timeAgo(n.since).replace(" ago", "")}` : ""}
+                          {n.status === "error" && n.error ? ` · ${n.error}` : ""}
+                          {n.status === "down" && n.missing ? ` · can't run here: ${n.missing}` : ""}
+                        </div>
+                        {n.status === "auth" && n.authUrl && (
+                          <a href={n.authUrl} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline">
+                            Open login page →
+                          </a>
+                        )}
                       </div>
-                    </div>
-                    <Button
-                      size="xs"
-                      variant={n.status === "up" ? "secondary" : "subtle"}
-                      loading={netBusy === n.name}
-                      icon={n.status === "up" ? <PowerOff className="size-3" /> : <Power className="size-3" />}
-                      onClick={() => void toggleNet(n)}
-                    >
-                      {n.status === "up" ? "Down" : "Up"}
-                    </Button>
-                  </li>
-                ))}
+                      <Button
+                        size="xs"
+                        variant={active ? "secondary" : "subtle"}
+                        loading={netBusy === n.name}
+                        disabled={!active && !!n.missing}
+                        icon={active ? <PowerOff className="size-3" /> : <Power className="size-3" />}
+                        onClick={() => (!active && n.mode === "system" ? navigate("../vpn") : void toggleNet(n))}
+                        title={!active && n.mode === "system" ? "System-mode VPNs are connected from the VPN page" : undefined}
+                      >
+                        {active ? "Disconnect" : "Connect"}
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>

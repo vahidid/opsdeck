@@ -1,4 +1,4 @@
-package connect
+package vpn
 
 import (
 	"bufio"
@@ -8,13 +8,18 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
+
+	"opsdeck/internal/workspace"
 )
 
 // wgConfig is a parsed wg-quick configuration.
@@ -188,6 +193,7 @@ type wgTunnel struct {
 	dev  *device.Device
 	tnet *netstack.Net
 	addr string
+	done *doneOnce
 }
 
 func startWireGuard(ctx context.Context, confText string) (*wgTunnel, error) {
@@ -213,14 +219,26 @@ func startWireGuard(ctx context.Context, confText string) (*wgTunnel, error) {
 		dev.Close()
 		return nil, err
 	}
-	return &wgTunnel{dev: dev, tnet: tnet, addr: cfg.Addresses[0].String()}, nil
+	return &wgTunnel{dev: dev, tnet: tnet, addr: cfg.Addresses[0].String(), done: newDone()}, nil
 }
 
-func (t *wgTunnel) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+func (t *wgTunnel) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	return t.tnet.DialContext(ctx, network, addr)
 }
 
-func (t *wgTunnel) Close() { t.dev.Close() }
+func (t *wgTunnel) Close() error {
+	t.dev.Close()
+	t.done.finish(ErrStopped)
+	return nil
+}
+
+func (t *wgTunnel) Done() <-chan struct{} { return t.done.Done() }
+func (t *wgTunnel) Err() error            { return t.done.Err() }
+
+func (t *wgTunnel) Info() Info {
+	hs, rx, tx := t.stats()
+	return Info{Address: t.addr, LastHandshake: hs, RxBytes: rx, TxBytes: tx}
+}
 
 // stats returns the most recent handshake and transfer counters.
 func (t *wgTunnel) stats() (lastHandshake time.Time, rx, tx int64) {
@@ -247,4 +265,136 @@ func (t *wgTunnel) stats() (lastHandshake time.Time, rx, tx int64) {
 		lastHandshake = time.Unix(sec, 0)
 	}
 	return
+}
+
+// ---------------------------------------------------------------------------
+// Driver
+
+func init() {
+	register(&Driver{
+		Kind: "WireGuard", Label: "WireGuard", Modes: []string{ModeUserspace, ModeSystem},
+		Needs: func(r *workspace.Resource, mode string) []string {
+			if mode == ModeSystem {
+				return []string{"wg-quick", "wg"}
+			}
+			return nil
+		},
+		Start: func(ctx context.Context, cfg *Config) (Tunnel, error) {
+			conf := cfg.Value("config", "config")
+			if conf == "" {
+				return nil, fmt.Errorf("no WireGuard config: set the profile's config to a vault item of type VPN config")
+			}
+			if cfg.Mode == ModeSystem {
+				return startWGQuick(ctx, cfg, conf)
+			}
+			cfg.Log.Printf("starting userspace WireGuard")
+			t, err := startWireGuard(ctx, conf)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Log.Printf("up: %s", t.addr)
+			return t, nil
+		},
+	})
+}
+
+// wgQuick is a kernel/system WireGuard interface managed by wg-quick.
+type wgQuick struct {
+	cfg   *Config
+	iface string
+	path  string
+	addr  string
+	done  *doneOnce
+	stop  chan struct{}
+
+	mu      sync.Mutex
+	statsAt time.Time
+	hs      time.Time
+	rx, tx  int64
+}
+
+func startWGQuick(ctx context.Context, cfg *Config, conf string) (Tunnel, error) {
+	parsed, err := parseWGConfig(conf)
+	if err != nil {
+		return nil, err
+	}
+	iface := ifaceName("od-", cfg.Res.Name)
+	path := filepath.Join(cfg.RunDir, iface+".conf")
+	if err := writePrivate(path, conf); err != nil {
+		return nil, err
+	}
+	if _, err := run(ctx, []string{"wg-quick", "up", path}, cfg.Elevate, cfg.Log); err != nil {
+		os.Remove(path)
+		return nil, err
+	}
+	t := &wgQuick{cfg: cfg, iface: iface, path: path, addr: parsed.Addresses[0].String(), done: newDone(), stop: make(chan struct{})}
+	go t.watch()
+	return t, nil
+}
+
+// watch notices when the interface disappears (e.g. removed by hand).
+func (t *wgQuick) watch() {
+	tick := time.NewTicker(10 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-t.stop:
+			return
+		case <-tick.C:
+			if _, err := net.InterfaceByName(t.iface); err != nil {
+				t.done.finish(fmt.Errorf("interface %s is gone", t.iface))
+				return
+			}
+		}
+	}
+}
+
+func (t *wgQuick) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	return direct(ctx, network, addr)
+}
+
+func (t *wgQuick) Info() Info {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if time.Since(t.statsAt) > 5*time.Second {
+		t.statsAt = time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		out, err := run(ctx, []string{"wg", "show", t.iface, "dump"}, t.cfg.Elevate, NewLog())
+		cancel()
+		if err == nil {
+			t.hs, t.rx, t.tx = time.Time{}, 0, 0
+			for i, line := range strings.Split(strings.TrimSpace(out), "\n") {
+				f := strings.Split(line, "\t")
+				if i == 0 || len(f) < 7 {
+					continue
+				}
+				if sec, _ := strconv.ParseInt(f[4], 10, 64); sec > 0 && time.Unix(sec, 0).After(t.hs) {
+					t.hs = time.Unix(sec, 0)
+				}
+				rx, _ := strconv.ParseInt(f[5], 10, 64)
+				tx, _ := strconv.ParseInt(f[6], 10, 64)
+				t.rx += rx
+				t.tx += tx
+			}
+		}
+	}
+	return Info{Address: t.addr, Interface: t.iface, LastHandshake: t.hs, RxBytes: t.rx, TxBytes: t.tx}
+}
+
+func (t *wgQuick) Done() <-chan struct{} { return t.done.Done() }
+func (t *wgQuick) Err() error            { return t.done.Err() }
+
+func (t *wgQuick) Close() error {
+	select {
+	case <-t.stop:
+		return nil
+	default:
+		close(t.stop)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, err := run(ctx, []string{"wg-quick", "down", t.path}, t.cfg.Elevate, t.cfg.Log)
+	os.Remove(t.path)
+	t.done.finish(ErrStopped)
+	return err
 }

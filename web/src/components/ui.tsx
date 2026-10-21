@@ -167,7 +167,7 @@ export function Toggle({
   );
 }
 
-type Tone = "neutral" | "ok" | "warn" | "err" | "info" | "accent";
+export type Tone = "neutral" | "ok" | "warn" | "err" | "info" | "accent";
 const tones: Record<Tone, string> = {
   neutral: "bg-panel-3 text-muted border-line",
   ok: "bg-ok/12 text-ok border-ok/25",

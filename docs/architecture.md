@@ -84,7 +84,8 @@ See [harness.md](harness.md) for the agent side and [vault.md](vault.md),
 cmd/opsdeck          CLI entry point (serve, url, paths)
 internal/vault       encrypted store, SSH keys, TOTP, password generator
 internal/workspace   workspace/resource model, YAML files, docs, skills, validation
-internal/connect     WireGuard (userspace), SOCKS, SSH pool + jump hosts, exec/PTY/SFTP, port forwards
+internal/vpn         VPN drivers: WireGuard, Tailscale (tsnet), NetBird (embed), OpenVPN, OpenConnect, openfortivpn; userspace/system modes, local SOCKS5
+internal/connect     networks (VPN profiles, SOCKS), SSH pool + jump hosts, exec/PTY/SFTP, port forwards
 internal/docker      docker CLI over SSH
 internal/kube        Kubernetes client (kubeconfig from the vault, dialed through via)
 internal/llm         model gateway: Anthropic SDK + OpenAI-compatible streaming
@@ -102,7 +103,7 @@ tools/demo           local SSH servers + scripted model for trying the UI
 |---|---|
 | Vault, workspaces, validation, topology | done |
 | SSH (keys, passwords, jump hosts, TOFU known_hosts), terminal, SFTP, stats | done |
-| WireGuard (userspace, parallel), SOCKS5 | done |
+| VPNs: WireGuard, Tailscale/Headscale, NetBird, OpenVPN, OpenConnect (AnyConnect, ocserv, FortiGate, GlobalProtect, Pulse, F5), openfortivpn, SOCKS5 — userspace and system modes | done |
 | OpenVPN | not yet |
 | Docker (CLI over SSH), Kubernetes (client-go) | done |
 | Logs streaming (journald, files, containers, pod logs) | done |

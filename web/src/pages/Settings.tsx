@@ -27,6 +27,7 @@ const AGENT_PRESETS: { kind: AgentKind; label: string; id: string; command: stri
 const NO_LOCAL: Settings["localAccess"] = { disabled: false, allowedDirs: [], autoReadCommands: false };
 const normSettings = (v: Settings): Settings => ({
   ...v,
+  vpn: { elevate: v.vpn?.elevate || "auto" },
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
 });
@@ -310,6 +311,17 @@ export function AppSettingsPage() {
               onChange={(v) => setS({ ...s, localAccess: { ...s.localAccess, disabled: !v } })}
               label="Allow the agent to access this computer"
             />
+            <FormField
+              label="Run system-mode VPNs with"
+              help="System (TUN) VPNs need root. auto = sudo -n when opsdeck is not root (configure passwordless sudo for openvpn, openconnect, openfortivpn and wg-quick); pkexec shows a password dialog on desktops. Userspace VPNs never need this."
+            >
+              <Select value={s.vpn.elevate || "auto"} onChange={(e) => setS({ ...s, vpn: { elevate: e.target.value as Settings["vpn"]["elevate"] } })}>
+                <option value="auto">auto (sudo -n when not root)</option>
+                <option value="sudo">sudo -n</option>
+                <option value="pkexec">pkexec</option>
+                <option value="none">none (opsdeck runs as root)</option>
+              </Select>
+            </FormField>
             {!s.localAccess.disabled && (
               <>
                 <FormField label="Folders the agent may read without asking" help="Absolute paths or ~/… — e.g. ~/projects. Credential files inside them (.env, keys) still ask.">

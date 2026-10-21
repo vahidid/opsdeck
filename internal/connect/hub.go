@@ -1,5 +1,6 @@
-// Package connect reaches workspace resources: it brings up networks
-// (WireGuard, SOCKS), chains SSH jump hosts, and pools SSH connections.
+// Package connect reaches workspace resources: it brings up networks (VPN
+// profiles from internal/vpn, SOCKS proxies), chains SSH jump hosts, and
+// pools SSH connections.
 // Credentials come from the vault and are used, never returned.
 package connect
 
@@ -16,9 +17,9 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/net/proxy"
 
 	"opsdeck/internal/vault"
+	"opsdeck/internal/vpn"
 	"opsdeck/internal/workspace"
 )
 
@@ -49,18 +50,14 @@ type Hub struct {
 	vault    *vault.Vault
 	stateDir func(ws string) string
 
+	// Elevate returns the command prefix for system-mode VPN clients.
+	Elevate func() []string
+
 	mu       sync.Mutex
 	networks map[string]*network // key ws/name
+	netLogs  map[string]*vpn.Log // key ws/name, kept after a network goes down
 	clients  map[string]*sshConn // key ws/host
 	dialing  map[string]*sync.Mutex
-}
-
-type network struct {
-	kind  string
-	wg    *wgTunnel
-	dial  DialFunc
-	since time.Time
-	err   string
 }
 
 type sshConn struct {
@@ -69,7 +66,8 @@ type sshConn struct {
 }
 
 func NewHub(v *vault.Vault, stateDir func(ws string) string) *Hub {
-	return &Hub{vault: v, stateDir: stateDir, networks: map[string]*network{}, clients: map[string]*sshConn{}, dialing: map[string]*sync.Mutex{}}
+	return &Hub{vault: v, stateDir: stateDir, networks: map[string]*network{}, netLogs: map[string]*vpn.Log{},
+		clients: map[string]*sshConn{}, dialing: map[string]*sync.Mutex{}}
 }
 
 // credential resolves a vault reference for use by a workspace, enforcing
@@ -92,16 +90,14 @@ func (h *Hub) Credentials(w *workspace.Workspace, r *workspace.Resource) []strin
 	var refs []string
 	chain, _ := w.Chain(r)
 	for _, hop := range append(chain, r) {
-		switch hop.Kind {
-		case "Host":
+		switch {
+		case hop.Kind == "Host":
 			if ref := authRef(w, hop); ref != "" {
 				refs = append(refs, ref)
 			}
-		case "WireGuard":
-			refs = append(refs, hop.Str("config"))
-		case "SocksProxy":
-			if ref := hop.Str("auth"); ref != "" {
-				refs = append(refs, ref)
+		case workspace.IsNetworkKind(hop.Kind):
+			for _, f := range secretFields(hop) {
+				refs = append(refs, hop.Str(f))
 			}
 		}
 	}
@@ -151,14 +147,14 @@ func (h *Hub) Dialer(ctx context.Context, w *workspace.Workspace, r *workspace.R
 	if _, err := w.Chain(r); err != nil {
 		return nil, err
 	}
-	switch hop.Kind {
-	case "Host":
+	switch {
+	case hop.Kind == "Host":
 		client, err := h.SSH(ctx, w, hop)
 		if err != nil {
 			return nil, fmt.Errorf("jump host %s: %w", hop.Name, err)
 		}
 		return client.DialContext, nil
-	case "WireGuard", "SocksProxy":
+	case workspace.IsNetworkKind(hop.Kind):
 		n, err := h.networkUp(ctx, w, hop)
 		if err != nil {
 			return nil, err
@@ -179,139 +175,6 @@ func DescribePath(w *workspace.Workspace, r *workspace.Resource) ([]string, erro
 		out = append(out, hop.ID())
 	}
 	return out, nil
-}
-
-// ----------------------------------------------------------------------------
-// Networks
-
-func netKey(ws, name string) string { return ws + "/" + name }
-
-// NetworkUp brings up a network explicitly.
-func (h *Hub) NetworkUp(ctx context.Context, w *workspace.Workspace, name string) error {
-	r := w.FindRef("network/" + name)
-	if r == nil {
-		return fmt.Errorf("network %q not found", name)
-	}
-	_, err := h.networkUp(ctx, w, r)
-	return err
-}
-
-func (h *Hub) networkUp(ctx context.Context, w *workspace.Workspace, r *workspace.Resource) (*network, error) {
-	key := netKey(w.Name(), r.Name)
-	lock := h.keyLock("net:" + key)
-	lock.Lock()
-	defer lock.Unlock()
-	h.mu.Lock()
-	if n := h.networks[key]; n != nil && n.err == "" {
-		h.mu.Unlock()
-		return n, nil
-	}
-	h.mu.Unlock()
-
-	n, err := h.startNetwork(ctx, w, r)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if err != nil {
-		h.networks[key] = &network{kind: r.Kind, err: err.Error(), since: time.Now()}
-		return nil, fmt.Errorf("network %s: %w", r.Name, err)
-	}
-	h.networks[key] = n
-	return n, nil
-}
-
-func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *workspace.Resource) (*network, error) {
-	switch r.Kind {
-	case "WireGuard":
-		it, err := h.credential(ctx, w, r.Str("config"))
-		if err != nil {
-			return nil, err
-		}
-		tun, err := startWireGuard(ctx, it.Get("config"))
-		if err != nil {
-			return nil, err
-		}
-		return &network{kind: r.Kind, wg: tun, dial: tun.DialContext, since: time.Now()}, nil
-	case "SocksProxy":
-		forward, err := h.Dialer(ctx, w, r)
-		if err != nil {
-			return nil, err
-		}
-		var auth *proxy.Auth
-		if ref := r.Str("auth"); ref != "" {
-			it, err := h.credential(ctx, w, ref)
-			if err != nil {
-				return nil, err
-			}
-			auth = &proxy.Auth{User: it.Get("username"), Password: it.Get("password")}
-		}
-		d, err := proxy.SOCKS5("tcp", r.Str("address"), auth, ctxDialer(forward))
-		if err != nil {
-			return nil, err
-		}
-		cd := d.(proxy.ContextDialer)
-		return &network{kind: r.Kind, dial: cd.DialContext, since: time.Now()}, nil
-	}
-	return nil, fmt.Errorf("%s is not a network", r.Kind)
-}
-
-type ctxDialer DialFunc
-
-func (d ctxDialer) Dial(network, addr string) (net.Conn, error) {
-	return d(context.Background(), network, addr)
-}
-func (d ctxDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	return d(ctx, network, addr)
-}
-
-// NetworkDown stops a network and drops SSH connections that used it.
-func (h *Hub) NetworkDown(ws, name string) {
-	h.mu.Lock()
-	n := h.networks[netKey(ws, name)]
-	delete(h.networks, netKey(ws, name))
-	h.mu.Unlock()
-	if n != nil && n.wg != nil {
-		n.wg.Close()
-	}
-	h.dropBroken(ws)
-}
-
-// NetStatus is reported to the UI.
-type NetStatus struct {
-	Name          string    `json:"name"`
-	Kind          string    `json:"kind"`
-	Status        string    `json:"status"` // down | up | error
-	Error         string    `json:"error,omitempty"`
-	Since         time.Time `json:"since,omitempty"`
-	Address       string    `json:"address,omitempty"`
-	LastHandshake time.Time `json:"lastHandshake,omitempty"`
-	RxBytes       int64     `json:"rxBytes"`
-	TxBytes       int64     `json:"txBytes"`
-}
-
-func (h *Hub) Networks(w *workspace.Workspace) []NetStatus {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	out := []NetStatus{}
-	for _, r := range w.Resources {
-		if r.Kind != "WireGuard" && r.Kind != "SocksProxy" {
-			continue
-		}
-		st := NetStatus{Name: r.Name, Kind: r.Kind, Status: "down", Address: r.Str("address")}
-		if n := h.networks[netKey(w.Name(), r.Name)]; n != nil {
-			st.Since = n.since
-			if n.err != "" {
-				st.Status, st.Error = "error", n.err
-			} else {
-				st.Status = "up"
-				if n.wg != nil {
-					st.Address = n.wg.addr
-					st.LastHandshake, st.RxBytes, st.TxBytes = n.wg.stats()
-				}
-			}
-		}
-		out = append(out, st)
-	}
-	return out
 }
 
 // ----------------------------------------------------------------------------
@@ -627,11 +490,12 @@ func (h *Hub) CloseWorkspace(ws string) {
 	for _, c := range clients {
 		c.client.Close()
 	}
+	var wg sync.WaitGroup
 	for _, n := range nets {
-		if n.wg != nil {
-			n.wg.Close()
-		}
+		wg.Add(1)
+		go func() { defer wg.Done(); n.stop() }()
 	}
+	wg.Wait()
 }
 
 // CloseAll shuts everything down.

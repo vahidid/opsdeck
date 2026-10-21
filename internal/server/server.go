@@ -29,6 +29,7 @@ import (
 	"opsdeck/internal/mcpx"
 	"opsdeck/internal/paths"
 	"opsdeck/internal/vault"
+	"opsdeck/internal/vpn"
 	"opsdeck/internal/workspace"
 )
 
@@ -87,6 +88,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		}
 	}
 	s.hub = connect.NewHub(v, s.stateDir)
+	s.hub.Elevate = s.elevation
 	s.docker = docker.New(s.hub)
 	s.kube = kube.New(s.hub, v)
 	s.mcp = mcpx.New(v)
@@ -126,6 +128,9 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	}
 	return s, nil
 }
+
+// elevation is the command prefix for system-mode VPN clients.
+func (s *Server) elevation() []string { return vpn.Elevation(s.cfg.Settings().VPN.Elevate) }
 
 // localPolicy is the agent's access to this computer (nil when turned off).
 // opsdeck's vault, state (login token, audit, sessions) and settings are

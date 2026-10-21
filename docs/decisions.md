@@ -22,6 +22,8 @@
 | 16 | Workspace MCP servers require local trust | A cloned workspace must not be able to run commands on this machine |
 | 17 | Git credentials reach `git` through stdin/env, never the command line or `.git/config` | The agent can deploy from private repos without seeing tokens |
 | 18 | The agent can work on this computer (files, commands, key import) behind consent: reads outside the workspace ask per folder, credential files per file, writes and commands always; opsdeck's own files are unreachable | Real tasks start from the user's machine (`~/.ssh`, project folders); a harness that cannot see them is not useful |
+| 20 | VPNs are drivers with two modes: userspace (netstack in opsdeck or a SOCKS helper; default) and system (TUN). Native Go where a maintained library exists (WireGuard, tsnet, NetBird embed), official binaries otherwise (openvpn + management interface, openconnect, openfortivpn) | Userspace needs no root and lets many VPNs coexist; system mode is still there when every app must use the VPN. No reliable pure-Go OpenVPN/AnyConnect client exists |
+| 21 | The agent may connect userspace VPNs without asking; system-mode connects and all disconnects need approval | A userspace tunnel only affects opsdeck (like an SSH connection); a system tunnel changes the machine |
 | 19 | Secrets move from local files into the vault inside opsdeck (`vault_import_ssh_key`, `vault_add_item` with `file`/`generate`), never through the model | Keeps "secrets never reach the model" while letting the agent onboard credentials |
 
 ## Open
@@ -29,5 +31,4 @@
 | # | Question | Notes |
 |---|---|---|
 | C | Product name | `opsdeck` is a placeholder. |
-| E | OpenVPN support | Needs the `openvpn` binary and privileges; or a userspace implementation. |
 | F | Team sharing | Workspace folders are git-friendly already; sharing vault scopes (encrypted export to a teammate's key) is designed for but not built. |

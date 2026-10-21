@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
 	"opsdeck/internal/vault"
+	"opsdeck/internal/vpn"
 	"opsdeck/internal/workspace"
 )
 
@@ -93,6 +95,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/networks", u(s.netList))
 	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/up", u(s.netUp))
 	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/down", u(s.netDown))
+	mux.HandleFunc("GET /api/workspaces/{ws}/networks/{name}/log", u(s.netLog))
+	mux.HandleFunc("GET /api/vpn/drivers", s.vpnDrivers)
 	mux.HandleFunc("POST /api/workspaces/{ws}/hosts/{host}/check", u(s.hostCheck))
 	mux.HandleFunc("GET /api/workspaces/{ws}/hosts/{host}/stats", u(s.hostStats))
 	mux.HandleFunc("POST /api/workspaces/{ws}/hosts/{host}/exec", u(s.hostExec))
@@ -558,6 +562,12 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 		dirs = append(dirs, filepath.Clean(d))
 	}
 	in.LocalAccess.AllowedDirs = dirs
+	switch in.VPN.Elevate {
+	case "", "auto", "sudo", "pkexec", "none":
+	default:
+		fail(w, fmt.Errorf("vpn.elevate must be auto, sudo, pkexec or none"))
+		return
+	}
 	if err := s.cfg.SetSettings(in); err != nil {
 		fail(w, err)
 		return
@@ -778,7 +788,7 @@ func (s *Server) resPut(w http.ResponseWriter, r *http.Request, oldID string) {
 		// connection settings may have changed
 		if kind, name, _ := strings.Cut(oldID, "/"); kind == "Host" {
 			s.hub.Disconnect(ws.Name(), name)
-		} else if kind == "WireGuard" || kind == "SocksProxy" {
+		} else if workspace.IsNetworkKind(kind) {
 			s.hub.NetworkDown(ws.Name(), name)
 		}
 	}
@@ -799,6 +809,9 @@ func (s *Server) resDelete(w http.ResponseWriter, r *http.Request) {
 	if err := ws.DeleteResource(id); err != nil {
 		fail(w, err)
 		return
+	}
+	if workspace.IsNetworkKind(r.PathValue("kind")) {
+		s.hub.NetworkDown(ws.Name(), r.PathValue("name"))
 	}
 	s.record(r, ws.Name(), "resource.delete", id, nil, nil)
 	writeJSON(w, 200, map[string]bool{"ok": true})
@@ -1033,15 +1046,38 @@ func (s *Server) netUp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	// Wait a while; slow connects (and logins) continue in the background
+	// and show up as "connecting"/"auth" in the status.
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	err := s.hub.NetworkUp(ctx, ws, r.PathValue("name"))
+	if errors.Is(err, connect.ErrConnecting) {
+		err = nil
+	}
 	s.record(r, ws.Name(), "network.up", "network/"+r.PathValue("name"), nil, err)
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	writeJSON(w, 200, s.hub.Networks(ws))
+}
+
+func (s *Server) netLog(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.workspace(w, r)
+	if !ok {
+		return
+	}
+	n, _ := strconv.Atoi(r.URL.Query().Get("lines"))
+	writeJSON(w, 200, s.hub.NetworkLog(ws.Name(), r.PathValue("name"), n))
+}
+
+func (s *Server) vpnDrivers(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{
+		"drivers":    vpn.Drivers(s.elevation()),
+		"privileged": vpn.Privileged(),
+		"elevate":    strings.Join(s.elevation(), " "),
+		"os":         runtime.GOOS,
+	})
 }
 
 func (s *Server) netDown(w http.ResponseWriter, r *http.Request) {

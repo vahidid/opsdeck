@@ -1,0 +1,130 @@
+package vpn
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"opsdeck/internal/vault"
+	"opsdeck/internal/workspace"
+)
+
+// TestLab drives every subprocess/native driver against real servers. It
+// needs root and a lab made by scripts kept outside the repo: a network
+// namespace reachable at 10.200.0.2 running ocserv (alice/pa55word on 4443),
+// an OpenVPN server (bob/s3cret on udp 1194) and a WireGuard server (51820),
+// with a private web server at 10.77.0.1:8080 reachable only through a VPN.
+// Run with OPSDECK_VPN_LAB=<lab dir> (holding client.ovpn, client-wg.conf
+// and the ocserv certificate pin in pin.txt).
+func TestLab(t *testing.T) {
+	lab := os.Getenv("OPSDECK_VPN_LAB")
+	if lab == "" {
+		t.Skip("set OPSDECK_VPN_LAB to run against the VPN lab")
+	}
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join(lab, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	pin := "pin-sha256:" + read("pin.txt")
+	for _, k := range []string{"https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"} {
+		t.Setenv(k, "") // the lab is local; a proxy from the environment cannot reach it
+		os.Unsetenv(k)
+	}
+	login := func(u, p string) vault.Item {
+		return vault.Item{Type: "login", Fields: []vault.Field{{Name: "username", Value: u}, {Name: "password", Value: p, Secret: true}}}
+	}
+	vpnItem := func(conf string) vault.Item {
+		return vault.Item{Type: "vpn", Fields: []vault.Field{{Name: "config", Value: conf, Secret: true}}}
+	}
+	cases := []struct {
+		name, kind string
+		spec       map[string]any
+		items      map[string]vault.Item
+		wantErr    string
+		elevate    []string
+	}{
+		{"wireguard-userspace", "WireGuard", map[string]any{"mode": "userspace"}, map[string]vault.Item{"config": vpnItem(read("client-wg.conf"))}, "", nil},
+		{"wireguard-system", "WireGuard", map[string]any{"mode": "system"}, map[string]vault.Item{"config": vpnItem(read("client-wg.conf"))}, "", nil},
+		{"ocserv-userspace", "OpenConnect", map[string]any{"server": "https://10.200.0.2:4443", "serverCert": pin, "mode": "userspace"}, map[string]vault.Item{"auth": login("alice", "pa55word")}, "", nil},
+		{"ocserv-system", "OpenConnect", map[string]any{"server": "https://10.200.0.2:4443", "serverCert": pin, "mode": "system"}, map[string]vault.Item{"auth": login("alice", "pa55word")}, "", nil},
+		{"ocserv-bad-password", "OpenConnect", map[string]any{"server": "https://10.200.0.2:4443", "serverCert": pin, "mode": "userspace"}, map[string]vault.Item{"auth": login("alice", "nope")}, "login failed", nil},
+		{"ocserv-untrusted-cert", "OpenConnect", map[string]any{"server": "https://10.200.0.2:4443", "mode": "userspace"}, map[string]vault.Item{"auth": login("alice", "pa55word")}, "pin-sha256:", nil},
+		{"openvpn-system", "OpenVPN", map[string]any{}, map[string]vault.Item{"config": vpnItem(read("client.ovpn")), "auth": login("bob", "s3cret")}, "", nil},
+		{"openvpn-bad-password", "OpenVPN", map[string]any{}, map[string]vault.Item{"config": vpnItem(read("client.ovpn")), "auth": login("bob", "wrong")}, "authentication failed", nil},
+		// through sudo: the client runs as root and is stopped via sudo's signal relay
+		{"openvpn-sudo", "OpenVPN", map[string]any{}, map[string]vault.Item{"config": vpnItem(read("client.ovpn")), "auth": login("bob", "s3cret")}, "", []string{"sudo", "-n"}},
+		{"ocserv-system-sudo", "OpenConnect", map[string]any{"server": "https://10.200.0.2:4443", "serverCert": pin, "mode": "system"}, map[string]vault.Item{"auth": login("alice", "pa55word")}, "", []string{"sudo", "-n"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _ := Get(tc.kind)
+			r := &workspace.Resource{Kind: tc.kind, Name: "lab-" + tc.name[:4], Spec: tc.spec}
+			dir := t.TempDir()
+			log := NewLog()
+			cfg := &Config{Res: r, Mode: ModeOf(r), Items: tc.items, StateDir: dir, RunDir: filepath.Join(dir, "run"), Log: log, Elevate: tc.elevate}
+			os.MkdirAll(cfg.RunDir, 0o700)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			tun, err := d.Start(ctx, cfg)
+			if tc.wantErr != "" {
+				if err == nil {
+					tun.Close()
+					t.Fatalf("expected an error containing %q", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error %q does not contain %q\nlog:\n%s", err, tc.wantErr, log.Tail(30))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("start: %v\nlog:\n%s", err, log.Tail(40))
+			}
+			defer tun.Close()
+			body, err := httpGet(ctx, tun.Dial, "10.77.0.1:8080")
+			if err != nil || !strings.Contains(body, "secret-intranet-ok") {
+				t.Fatalf("through the tunnel: %q %v\nlog:\n%s", body, err, log.Tail(40))
+			}
+			_, plainErr := httpGet(ctx, direct, "10.77.0.1:8080")
+			if cfg.Mode == ModeSystem && plainErr != nil {
+				t.Fatalf("system mode should route the whole machine: %v", plainErr)
+			}
+			if cfg.Mode == ModeUserspace && plainErr == nil {
+				t.Fatal("userspace mode must not change the system's routes")
+			}
+			t.Logf("info: %+v", tun.Info())
+			tun.Close()
+			if cfg.Mode == ModeSystem {
+				time.Sleep(time.Second)
+				if _, err := httpGet(ctx, direct, "10.77.0.1:8080"); err == nil {
+					t.Fatal("route still present after disconnect")
+				}
+			}
+		})
+	}
+}
+
+func httpGet(ctx context.Context, dial DialFunc, addr string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	c, err := dial(ctx, "tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(5 * time.Second))
+	fmt.Fprintf(c, "GET / HTTP/1.0\r\nHost: %s\r\n\r\n", addr)
+	var b strings.Builder
+	sc := bufio.NewScanner(c)
+	for sc.Scan() {
+		b.WriteString(sc.Text() + "\n")
+	}
+	return b.String(), nil
+}

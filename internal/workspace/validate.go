@@ -78,7 +78,7 @@ func (w *Workspace) Validate(check RefChecker) []Issue {
 			hop := w.FindRef(r.Via)
 			if hop == nil {
 				add("error", r, "via %q not found (use host/<name> or network/<name>)", r.Via)
-			} else if hop.Kind != "Host" && !isNetworkKind(hop.Kind) {
+			} else if hop.Kind != "Host" && !IsNetworkKind(hop.Kind) {
 				add("error", r, "via must point to a host or a network, not %s", hop.Kind)
 			}
 		}

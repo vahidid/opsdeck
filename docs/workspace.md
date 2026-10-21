@@ -82,12 +82,27 @@ spec: { ... }         # provider-specific
 ### Examples (first kinds)
 
 ```yaml
-# networks.yaml
+# networks.yaml — VPN profiles (see vpn.md)
 - kind: WireGuard
   name: office-wg
   spec:
     config: vault://acme/office-wg          # the .conf lives in the vault
-    routes: [10.20.0.0/16]
+    mode: userspace                         # or system (TUN, needs root)
+    proxyPort: 1081                         # optional SOCKS5 for other apps
+
+- kind: OpenConnect                         # Cisco AnyConnect / ocserv / FortiGate / GlobalProtect…
+  name: hq-anyconnect
+  spec:
+    protocol: anyconnect
+    server: vpn.example.com
+    auth: vault://acme/vpn-login            # username, password, optional TOTP
+    mode: userspace
+
+- kind: Tailscale
+  name: tailnet
+  spec:
+    controlUrl: https://headscale.example.com   # empty = Tailscale
+    authKey: vault://acme/ts-authkey
 
 # hosts.yaml
 - kind: Host

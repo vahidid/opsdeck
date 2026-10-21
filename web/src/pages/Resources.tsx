@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { KindField, KindSchema, PathHop, Resource } from "../api/types";
+import { NETWORK_KINDS } from "../api/types";
 import { hostAddress, useApp, useWs } from "../context/app";
 import { useTerminals } from "../context/terminals";
 import { KindIcon } from "../components/icons";
@@ -34,6 +35,7 @@ import {
   Td,
   Textarea,
   Th,
+  Toggle,
   Tr,
 } from "../components/ui";
 import { Drawer, MenuItem, Popover, useConfirm, useToast } from "../components/overlay";
@@ -350,19 +352,25 @@ function emptyResource(kind: string): Resource {
 export function ResourceDrawer({
   schema,
   resource,
+  initial,
+  title,
   onClose,
   onSaved,
   onDelete,
 }: {
   schema: KindSchema;
   resource: Resource | null;
+  initial?: Partial<Resource>; // preset for a new resource
+  title?: string;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
   onDelete?: () => void;
 }) {
   const { name: ws, workspace, resources } = useWs();
   const toast = useToast();
-  const [r, setR] = useState<Resource>(() => (resource ? structuredClone(resource) : emptyResource(schema.kind)));
+  const [r, setR] = useState<Resource>(() =>
+    resource ? structuredClone(resource) : { ...emptyResource(schema.kind), ...initial, spec: { ...(initial?.spec ?? {}) } },
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [path, setPath] = useState<PathHop[] | null>(null);
@@ -383,7 +391,7 @@ export function ResourceDrawer({
 
   const setSpec = (k: string, v: unknown) => setR((x) => ({ ...x, spec: { ...x.spec, [k]: v } }));
   const viaOptions = resources.filter(
-    (x) => (x.kind === "WireGuard" || x.kind === "SocksProxy" || x.kind === "Host") && !(x.kind === r.kind && x.name === resource?.name),
+    (x) => (NETWORK_KINDS.includes(x.kind) || x.kind === "Host") && !(x.kind === r.kind && x.name === resource?.name),
   );
   const missing = schema.fields.filter((f) => f.required && (r.spec[f.key] === undefined || r.spec[f.key] === "" || (Array.isArray(r.spec[f.key]) && !(r.spec[f.key] as unknown[]).length)));
   const nameOk = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(r.name);
@@ -418,7 +426,7 @@ export function ResourceDrawer({
       open
       onClose={onClose}
       width={560}
-      title={resource ? `${schema.label}: ${resource.name}` : `New ${schema.label}`}
+      title={resource ? `${schema.label}: ${resource.name}` : title ?? `New ${schema.label}`}
       subtitle={resource ? "Saved to the workspace YAML files" : undefined}
       footer={
         <>
@@ -463,12 +471,12 @@ export function ResourceDrawer({
           <FormField label="Reached via" help="Network (VPN/proxy) or jump host used to reach this resource. Chains are resolved automatically.">
             <Select value={r.via ?? ""} onChange={(e) => setR({ ...r, via: e.target.value })} className="font-mono text-xs">
               <option value="">direct (from this machine)</option>
-              {["WireGuard", "SocksProxy", "Host"].map((k) => {
+              {[...NETWORK_KINDS, "Host"].map((k) => {
                 const list = viaOptions.filter((x) => x.kind === k);
                 if (!list.length) return null;
                 const prefix = k === "Host" ? "host" : "network";
                 return (
-                  <optgroup key={k} label={k === "Host" ? "Jump hosts" : k}>
+                  <optgroup key={k} label={k === "Host" ? "Jump hosts" : `VPN · ${k}`}>
                     {list.map((x) => (
                       <option key={x.name} value={`${prefix}/${x.name}`}>
                         {prefix}/{x.name}
@@ -522,6 +530,15 @@ function SpecField({
 }) {
   const label = f.label || f.key;
   switch (f.type) {
+    case "bool": {
+      const on = value === undefined || value === null || value === "" ? f.default === "true" : value === true || value === "true";
+      return (
+        <div>
+          <Toggle checked={on} onChange={(v) => onChange(v)} label={label} />
+          {f.help && <div className="mt-1 text-[11px] text-faint">{f.help}</div>}
+        </div>
+      );
+    }
     case "number":
       return (
         <FormField label={label} required={f.required} help={f.help}>
@@ -543,8 +560,8 @@ function SpecField({
     case "select":
       return (
         <FormField label={label} required={f.required} help={f.help}>
-          <Select value={str(value)} onChange={(e) => onChange(e.target.value)}>
-            <option value="">—</option>
+          <Select value={str(value) || f.default || ""} onChange={(e) => onChange(e.target.value)}>
+            {!f.default && <option value="">—</option>}
             {(f.options ?? []).map((o) => (
               <option key={o} value={o}>
                 {o}

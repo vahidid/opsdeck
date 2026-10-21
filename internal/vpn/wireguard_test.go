@@ -1,4 +1,4 @@
-package connect
+package vpn
 
 import (
 	"context"
@@ -81,7 +81,7 @@ PersistentKeepalive = 5
 		t.Fatal(err)
 	}
 	defer tun.Close()
-	c, err := tun.DialContext(ctx, "tcp", "10.9.0.2:2222")
+	c, err := tun.Dial(ctx, "tcp", "10.9.0.2:2222")
 	if err != nil {
 		t.Fatal(err)
 	}

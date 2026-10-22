@@ -58,12 +58,43 @@ Several system VPNs can conflict on routes and DNS; userspace VPNs cannot.
 Secrets are passed on stdin, through the management socket or in 0600 files inside the
 workspace's `.opsdeck/vpn/<name>/run/` (removed on disconnect), never on the command line.
 A TOTP secret on the login item answers OTP prompts (`openconnect --token-mode=totp`,
-OpenVPN static challenge, `openfortivpn --otp`). SAML/SSO gateways (AnyConnect, Fortinet)
-use a session cookie from `openconnect --authenticate`, stored as a token. Self-signed
+OpenVPN static challenge, `openfortivpn --otp`). Self-signed
 gateways are pinned (`serverCert`); the exact pin is shown in the log after the first
 attempt. Tailscale and NetBird keep their node keys in `.opsdeck/vpn/<name>/` so the
 device keeps its identity. OpenVPN config scripts (`up`/`down`) are disabled unless the
 profile sets `allowScripts` (they run as root). Tailscale's log upload is turned off.
+
+## Single sign-on (SAML)
+
+Turn on **Single sign-on** on an OpenConnect or OpenFortiVPN profile (or pick an "· SSO"
+preset). On connect opsdeck shows the identity provider's login (Entra ID/Azure AD, Okta,
+Google, ADFS, …) and takes the VPN session from it itself; there is nothing to copy:
+
+| Gateway | How opsdeck gets the session |
+|---|---|
+| Cisco AnyConnect / ASA / FTD, **external-browser** SSO | opsdeck speaks the aggregate-auth XML, sends STRAP keys; the gateway redirects the browser to `http://localhost:29786/api/sso/…` with the token HPKE-encrypted to opsdeck's key (ECDH P-256 + HKDF "AC_ECIES" + AES-GCM); opsdeck trades it for the session cookie |
+| Cisco AnyConnect, **embedded-browser** SSO | same, but the token is the `sso-v2-token-cookie-name` cookie read from opsdeck's login window at the final URL |
+| Palo Alto GlobalProtect | `prelogin.esp` (portal, then gateway) → SAML REDIRECT/POST → `saml-username` + `prelogin-cookie`/`portal-userauthcookie` from the final response headers, HTML comments or the `globalprotectcallback:` URL |
+| FortiGate (openconnect or openfortivpn) | `/remote/saml/start?redirect=1` → callback on `127.0.0.1:8020` → `/remote/saml/auth_id` → `SVPNCOOKIE` (FortiOS 7+), or the `SVPNCOOKIE` set in the login window |
+
+Then the client starts with the cookie on stdin (`--cookie-on-stdin`; GlobalProtect:
+`--user --usergroup=portal:… --passwd-on-stdin`). AnyConnect cookies carry the STRAP key in
+`openconnect --authenticate`'s format, so openconnect signs the tunnel request with it.
+
+Where the login is shown (profile field *SSO login in*):
+
+- **window** — a Chrome/Edge/Chromium/Brave window opsdeck drives over the DevTools
+  protocol (a pipe, not a network port, on Linux/macOS). Every profile has its own browser
+  profile in `.opsdeck/vpn/<name>/browser`, so "stay signed in" at the IdP makes later
+  logins automatic: the window opens and closes by itself. Required for embedded-browser
+  AnyConnect and GlobalProtect (the cookie only exists in the browser that signed in).
+- **system** — your default browser, with the link also on the VPN page. Works where the
+  gateway calls back to localhost: AnyConnect external-browser SSO and FortiGate.
+- **auto** (default) — window when such a browser is installed, otherwise system.
+
+The browser is detected (or set in App settings → *Browser for VPN single sign-on*). While
+signing in the profile shows *signing in…*; the agent tells the user to finish the login.
+Only one AnyConnect and one FortiGate login can run at a time (fixed callback ports).
 
 ## Lifecycle
 
@@ -88,6 +119,12 @@ route there, and to hand the user the login link when one is needed.
 
 ## Testing
 
+`internal/vpn/sso_test.go` emulates the gateways' SSO (an ASA in external-browser mode with
+real STRAP/HPKE, and in embedded mode; GlobalProtect with headers and the callback URL;
+FortiGate with the 8020 redirect and the cookie) with an identity provider that signs in
+by itself, in a headless Chromium; `TestSSODriver` checks that openconnect presents the
+session cookie on its tunnel request. A lab case connects ocserv with a cookie carrying an
+opsdeck-generated STRAP key.
 `internal/vpn/lab_test.go`, `lab_tailscale_test.go` and `lab_netbird_test.go` run the
 drivers against real servers (skipped unless `OPSDECK_VPN_LAB`, `OPSDECK_HEADSCALE` or
 `OPSDECK_NETBIRD` is set): ocserv, an OpenVPN server and a WireGuard server in a network

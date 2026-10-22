@@ -2,54 +2,33 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import {
-  Activity,
-  Bot,
-  Boxes,
   ChevronsUpDown,
-  Container,
-  FileText,
   FolderInput,
-  KeyRound,
-  ShieldCheck,
-  LayoutGrid,
   Lock,
   Moon,
   Plus,
-  ScrollText,
   Search,
-  Server,
   Settings,
   Sun,
-  SquareTerminal,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import { useApp } from "../context/app";
 import { useTerminals } from "../context/terminals";
+import { useTabs } from "../context/tabs";
+import { NAV, SINGLETON_SECTIONS } from "../lib/nav";
 import { Button, FormField, IconButton, Input, Kbd, Tabs, Textarea, cx } from "../components/ui";
 import { MenuItem, Modal, Popover, useToast } from "../components/overlay";
 import { WORKSPACE_COLORS, slugify } from "../lib/format";
 import { Logo } from "./Boot";
 import { CommandPalette } from "./CommandPalette";
 
-const NAV: { to: string; label: string; icon: ReactNode }[] = [
-  { to: "overview", label: "Overview", icon: <LayoutGrid /> },
-  { to: "agent", label: "Agent", icon: <Bot /> },
-  { to: "resources", label: "Resources", icon: <Server /> },
-  { to: "vpn", label: "VPN", icon: <ShieldCheck /> },
-  { to: "terminal", label: "Terminal", icon: <SquareTerminal /> },
-  { to: "docker", label: "Docker", icon: <Container /> },
-  { to: "kubernetes", label: "Kubernetes", icon: <Boxes /> },
-  { to: "logs", label: "Logs", icon: <ScrollText /> },
-  { to: "docs", label: "Docs", icon: <FileText /> },
-  { to: "vault", label: "Vault", icon: <KeyRound /> },
-  { to: "activity", label: "Activity", icon: <Activity /> },
-];
 
 export function Shell({ children }: { children: ReactNode }) {
   const match = useMatch("/w/:ws/*");
   const { theme, setTheme, lock, workspaces } = useApp();
   const ws = match?.params.ws ?? lastWorkspace(workspaces.map((w) => w.name));
   const { tabs } = useTerminals();
+  const wsTabs = useTabs();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -83,9 +62,22 @@ export function Shell({ children }: { children: ReactNode }) {
               <NavLink
                 key={n.to}
                 to={`/w/${encodeURIComponent(ws)}/${n.to}`}
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    wsTabs.open(ws, n.to, !e.shiftKey);
+                  }
+                }}
+                onAuxClick={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault();
+                    wsTabs.open(ws, n.to, false);
+                  }
+                }}
+                title={`${n.label} — Ctrl/⌘-click or middle-click opens a new tab`}
                 className={({ isActive }) =>
                   cx(
-                    "flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] transition-colors [&_svg]:size-4",
+                    "group flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] transition-colors [&_svg]:size-4",
                     isActive ? "bg-panel-3 text-fg [&_svg]:text-accent" : "text-muted hover:text-fg hover:bg-panel-2",
                   )
                 }
@@ -93,6 +85,20 @@ export function Shell({ children }: { children: ReactNode }) {
                 {n.icon}
                 <span className="flex-1">{n.label}</span>
                 {n.to === "terminal" && tabs.length > 0 && <span className="text-[11px] text-faint tabular-nums">{tabs.length}</span>}
+                {!SINGLETON_SECTIONS.has(n.to) && (
+                  <span
+                    role="button"
+                    title="Open in a new tab"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      wsTabs.open(ws, n.to);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-faint hover:text-fg hover:bg-panel-3 [&_svg]:!size-3.5 [&_svg]:!text-current"
+                  >
+                    <Plus />
+                  </span>
+                )}
               </NavLink>
             ))
           ) : (

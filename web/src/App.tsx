@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Layers, Plus } from "lucide-react";
 import { AppProvider, WorkspaceProvider, useApp, useWs } from "./context/app";
 import { TerminalProvider } from "./context/terminals";
+import { TabCtx, TabsProvider, useTabs } from "./context/tabs";
+import { TabStrip } from "./components/TabStrip";
+import { sectionInfo } from "./lib/nav";
 import { ConfirmProvider, ToastProvider } from "./components/overlay";
-import { Button, EmptyState, ErrorBox, Loading } from "./components/ui";
+import { Button, EmptyState, ErrorBox, Loading, cx } from "./components/ui";
 import { Boot } from "./pages/Boot";
 import { CreateWorkspaceModal, Shell } from "./pages/Shell";
 import { OverviewPage } from "./pages/Overview";
@@ -30,6 +33,7 @@ export function App() {
             <AppProvider onLock={lock}>
               <TerminalProvider>
                 <BrowserRouter>
+                  <TabsProvider>
                   <Shell>
                     <Routes>
                       <Route path="/" element={<Home />} />
@@ -38,6 +42,7 @@ export function App() {
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Shell>
+                  </TabsProvider>
                 </BrowserRouter>
               </TerminalProvider>
             </AppProvider>
@@ -90,24 +95,77 @@ function WorkspaceRoutes() {
   return (
     <WorkspaceProvider key={ws} name={ws}>
       <WorkspaceGate>
-        <Routes>
-          <Route path="overview" element={<OverviewPage />} />
-          <Route path="agent" element={<AgentPage />} />
-          <Route path="agent/:sid" element={<AgentPage />} />
-          <Route path="resources" element={<ResourcesPage />} />
-          <Route path="vpn" element={<VPNPage />} />
-          <Route path="terminal" element={<TerminalPage />} />
-          <Route path="docker" element={<DockerPage />} />
-          <Route path="kubernetes" element={<KubernetesPage />} />
-          <Route path="logs" element={<LogsPage />} />
-          <Route path="docs" element={<DocsPage />} />
-          <Route path="vault" element={<VaultPage />} />
-          <Route path="activity" element={<ActivityPage />} />
-          <Route path="settings" element={<WorkspaceSettingsPage />} />
-          <Route path="*" element={<Navigate to="overview" replace />} />
-        </Routes>
+        <TabbedWorkspace ws={ws} />
       </WorkspaceGate>
     </WorkspaceProvider>
+  );
+}
+
+// The routes of one tab. Background tabs have no catch-all redirect, so a
+// stale tab can never navigate the window.
+function workspaceRoutes(active: boolean) {
+  return (
+    <>
+      <Route path="overview" element={<OverviewPage />} />
+      <Route path="agent" element={<AgentPage />} />
+      <Route path="agent/:sid" element={<AgentPage />} />
+      <Route path="resources" element={<ResourcesPage />} />
+      <Route path="vpn" element={<VPNPage />} />
+      <Route path="terminal" element={<TerminalPage />} />
+      <Route path="docker" element={<DockerPage />} />
+      <Route path="kubernetes" element={<KubernetesPage />} />
+      <Route path="logs" element={<LogsPage />} />
+      <Route path="docs" element={<DocsPage />} />
+      <Route path="vault" element={<VaultPage />} />
+      <Route path="activity" element={<ActivityPage />} />
+      <Route path="settings" element={<WorkspaceSettingsPage />} />
+      {active && <Route path="*" element={<Navigate to="overview" replace />} />}
+    </>
+  );
+}
+
+// TabbedWorkspace keeps every open tab mounted (hidden when in the
+// background) so agent streams, logs and forms keep their state; the active
+// tab follows the URL.
+function TabbedWorkspace({ ws }: { ws: string }) {
+  const location = useLocation();
+  const tabs = useTabs();
+  const prefix = `/w/${encodeURIComponent(ws)}/`;
+  const rel = location.pathname.startsWith(prefix) ? location.pathname.slice(prefix.length) + location.search : "";
+  useEffect(() => {
+    if (rel && sectionInfo(rel)) tabs.sync(ws, rel);
+  }, [ws, rel, tabs]);
+  const { tabs: list, active } = tabs.get(ws);
+
+  // Ctrl/⌘-click or middle-click on an in-app link opens it in a new tab.
+  const intercept = (e: React.MouseEvent) => {
+    const newTab = e.ctrlKey || e.metaKey || e.button === 1;
+    if (!newTab) return;
+    const a = (e.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
+    const href = a?.getAttribute("href") ?? "";
+    if (!href.startsWith(prefix) || a?.target === "_blank") return;
+    e.preventDefault();
+    e.stopPropagation();
+    tabs.open(ws, href.slice(prefix.length), !e.shiftKey && e.button !== 1);
+  };
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col" onClickCapture={intercept} onAuxClickCapture={intercept}>
+      {list.length > 0 && <TabStrip ws={ws} />}
+      {list.map((t) => {
+        const isActive = t.id === active;
+        const [pathname, search = ""] = t.path.split("?");
+        const loc = isActive ? location : { pathname: prefix + pathname, search: search ? "?" + search : "", hash: "", state: null, key: t.id };
+        return (
+          <div key={t.id} className={cx("flex-1 min-h-0 flex flex-col", !isActive && "hidden")}>
+            <TabCtx.Provider value={{ ws, id: t.id, active: isActive }}>
+              <Routes location={loc}>{workspaceRoutes(isActive)}</Routes>
+            </TabCtx.Provider>
+          </div>
+        );
+      })}
+      {list.length === 0 && <Routes>{workspaceRoutes(true)}</Routes>}
+    </div>
   );
 }
 

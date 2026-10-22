@@ -15,7 +15,9 @@ plus a complete local workbench that is just as useful without AI.
   FortiGate, GlobalProtect, Pulse, F5 and SOCKS, each in **userspace** mode (network stack
   inside opsdeck: no root, many at once, optional local SOCKS5 proxy for other apps) or
   **system** mode (TUN with system routes, through sudo/pkexec). A VPN page per workspace
-  with connect/disconnect, login links, logs and live status — see [docs/vpn.md](docs/vpn.md).
+  with connect/disconnect, login links, logs and live status. **Single sign-on** (SAML via
+  Entra ID, Okta, …) for AnyConnect, GlobalProtect and FortiGate without copying cookies:
+  opsdeck shows the login and takes the session itself — see [docs/vpn.md](docs/vpn.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -31,6 +33,12 @@ plus a complete local workbench that is just as useful without AI.
   account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
   built-in tools are switched off; they work only through opsdeck's tools (served to
   them over MCP), so approvals, redaction and audit still apply.
+- **Tabs** — any section (an agent session, a document, the VPN page, logs…) opens in its
+  own tab inside the workspace (Ctrl/⌘-click, middle-click or +); tabs keep their state and
+  are remembered per workspace.
+- **Persian / RTL** — agent answers, your messages and documents in Persian (or another
+  right-to-left language) are laid out right-to-left with a Persian font, while commands,
+  paths and code stay left-to-right.
 - **Safety** — every tool call is classified (`read` / `change` / `destructive`; shell
   commands are parsed); Plan / Ask / Auto modes; protected environments; per-workspace
   permission rules; approvals with previews; secrets redacted from everything the model

@@ -81,7 +81,7 @@ func TestLabTailscale(t *testing.T) {
 		log := NewLog()
 		urls := make(chan string, 4)
 		cfg := &Config{Res: &workspace.Resource{Kind: "Tailscale", Name: "lab2", Spec: map[string]any{"controlUrl": url}},
-			Mode: ModeUserspace, StateDir: t.TempDir(), Log: log, AuthURL: func(u string) { urls <- u }}
+			Mode: ModeUserspace, StateDir: t.TempDir(), Log: log, Auth: func(p AuthPrompt) { urls <- p.URL }}
 		type res struct {
 			tun Tunnel
 			err error

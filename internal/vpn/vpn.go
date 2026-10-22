@@ -51,8 +51,23 @@ type Config struct {
 	RunDir   string                // runtime files (generated configs, management passwords), removed on close
 	Elevate  []string              // command prefix for privileged subprocesses in system mode ("sudo -n")
 	Log      *Log
-	// AuthURL is called when the user has to log in through a browser.
-	AuthURL func(url string)
+	// Browser is the configured browser for single sign-on ("" = detect).
+	Browser string
+	// Auth is called when the user has to log in through a browser.
+	Auth func(AuthPrompt)
+}
+
+// AuthPrompt tells the user how to finish a login: open URL in their
+// browser, or (Window) complete it in the login window opsdeck opened.
+type AuthPrompt struct {
+	URL    string
+	Window bool
+}
+
+func (c *Config) prompt(p AuthPrompt) {
+	if c.Auth != nil {
+		c.Auth(p)
+	}
 }
 
 // Value returns a field of the vault item a secretRef field points to.

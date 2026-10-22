@@ -82,9 +82,7 @@ func startTailscale(ctx context.Context, cfg *Config) (Tunnel, error) {
 			}
 			if n.BrowseToURL != nil && *n.BrowseToURL != "" {
 				cfg.Log.Printf("login required: open %s", *n.BrowseToURL)
-				if cfg.AuthURL != nil {
-					cfg.AuthURL(*n.BrowseToURL)
-				}
+				cfg.prompt(AuthPrompt{URL: *n.BrowseToURL})
 			}
 			if n.State != nil {
 				cfg.Log.Printf("state: %s", n.State.String())

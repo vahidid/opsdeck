@@ -23,10 +23,13 @@ export const VPN_PRESETS: Preset[] = [
   { id: "netbird", label: "NetBird", kind: "NetBird", spec: { mode: "userspace" }, hint: "cloud or self-hosted" },
   { id: "openvpn", label: "OpenVPN", kind: "OpenVPN", spec: {}, hint: ".ovpn · system mode" },
   { id: "anyconnect", label: "Cisco AnyConnect", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "ASA / Firepower" },
+  { id: "anyconnect-sso", label: "Cisco AnyConnect · SSO", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace", sso: true }, hint: "Entra ID, Okta, ADFS…" },
   { id: "ocserv", label: "ocserv", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "OpenConnect server" },
   { id: "fortinet", label: "FortiGate", kind: "OpenConnect", spec: { protocol: "fortinet", mode: "userspace" }, hint: "FortiClient SSL VPN" },
+  { id: "fortinet-sso", label: "FortiGate · SSO", kind: "OpenConnect", spec: { protocol: "fortinet", mode: "userspace", sso: true }, hint: "SAML login" },
   { id: "openfortivpn", label: "FortiGate (openfortivpn)", kind: "OpenFortiVPN", spec: {}, hint: "system mode" },
   { id: "gp", label: "Palo Alto GlobalProtect", kind: "OpenConnect", spec: { protocol: "gp", mode: "userspace" }, hint: "" },
+  { id: "gp-sso", label: "GlobalProtect · SSO", kind: "OpenConnect", spec: { protocol: "gp", mode: "userspace", sso: true }, hint: "SAML login" },
   { id: "pulse", label: "Pulse / Ivanti Secure", kind: "OpenConnect", spec: { protocol: "pulse", mode: "userspace" }, hint: "" },
   { id: "f5", label: "F5 BIG-IP", kind: "OpenConnect", spec: { protocol: "f5", mode: "userspace" }, hint: "" },
   { id: "socks", label: "SOCKS5 proxy", kind: "SocksProxy", spec: {}, hint: "e.g. ssh -D" },
@@ -63,7 +66,7 @@ export function netTone(s: NetworkStatus["status"]): Tone {
 export function netStateLabel(n: NetworkStatus): string {
   switch (n.status) {
     case "auth":
-      return "waiting for login";
+      return n.authWindow ? "signing in…" : "waiting for login";
     case "connecting":
       return "connecting…";
   }
@@ -239,6 +242,14 @@ export function VPNPage() {
                 Change in App settings
               </Link>
             </div>
+            <div className="text-xs text-muted mb-3">
+              Single sign-on login window:{" "}
+              {drivers.data.browser ? (
+                <span className="font-mono text-fg">{drivers.data.browser}</span>
+              ) : (
+                <span className="text-warn">no Chrome, Edge, Chromium or Brave found — SSO opens your default browser (AnyConnect external-browser and FortiGate only)</span>
+              )}
+            </div>
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-faint text-left">
@@ -362,6 +373,12 @@ function NetworkCard({
         </IconButton>
       </div>
 
+      {n.status === "auth" && n.authWindow && (
+        <div className="mx-4 mb-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
+          Single sign-on: finish signing in in the login window opsdeck opened. It connects by itself as soon as you are signed in
+          (next time the login is usually remembered).
+        </div>
+      )}
       {n.status === "auth" && n.authUrl && (
         <div className="mx-4 mb-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs flex items-center gap-2">
           <span className="flex-1">Log in to finish connecting. It continues automatically once you are signed in.</span>

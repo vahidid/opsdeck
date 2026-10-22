@@ -150,10 +150,31 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 	auth := cfg.Items["auth"]
 	argv := []string{"openconnect", "--protocol=" + protocol, "--non-inter"}
 	stdin := ""
-	if cookie := cfg.Value("cookie", "token"); cookie != "" {
+	pin := r.Str("serverCert")
+	switch {
+	case r.Bool("sso", false):
+		res, err := ssoLogin(ctx, cfg, protocol)
+		if err != nil {
+			return nil, err
+		}
+		cfg.prompt(AuthPrompt{}) // signed in; back to "connecting"
+		cfg.Log.Printf("single sign-on complete; connecting")
+		if protocol == "gp" {
+			argv = append(argv, "--user="+res.User, "--usergroup="+res.UserGroup, "--passwd-on-stdin")
+		} else {
+			argv = append(argv, "--cookie-on-stdin")
+		}
+		stdin = res.Cookie + "\n"
+		if pin == "" {
+			pin = res.ServerCert
+		}
+		if res.ConnectURL != "" {
+			server = res.ConnectURL
+		}
+	case cfg.Value("cookie", "token") != "":
 		argv = append(argv, "--cookie-on-stdin")
-		stdin = cookie + "\n"
-	} else {
+		stdin = cfg.Value("cookie", "token") + "\n"
+	default:
 		if u := auth.Get("username"); u != "" {
 			argv = append(argv, "--user="+u)
 		}
@@ -165,10 +186,10 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 			argv = append(argv, "--token-mode=totp", "--token-secret=base32:"+s)
 		}
 	}
-	if g := r.Str("authGroup"); g != "" {
+	if g := r.Str("authGroup"); g != "" && !r.Bool("sso", false) {
 		argv = append(argv, "--authgroup="+g)
 	}
-	if pin := r.Str("serverCert"); pin != "" {
+	if pin != "" {
 		argv = append(argv, "--servercert="+pin)
 	}
 	t := &cliTunnel{cfg: cfg, up: make(chan struct{}), started: make(chan struct{})}
@@ -298,11 +319,23 @@ func startOpenFortiVPN(ctx context.Context, cfg *Config) (Tunnel, error) {
 	auth := cfg.Items["auth"]
 	var conf strings.Builder
 	fmt.Fprintf(&conf, "host = %s\nport = %s\n", host, port)
-	if u := auth.Get("username"); u != "" {
-		fmt.Fprintf(&conf, "username = %s\n", u)
-	}
-	if pw := auth.Get("password"); pw != "" {
-		fmt.Fprintf(&conf, "password = %s\n", pw)
+	stdin := ""
+	sso := r.Bool("sso", false)
+	if sso {
+		res, err := ssoLogin(ctx, cfg, "fortinet")
+		if err != nil {
+			return nil, err
+		}
+		cfg.prompt(AuthPrompt{})
+		cfg.Log.Printf("single sign-on complete; connecting")
+		stdin = res.Cookie + "\n"
+	} else {
+		if u := auth.Get("username"); u != "" {
+			fmt.Fprintf(&conf, "username = %s\n", u)
+		}
+		if pw := auth.Get("password"); pw != "" {
+			fmt.Fprintf(&conf, "password = %s\n", pw)
+		}
 	}
 	if c := r.Str("serverCert"); c != "" {
 		fmt.Fprintf(&conf, "trusted-cert = %s\n", strings.TrimPrefix(c, "sha256:"))
@@ -315,7 +348,9 @@ func startOpenFortiVPN(ctx context.Context, cfg *Config) (Tunnel, error) {
 		return nil, err
 	}
 	argv := []string{"openfortivpn", "-c", path}
-	if auth.Get("totp") != "" {
+	if sso {
+		argv = append(argv, "--cookie-on-stdin")
+	} else if auth.Get("totp") != "" {
 		code, err := otp(auth)
 		if err != nil {
 			return nil, err
@@ -325,7 +360,7 @@ func startOpenFortiVPN(ctx context.Context, cfg *Config) (Tunnel, error) {
 	t := &cliTunnel{cfg: cfg, up: make(chan struct{}), started: make(chan struct{}), dial: direct, cleanup: func() { removeAll(cfg.RunDir) }}
 	t.info.Server = net.JoinHostPort(host, port)
 	var err error
-	t.p, err = startProc(argv, cfg.Elevate, "", cfg.Log, func(line string) {
+	t.p, err = startProc(argv, cfg.Elevate, stdin, cfg.Log, func(line string) {
 		switch {
 		case ofvAddrRe.MatchString(line):
 			t.mu.Lock()

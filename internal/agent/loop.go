@@ -90,8 +90,8 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 	s.messages = append(s.messages, llm.Message{Role: "user", Content: []llm.Block{{Type: "text", Text: text}}})
 	if first {
 		title := strings.Join(strings.Fields(text), " ")
-		if len(title) > 70 {
-			title = title[:70] + "…"
+		if r := []rune(title); len(r) > 70 {
+			title = string(r[:70]) + "…"
 		}
 		s.info.Title = title
 	}

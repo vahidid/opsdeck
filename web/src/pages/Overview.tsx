@@ -166,6 +166,7 @@ export function OverviewPage() {
                           {n.status === "error" && n.error ? ` · ${n.error}` : ""}
                           {n.status === "down" && n.missing ? ` · can't run here: ${n.missing}` : ""}
                         </div>
+                        {n.status === "auth" && n.authWindow && <div className="text-[11px] text-warn">Finish the sign-in in the login window</div>}
                         {n.status === "auth" && n.authUrl && (
                           <a href={n.authUrl} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline">
                             Open login page →

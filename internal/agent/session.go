@@ -172,6 +172,8 @@ func (m *Manager) Get(ws, id string) (*Session, error) {
 	for _, g := range st.Granted {
 		s.granted[g] = true
 	}
+	// titles of older sessions may end in a character cut in half
+	s.info.Title = strings.ToValidUTF8(s.info.Title, "")
 	if s.info.State != "idle" { // the process stopped mid-run
 		s.info.State = "idle"
 	}

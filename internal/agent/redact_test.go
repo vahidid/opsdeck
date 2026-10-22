@@ -3,6 +3,7 @@ package agent
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestRedact(t *testing.T) {
@@ -26,5 +27,13 @@ port=5432 user=app`
 	}
 	if !strings.Contains(out, "port=5432 user=app") {
 		t.Errorf("over-redacted:\n%s", out)
+	}
+}
+
+func TestTruncateKeepsCharacters(t *testing.T) {
+	s := strings.Repeat("سلام دنیا ", 400)
+	out := truncate(s, 1001)
+	if !utf8.ValidString(out) {
+		t.Fatal("truncate split a character")
 	}
 }

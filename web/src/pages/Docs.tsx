@@ -3,6 +3,8 @@ import { BookOpen, Brain, ClipboardList, FileArchive, FilePlus2, FileText, Penci
 import { api, errMsg } from "../api/client";
 import type { DocInfo } from "../api/types";
 import { useWs } from "../context/app";
+import { useTabTitle } from "../context/tabs";
+import { useSearchParams } from "react-router-dom";
 import { Badge, Button, EmptyState, ErrorBox, FormField, Input, Loading, Textarea, cx } from "../components/ui";
 import { Modal, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
@@ -15,7 +17,11 @@ export function DocsPage() {
   const { name: ws } = useWs();
   const list = useAsync(() => api.docs(ws), [ws]);
   const artifacts = useAsync(() => api.artifacts(ws), [ws]);
-  const [sel, setSel] = useState<string>("OPSDECK.md");
+  // the open document is part of the URL, so it can live in its own tab
+  const [params, setParams] = useSearchParams();
+  const sel = params.get("path") ?? "OPSDECK.md";
+  const setSel = (p: string) => setParams({ path: p }, { replace: true });
+  useTabTitle(sel === MEMORY ? "Memory" : sel.split("/").pop());
   const [content, setContent] = useState<string | null>(null);
   const [edit, setEdit] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState("");

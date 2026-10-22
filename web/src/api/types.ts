@@ -54,7 +54,7 @@ export type Settings = {
   defaultModel: string;
   providers: ProviderConfig[];
   localAccess: LocalAccess;
-  vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none" };
+  vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string };
 };
 export type ModelInfo = { id: string; provider: string; model: string; label: string };
 
@@ -107,6 +107,7 @@ export type KindField = {
   refKinds?: string[];
   itemTypes?: string[];
   default?: string;
+  showIf?: string;
 };
 export type KindSchema = {
   kind: string;
@@ -138,6 +139,7 @@ export type NetworkStatus = {
   status: "down" | "connecting" | "auth" | "up" | "error";
   error?: string;
   authUrl?: string;
+  authWindow?: boolean;
   since?: string;
   address?: string;
   interface?: string;
@@ -153,7 +155,7 @@ export type NetworkStatus = {
 
 export const NETWORK_KINDS = ["WireGuard", "Tailscale", "NetBird", "OpenVPN", "OpenConnect", "OpenFortiVPN", "SocksProxy"];
 export type VpnDriver = { kind: string; label: string; modes: string[]; missing: Record<string, string> };
-export type VpnDrivers = { drivers: VpnDriver[]; privileged: boolean; elevate: string; os: string };
+export type VpnDrivers = { drivers: VpnDriver[]; privileged: boolean; elevate: string; os: string; browser: string };
 export type LogLine = { time: string; text: string };
 
 export type CheckResult = { reachable: boolean; latencyMs: number; error: string; path: PathHop[] | string[] | null };

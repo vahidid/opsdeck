@@ -489,9 +489,11 @@ export function ResourceDrawer({
           </FormField>
         )}
         <div className="border-t border-line pt-3.5 space-y-3.5">
-          {schema.fields.map((f) => (
-            <SpecField key={f.key} f={f} value={r.spec[f.key]} onChange={(v) => setSpec(f.key, v)} ws={ws} resources={resources} />
-          ))}
+          {schema.fields
+            .filter((f) => !f.showIf || r.spec[f.showIf] === true || r.spec[f.showIf] === "true")
+            .map((f) => (
+              <SpecField key={f.key} f={f} value={r.spec[f.key]} onChange={(v) => setSpec(f.key, v)} ws={ws} resources={resources} />
+            ))}
         </div>
         <div className="border-t border-line pt-3.5 space-y-3.5">
           <FormField label="Description">

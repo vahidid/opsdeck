@@ -89,6 +89,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	}
 	s.hub = connect.NewHub(v, s.stateDir)
 	s.hub.Elevate = s.elevation
+	s.hub.Browser = func() string { return s.cfg.Settings().VPN.Browser }
 	s.docker = docker.New(s.hub)
 	s.kube = kube.New(s.hub, v)
 	s.mcp = mcpx.New(v)

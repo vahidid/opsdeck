@@ -21,7 +21,8 @@ type network struct {
 	kind, mode string
 	state      string // connecting | up | error
 	err        string
-	authURL    string // waiting for the user to log in
+	authURL    string // waiting for the user to log in at this URL…
+	authWindow bool   // …or in the login window opsdeck opened
 	since      time.Time
 	tun        vpn.Tunnel
 	dial       DialFunc
@@ -60,6 +61,13 @@ func secretFields(r *workspace.Resource) []string {
 	return out
 }
 
+func (h *Hub) browser() string {
+	if h.Browser == nil {
+		return ""
+	}
+	return h.Browser()
+}
+
 func (h *Hub) elevate() []string {
 	if h.Elevate == nil {
 		return vpn.Elevation("auto")
@@ -79,7 +87,7 @@ func (h *Hub) netLog(key string) *vpn.Log {
 // connectTimeout bounds one connection attempt; an interactive login
 // (Tailscale without an auth key) gets time for the user to finish it.
 func connectTimeout(r *workspace.Resource) time.Duration {
-	if r.Kind == "Tailscale" && r.Str("authKey") == "" {
+	if (r.Kind == "Tailscale" && r.Str("authKey") == "") || r.Bool("sso", false) {
 		return 15 * time.Minute
 	}
 	return 2 * time.Minute
@@ -124,8 +132,11 @@ func (h *Hub) networkUp(ctx context.Context, w *workspace.Workspace, r *workspac
 	case <-n.ready:
 	case <-ctx.Done():
 		h.mu.Lock()
-		auth := n.authURL
+		auth, window := n.authURL, n.authWindow
 		h.mu.Unlock()
+		if window {
+			return nil, fmt.Errorf("network %s: %w — waiting for the user to sign in in the login window opsdeck opened", r.Name, ErrConnecting)
+		}
 		if auth != "" {
 			return nil, fmt.Errorf("network %s: %w — waiting for login at %s", r.Name, ErrConnecting, auth)
 		}
@@ -153,9 +164,9 @@ func (h *Hub) launch(actor Actor, w *workspace.Workspace, r *workspace.Resource,
 	ws := w.Name()
 	go func() {
 		defer cancel()
-		tun, dial, err := h.startNetwork(ctx, w, &res, mode, items, log, func(url string) {
+		tun, dial, err := h.startNetwork(ctx, w, &res, mode, items, log, func(p vpn.AuthPrompt) {
 			h.mu.Lock()
-			n.authURL = url
+			n.authURL, n.authWindow = p.URL, p.Window
 			h.mu.Unlock()
 		})
 		h.mu.Lock()
@@ -172,7 +183,7 @@ func (h *Hub) launch(actor Actor, w *workspace.Workspace, r *workspace.Resource,
 			close(n.ready)
 			return
 		}
-		n.tun, n.dial, n.state, n.authURL, n.since = tun, dial, "up", "", time.Now()
+		n.tun, n.dial, n.state, n.authURL, n.authWindow, n.since = tun, dial, "up", "", false, time.Now()
 		if tun != nil {
 			if lp, ok := tun.(interface{ LocalProxy() string }); ok && lp.LocalProxy() != "" {
 				n.proxy = lp.LocalProxy()
@@ -210,7 +221,7 @@ func (h *Hub) watch(ws, key string, n *network) {
 	}
 }
 
-func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *workspace.Resource, mode string, items map[string]vault.Item, log *vpn.Log, authURL func(string)) (vpn.Tunnel, DialFunc, error) {
+func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *workspace.Resource, mode string, items map[string]vault.Item, log *vpn.Log, auth func(vpn.AuthPrompt)) (vpn.Tunnel, DialFunc, error) {
 	if r.Kind == "SocksProxy" {
 		forward, err := h.Dialer(ctx, w, r)
 		if err != nil {
@@ -239,7 +250,7 @@ func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *works
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		return nil, nil, err
 	}
-	cfg := &vpn.Config{Res: r, Mode: mode, Items: items, StateDir: stateDir, RunDir: runDir, Elevate: elevate, Log: log, AuthURL: authURL}
+	cfg := &vpn.Config{Res: r, Mode: mode, Items: items, StateDir: stateDir, RunDir: runDir, Elevate: elevate, Log: log, Auth: auth, Browser: h.browser()}
 	tun, err := d.Start(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
@@ -280,6 +291,7 @@ type NetStatus struct {
 	Status        string    `json:"status"` // down | connecting | auth | up | error
 	Error         string    `json:"error,omitempty"`
 	AuthURL       string    `json:"authUrl,omitempty"`
+	AuthWindow    bool      `json:"authWindow,omitempty"` // login in progress in opsdeck's login window
 	Since         time.Time `json:"since,omitempty"`
 	Address       string    `json:"address,omitempty"`
 	Interface     string    `json:"interface,omitempty"`
@@ -315,8 +327,8 @@ func (h *Hub) Networks(w *workspace.Workspace) []NetStatus {
 		var tun vpn.Tunnel
 		if n := h.networks[netKey(w.Name(), r.Name)]; n != nil {
 			st.Status, st.Error, st.Since, st.Proxy = n.state, n.err, n.since, n.proxy
-			if n.state == "connecting" && n.authURL != "" {
-				st.Status, st.AuthURL = "auth", n.authURL
+			if n.state == "connecting" && (n.authURL != "" || n.authWindow) {
+				st.Status, st.AuthURL, st.AuthWindow = "auth", n.authURL, n.authWindow
 			}
 			tun = n.tun
 		}

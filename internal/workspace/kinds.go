@@ -12,6 +12,7 @@ type FieldSchema struct {
 	RefKinds    []string `json:"refKinds,omitempty"`
 	ItemTypes   []string `json:"itemTypes,omitempty"`
 	Default     string   `json:"default,omitempty"`
+	ShowIf      string   `json:"showIf,omitempty"` // only shown when this (bool) field is on
 }
 
 // KindSchema describes a resource kind.
@@ -35,6 +36,10 @@ var (
 	fieldProxyPort = FieldSchema{Key: "proxyPort", Label: "Local SOCKS5 port", Type: "number", Placeholder: "1080",
 		Help: "Userspace mode: also serve the VPN to other apps on this machine as a SOCKS5 proxy on 127.0.0.1:<port> (browser, kubectl, curl --socks5-hostname)"}
 	fieldHostname = FieldSchema{Key: "hostname", Label: "Device name", Type: "string", Placeholder: "opsdeck-<profile>", Help: "This machine's name in the network"}
+	fieldSSO      = FieldSchema{Key: "sso", Label: "Single sign-on (SAML)", Type: "bool",
+		Help: "Log in through your identity provider (Azure AD/Entra, Okta, Google, ADFS…). opsdeck opens the login page and takes the VPN session from it — nothing to copy by hand. AnyConnect/ocserv, GlobalProtect and FortiGate"}
+	fieldSSOBrowser = FieldSchema{Key: "ssoBrowser", Label: "SSO login in", Type: "select", Options: []string{"auto", "window", "system"}, Default: "auto", ShowIf: "sso",
+		Help: "window: a login window opsdeck drives (Chrome/Edge/Chromium/Brave; remembers your IdP login per profile, so later logins are usually automatic). system: your default browser (AnyConnect external-browser and FortiGate only). auto: window when such a browser is installed"}
 )
 
 // Kinds is the registry of resource kinds.
@@ -80,12 +85,14 @@ var Kinds = []KindSchema{
 		{Key: "auth", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "Username/password; a TOTP secret on the item answers OTP prompts"},
 		{Key: "authGroup", Label: "Group / realm", Type: "string"},
 		{Key: "serverCert", Label: "Server certificate pin", Type: "string", Placeholder: "pin-sha256:…", Help: "Only for self-signed gateways; the exact value is shown in the log after the first attempt"},
-		{Key: "cookie", Label: "Session cookie (SAML/SSO)", Type: "secretRef", ItemTypes: []string{"token"}, Help: "For SSO gateways: the cookie printed by `openconnect --authenticate`, stored as a vault token"},
+		fieldSSO, fieldSSOBrowser,
+		{Key: "cookie", Label: "Session cookie", Type: "secretRef", ItemTypes: []string{"token"}, Help: "Rarely needed: a session cookie from `openconnect --authenticate`, used instead of a login"},
 		fieldMode, fieldProxyPort,
 	}},
 	{Kind: "OpenFortiVPN", Label: "FortiGate (openfortivpn)", Category: "network", Icon: "shield", Fields: []FieldSchema{
 		{Key: "server", Label: "Gateway", Type: "string", Required: true, Placeholder: "vpn.example.com:443"},
 		{Key: "auth", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}},
+		fieldSSO, fieldSSOBrowser,
 		{Key: "authGroup", Label: "Realm", Type: "string"},
 		{Key: "serverCert", Label: "Trusted certificate (sha256)", Type: "string", Help: "Only for self-signed gateways; the value is shown in the log after the first attempt"},
 	}},

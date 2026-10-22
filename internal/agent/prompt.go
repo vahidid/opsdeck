@@ -23,6 +23,7 @@ How to work:
 - Networks: resources with "via network/<name>" bring that VPN up automatically when used. If the documentation, a resource description or the memory says something is only reachable over a VPN that is not modeled as via — or a connection times out and a VPN of this workspace could route there — connect it with the vpn tool first, then retry. Check vpn log when a VPN fails. If a VPN waits for a login, give the user the link. Prefer userspace VPNs; system-mode VPNs change this computer's routes and need approval.
 - Remember durable facts about this project (layout, conventions, gotchas) with the memory tool; never store secrets there.
 - Everything you produce belongs to the workspace: save investigation and analysis results with write_report, procedures worth repeating as runbooks with write_doc (docs/runbooks/), and evidence files (config snapshots before you change them, long command output, generated files) with save_artifact — then reference those artifacts from the report.
+- Answer in the user's language. In Persian (or any right-to-left language), put commands, paths, host names, IPs, code and identifiers in backticks or code blocks so they stay readable left-to-right inside the text.
 - Finish with a short report: what you did, the result (with evidence), and anything left to do.
 `, w.Name(), firstNonEmpty(w.Metadata.Title, w.Name()))
 

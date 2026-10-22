@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
+@import "@fontsource/vazirmatn/arabic-400.css";
+@import "@fontsource/vazirmatn/arabic-500.css";
+@import "@fontsource/vazirmatn/arabic-600.css";
+@import "@fontsource/vazirmatn/arabic-700.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -55,7 +59,7 @@
   --color-warn: var(--c-warn);
   --color-err: var(--c-err);
   --color-info: var(--c-info);
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", "Vazirmatn", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 
@@ -116,11 +120,23 @@ button {
 }
 .prose-ops ul {
   list-style: disc;
-  padding-left: 1.4em;
+  padding-inline-start: 1.4em;
 }
 .prose-ops ol {
   list-style: decimal;
-  padding-left: 1.4em;
+  padding-inline-start: 1.4em;
+}
+/* right-to-left prose (Persian): roomier lines, text starts on the right */
+.prose-rtl {
+  line-height: 1.9;
+}
+.prose-ops [dir="rtl"],
+.prose-ops[dir="rtl"] {
+  text-align: start;
+}
+/* commands, paths and identifiers stay left-to-right inside RTL text */
+.prose-ops code {
+  unicode-bidi: isolate;
 }
 .prose-ops li + li {
   margin-top: 0.2em;
@@ -152,8 +168,8 @@ button {
   padding: 0;
 }
 .prose-ops blockquote {
-  border-left: 3px solid var(--c-border-strong);
-  padding-left: 0.8em;
+  border-inline-start: 3px solid var(--c-border-strong);
+  padding-inline-start: 0.8em;
   color: var(--c-muted);
 }
 .prose-ops table {
@@ -164,7 +180,7 @@ button {
 .prose-ops td {
   border: 1px solid var(--c-border);
   padding: 0.3em 0.6em;
-  text-align: left;
+  text-align: start;
 }
 .prose-ops th {
   background: var(--c-panel-2);

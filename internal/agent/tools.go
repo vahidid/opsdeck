@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pmezard/go-difflib/difflib"
 
@@ -102,6 +103,13 @@ func truncate(s string, max int) string {
 	}
 	head := max * 2 / 3
 	tail := max - head
+	// cut on character boundaries (Persian and other multi-byte text)
+	for head > 0 && !utf8.RuneStart(s[head]) {
+		head--
+	}
+	for tail > 0 && !utf8.RuneStart(s[len(s)-tail]) {
+		tail--
+	}
 	return s[:head] + fmt.Sprintf("\n\n... [%d bytes omitted] ...\n\n", len(s)-head-tail) + s[len(s)-tail:]
 }
 

@@ -1076,6 +1076,7 @@ func (s *Server) vpnDrivers(w http.ResponseWriter, r *http.Request) {
 		"drivers":    vpn.Drivers(s.elevation()),
 		"privileged": vpn.Privileged(),
 		"elevate":    strings.Join(s.elevation(), " "),
+		"browser":    vpn.FindBrowser(s.cfg.Settings().VPN.Browser),
 		"os":         runtime.GOOS,
 	})
 }

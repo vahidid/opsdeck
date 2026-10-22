@@ -1,3 +1,4 @@
+import { useTabActive } from "../context/tabs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errMsg } from "../api/client";
 
@@ -51,14 +52,17 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], opts: { enabl
   return { data, error, loading, reload, setData };
 }
 
+// useInterval runs fn every ms milliseconds while the page's tab is visible
+// (pages in background tabs stay mounted but stop polling).
 export function useInterval(fn: () => void, ms: number | null) {
   const ref = useRef(fn);
   ref.current = fn;
+  const visible = useTabActive();
   useEffect(() => {
-    if (ms === null) return;
+    if (ms === null || !visible) return;
     const t = setInterval(() => ref.current(), ms);
     return () => clearInterval(t);
-  }, [ms]);
+  }, [ms, visible]);
 }
 
 export function useLocalStorage<T>(key: string, initial: T): [T, (v: T) => void] {

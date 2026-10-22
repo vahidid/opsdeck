@@ -52,6 +52,8 @@ type Hub struct {
 
 	// Elevate returns the command prefix for system-mode VPN clients.
 	Elevate func() []string
+	// Browser returns the configured browser for VPN single sign-on.
+	Browser func() string
 
 	mu       sync.Mutex
 	networks map[string]*network // key ws/name

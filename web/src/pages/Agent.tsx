@@ -23,15 +23,18 @@ import {
   Trash2,
   User,
   Wrench,
+  SquareArrowOutUpRight,
   X,
   Zap,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { AgentEvent, ModelInfo, SessionInfo, SessionMode, SessionState } from "../api/types";
 import { useWs } from "../context/app";
+import { useOpenInTab, useTabTitle, useTabs } from "../context/tabs";
 import { Badge, Button, CodeBlock, EmptyState, IconButton, Input, Select, StatusDot, cx, riskTone } from "../components/ui";
 import { MenuItem, Modal, Popover, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
+import { textDir } from "../lib/rtl";
 import { useAsync } from "../hooks";
 import { fmtMs, fmtTokens, timeAgo } from "../lib/format";
 
@@ -49,6 +52,10 @@ export function AgentPage() {
   const settings = useAsync(() => api.settings(), []);
   const [renaming, setRenaming] = useState<SessionInfo | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const openInTab = useOpenInTab();
+  const wsTabs = useTabs();
+  const current = sessions.data?.find((s) => s.id === sid);
+  useTabTitle(sid ? `Agent · ${current?.title || sid.slice(0, 8)}` : "Agent · new");
 
   useEffect(() => {
     if (params.get("new")) {
@@ -82,7 +89,7 @@ export function AgentPage() {
     <div className="flex h-full min-h-0">
       <aside className="w-64 shrink-0 border-r border-line bg-panel flex flex-col">
         <div className="p-2 border-b border-line">
-          <Button className="w-full" icon={<MessageSquarePlus className="size-4" />} onClick={() => navigate(`/w/${encodeURIComponent(ws)}/agent`)}>
+          <Button className="w-full" icon={<MessageSquarePlus className="size-4" />} {...openInTab("agent")}>
             New session
           </Button>
         </div>
@@ -91,7 +98,8 @@ export function AgentPage() {
           {sorted.map((s) => (
             <div
               key={s.id}
-              onClick={() => navigate(`/w/${encodeURIComponent(ws)}/agent/${encodeURIComponent(s.id)}`)}
+              {...openInTab(`agent/${encodeURIComponent(s.id)}`)}
+              title="Ctrl/⌘-click or middle-click: open in a new tab"
               className={cx(
                 "group relative flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer",
                 s.id === sid ? "bg-panel-3" : "hover:bg-panel-2",
@@ -99,7 +107,9 @@ export function AgentPage() {
             >
               <StateDot state={s.state} />
               <div className="min-w-0 flex-1">
-                <div className={cx("truncate text-[12.5px]", s.id === sid ? "text-fg" : "text-muted group-hover:text-fg")}>{s.title || "Untitled session"}</div>
+                <div dir="auto" className={cx("truncate text-[12.5px] text-start", s.id === sid ? "text-fg" : "text-muted group-hover:text-fg")}>
+                  {s.title || "Untitled session"}
+                </div>
                 <div className="text-[10.5px] text-faint flex gap-1.5">
                   <span>{timeAgo(s.updated)}</span>
                   <span className="uppercase">{s.mode}</span>
@@ -109,7 +119,10 @@ export function AgentPage() {
                 <IconButton title="Session actions" className="size-6 opacity-0 group-hover:opacity-100" onClick={() => setMenu(menu === s.id ? null : s.id)}>
                   <MoreHorizontal className="size-3.5" />
                 </IconButton>
-                <Popover open={menu === s.id} onClose={() => setMenu(null)} className="right-0 mt-1 w-40">
+                <Popover open={menu === s.id} onClose={() => setMenu(null)} className="right-0 mt-1 w-44">
+                  <MenuItem icon={<SquareArrowOutUpRight />} onClick={() => (setMenu(null), wsTabs.open(ws, `agent/${encodeURIComponent(s.id)}`))}>
+                    Open in new tab
+                  </MenuItem>
                   <MenuItem icon={<Pencil />} onClick={() => (setMenu(null), setRenaming(s))}>
                     Rename
                   </MenuItem>
@@ -207,7 +220,7 @@ function RenameModal({ session, onClose, onSave }: { session: SessionInfo | null
         </>
       }
     >
-      <Input autoFocus value={t} onChange={(e) => setT(e.target.value)} onKeyDown={(e) => e.key === "Enter" && t.trim() && void onSave(t.trim())} />
+      <Input dir="auto" autoFocus value={t} onChange={(e) => setT(e.target.value)} onKeyDown={(e) => e.key === "Enter" && t.trim() && void onSave(t.trim())} />
     </Modal>
   );
 }
@@ -326,6 +339,7 @@ function Composer({
     <div className="rounded-xl border border-line-strong bg-panel shadow-lg shadow-black/10 focus-within:border-accent/60 transition-colors">
       <textarea
         ref={ref}
+        dir="auto"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -693,7 +707,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
       <div className="flex items-center gap-3 px-4 h-12 border-b border-line bg-panel shrink-0">
         <StateDot state={state} />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium">{session?.title || "Untitled session"}</div>
+          <div dir="auto" className="truncate font-medium">{session?.title || "Untitled session"}</div>
         </div>
         <span className="text-xs text-muted">
           {state === "running" ? "Working…" : state === "waiting_approval" ? "Waiting for your approval" : "Idle"}
@@ -728,7 +742,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
                 return (
                   <div key={t.id} className="flex gap-2 rounded-lg border border-err/30 bg-err/8 px-3 py-2.5 text-err text-[13px]">
                     <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                    <div className="whitespace-pre-wrap break-words">{t.message}</div>
+                    <div dir="auto" className="whitespace-pre-wrap break-words text-start">{t.message}</div>
                   </div>
                 );
               case "compaction":
@@ -778,7 +792,12 @@ function UserMsg({ text }: { text: string }) {
       <span className="size-6 rounded-md bg-panel-3 grid place-items-center shrink-0 mt-0.5">
         <User className="size-3.5 text-muted" />
       </span>
-      <div className="flex-1 min-w-0 rounded-lg bg-panel-2 border border-line px-3.5 py-2.5 whitespace-pre-wrap break-words text-[13.5px]">{text}</div>
+      <div
+        dir={textDir(text)}
+        className="flex-1 min-w-0 rounded-lg bg-panel-2 border border-line px-3.5 py-2.5 whitespace-pre-wrap break-words text-[13.5px] text-start leading-relaxed"
+      >
+        {text}
+      </div>
     </div>
   );
 }
@@ -790,7 +809,7 @@ function AssistantMsg({ text, streaming }: { text: string; streaming: boolean })
         <Bot className="size-3.5 text-accent" />
       </span>
       <div className="flex-1 min-w-0 text-[13.5px] pt-0.5">
-        {text ? <Markdown>{text}</Markdown> : <span className="text-faint">…</span>}
+        {text ? <Markdown dir={textDir(text) === "rtl" ? "rtl" : "auto"}>{text}</Markdown> : <span className="text-faint">…</span>}
         {streaming && <span className="inline-block w-1.5 h-4 bg-accent/70 ml-0.5 align-text-bottom pulse-dot" />}
       </div>
     </div>
@@ -808,7 +827,7 @@ function Compaction({ summary }: { summary: string }) {
       </button>
       {open && (
         <div className="mt-2 rounded-md border border-line bg-panel p-3 text-muted">
-          <Markdown>{summary}</Markdown>
+          <Markdown dir={textDir(summary) === "rtl" ? "rtl" : "auto"}>{summary}</Markdown>
         </div>
       )}
     </div>
@@ -1022,7 +1041,7 @@ function ApprovalBox({
       ) : (
         <div className="mt-3 space-y-2">
           {denyOpen && (
-            <Input
+            <Input dir="auto"
               autoFocus
               value={note}
               onChange={(e) => setNote(e.target.value)}

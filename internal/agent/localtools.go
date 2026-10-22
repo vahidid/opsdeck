@@ -328,8 +328,8 @@ func toolLocalSearch() Tool {
 					for line := 1; sc.Scan(); line++ {
 						if re.Match(sc.Bytes()) {
 							text := sc.Text()
-							if len(text) > 300 {
-								text = text[:300] + "…"
+							if r := []rune(text); len(r) > 300 {
+								text = string(r[:300]) + "…"
 							}
 							fmt.Fprintf(&b, "%s:%d: %s\n", p, line, text)
 							if n++; n >= in.MaxResults {

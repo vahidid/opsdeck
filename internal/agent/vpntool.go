@@ -85,6 +85,9 @@ func toolVPN() Tool {
 						if strings.Contains(err.Error(), "login at") {
 							return status, fmt.Errorf("%v. Ask the user to open the login link (also shown on the VPN page); it connects as soon as they log in", err)
 						}
+						if strings.Contains(err.Error(), "login window") {
+							return status, fmt.Errorf("%v. Ask the user to finish the single sign-on in that window; it connects as soon as they are signed in. Check again with vpn status", err)
+						}
 						return status, fmt.Errorf("%v; check again with vpn status or vpn log", err)
 					}
 					if err != nil {
@@ -141,6 +144,8 @@ func renderNetworks(nets []connect.NetStatus) string {
 		}
 		if n.AuthURL != "" {
 			fmt.Fprintf(&b, ", waiting for login at %s", n.AuthURL)
+		} else if n.AuthWindow {
+			b.WriteString(", waiting for the user to sign in in the login window")
 		}
 		if n.Error != "" {
 			fmt.Fprintf(&b, ", error: %s", n.Error)

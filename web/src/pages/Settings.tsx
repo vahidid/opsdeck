@@ -27,7 +27,7 @@ const AGENT_PRESETS: { kind: AgentKind; label: string; id: string; command: stri
 const NO_LOCAL: Settings["localAccess"] = { disabled: false, allowedDirs: [], autoReadCommands: false };
 const normSettings = (v: Settings): Settings => ({
   ...v,
-  vpn: { elevate: v.vpn?.elevate || "auto" },
+  vpn: { elevate: v.vpn?.elevate || "auto", browser: v.vpn?.browser ?? "" },
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
 });
@@ -315,12 +315,18 @@ export function AppSettingsPage() {
               label="Run system-mode VPNs with"
               help="System (TUN) VPNs need root. auto = sudo -n when opsdeck is not root (configure passwordless sudo for openvpn, openconnect, openfortivpn and wg-quick); pkexec shows a password dialog on desktops. Userspace VPNs never need this."
             >
-              <Select value={s.vpn.elevate || "auto"} onChange={(e) => setS({ ...s, vpn: { elevate: e.target.value as Settings["vpn"]["elevate"] } })}>
+              <Select value={s.vpn.elevate || "auto"} onChange={(e) => setS({ ...s, vpn: { ...s.vpn, elevate: e.target.value as Settings["vpn"]["elevate"] } })}>
                 <option value="auto">auto (sudo -n when not root)</option>
                 <option value="sudo">sudo -n</option>
                 <option value="pkexec">pkexec</option>
                 <option value="none">none (opsdeck runs as root)</option>
               </Select>
+            </FormField>
+            <FormField
+              label="Browser for VPN single sign-on"
+              help="Chrome, Edge, Chromium or Brave that opsdeck opens as a login window for SAML VPNs. Empty = detect automatically."
+            >
+              <Input mono value={s.vpn.browser} onChange={(e) => setS({ ...s, vpn: { ...s.vpn, browser: e.target.value } })} placeholder="auto-detect (google-chrome, msedge, chromium…)" />
             </FormField>
             {!s.localAccess.disabled && (
               <>

@@ -1,7 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  BaseEdge,
   ConnectionMode,
+  EdgeLabelRenderer,
+  Panel,
+  getSmoothStepPath,
+  getStraightPath,
   Controls,
   Handle,
   MarkerType,
@@ -14,7 +19,7 @@ import {
   applyNodeChanges,
   useReactFlow,
 } from "@xyflow/react";
-import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeProps } from "@xyflow/react";
+import type { Connection, Edge, EdgeChange, EdgeProps, Node, NodeChange, NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowLeftRight, Bot, Download, FileText, Import, LayoutGrid, Lock, Network, Plus, Save, SquareDashed, Trash2, X } from "lucide-react";
 import { api, errMsg, ApiError } from "../api/client";
@@ -24,7 +29,7 @@ import { useTabActive } from "../context/tabs";
 import { Badge, Button, ChipInput, FormField, IconButton, Input, Loading, SearchInput, Select, Textarea, Toggle, cx } from "../components/ui";
 import { Popover, MenuItem, useConfirm, useToast } from "../components/overlay";
 import { TopoIcon } from "../components/topoIcons";
-import { useAsync, useInterval } from "../hooks";
+import { useAsync, useInterval, useLocalStorage } from "../hooks";
 
 // The topology editor: zones (group boxes), components (nodes) and
 // connections (edges) of the workspace's infrastructure, saved as
@@ -215,6 +220,10 @@ function Editor() {
   const [saved, setSaved] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [sel, setSel] = useState<Sel>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  const [labelMode, setLabelMode] = useLocalStorage<"auto" | "all" | "none">("opsdeck.topology.labels", "auto");
+  const [lineMode, setLineMode] = useLocalStorage<"step" | "straight">("opsdeck.topology.lines", "step");
+  const [hiddenCats, setHiddenCats] = useLocalStorage<string[]>("opsdeck.topology.hidden", []);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [saving, setSaving] = useState(false);
@@ -273,6 +282,23 @@ function Editor() {
       return next;
     });
 
+  // What is highlighted: the hovered or selected component and its
+  // connections, or the selected connection and its two ends.
+  const focus = useMemo(() => {
+    const none = { nodes: null as Set<string> | null, links: null as Set<string> | null };
+    if (!doc) return none;
+    const id = hover ?? (sel?.kind === "node" ? sel.id : null);
+    if (id) {
+      const links = doc.links.filter((l) => l.from === id || l.to === id);
+      return { nodes: new Set([id, ...links.flatMap((l) => [l.from, l.to])]), links: new Set(links.map((l) => l.id)) };
+    }
+    if (sel?.kind === "link") {
+      const l = doc.links.find((x) => x.id === sel.id);
+      if (l) return { nodes: new Set([l.from, l.to]), links: new Set([l.id]) };
+    }
+    return none;
+  }, [doc, hover, sel]);
+
   // ---- doc → React Flow
 
   useEffect(() => {
@@ -309,35 +335,58 @@ function Editor() {
           type: "component",
           position: { x: box.x, y: box.y },
           parentId: n.zone || undefined,
-          data: { node: n, nt: typeOf(n.type) },
+          data: { node: n, nt: typeOf(n.type), dim: focus.nodes !== null && !focus.nodes.has(n.id) },
           selected: sel?.kind === "node" && sel.id === n.id,
           zIndex: 10,
         });
       }
       return out;
     });
+    // Each connection leaves from the side of a component that faces the
+    // other end; parallel connections between the same pair are fanned out.
+    const centers = absCenters(doc);
+    const pairCount: Record<string, number> = {};
+    const pairIndex: Record<string, number> = {};
+    for (const l of doc.links) pairCount[[l.from, l.to].sort().join("|")] = (pairCount[[l.from, l.to].sort().join("|")] ?? 0) + 1;
     setEdges(
       doc.links.map((l) => {
         const lk = linkKindOf(l.kind);
         const st = LINK_STYLE[lk.category] ?? LINK_STYLE.app;
-        const label = [l.kind || lk.label, l.port ? `:${l.port}` : "", l.encrypted ? " 🔒" : ""].join("");
+        const pair = [l.from, l.to].sort().join("|");
+        const idx = (pairIndex[pair] = (pairIndex[pair] ?? -1) + 1);
+        const fan = (idx - (pairCount[pair] - 1) / 2) * 14;
+        const [sh, th] = sides(centers[l.from], centers[l.to]);
+        const hot = focus.links !== null && focus.links.has(l.id);
+        const dim = focus.links !== null && !hot;
+        const label = [l.kind || lk.label, l.port ? `:${l.port}` : "", l.encrypted ? " 🔒" : ""].join("") + (l.label ? ` · ${l.label}` : "");
+        const marker = { type: MarkerType.ArrowClosed, color: st.stroke, width: 14, height: 14 };
         return {
           id: l.id,
+          type: "conn",
           source: l.from,
           target: l.to,
-          label,
+          sourceHandle: sh,
+          targetHandle: th,
+          hidden: hiddenCats.includes(lk.category),
           selected: sel?.kind === "link" && sel.id === l.id,
-          style: { stroke: st.stroke, strokeDasharray: st.dash, strokeWidth: sel?.id === l.id ? (st.width ?? 1.5) + 1.2 : st.width },
-          labelStyle: { fontSize: 10.5, fill: "var(--c-fg, #e5e7eb)" },
-          labelBgStyle: { fill: "var(--c-panel, #111318)", fillOpacity: 0.9 },
-          labelBgPadding: [4, 2] as [number, number],
-          markerEnd: { type: MarkerType.ArrowClosed, color: st.stroke, width: 16, height: 16 },
-          markerStart: l.bidirectional ? { type: MarkerType.ArrowClosed, color: st.stroke, width: 16, height: 16 } : undefined,
-          zIndex: 5,
+          data: {
+            label,
+            color: st.stroke,
+            dash: st.dash,
+            width: (st.width ?? 1.5) + (hot ? 1 : 0),
+            dim,
+            hot,
+            fan,
+            straight: lineMode === "straight",
+            showLabel: labelMode === "all" || (labelMode === "auto" && hot),
+          } satisfies ConnData,
+          markerEnd: marker,
+          markerStart: l.bidirectional ? marker : undefined,
+          zIndex: hot ? 20 : 5,
         };
       }),
     );
-  }, [doc, sel, typeOf, linkKindOf]);
+  }, [doc, sel, typeOf, linkKindOf, focus, labelMode, lineMode, hiddenCats]);
 
   // fit the view once the first diagram is on screen
   const fitted = useRef(false);
@@ -620,6 +669,9 @@ function Editor() {
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
+            onNodeMouseEnter={(_, n) => n.type === "component" && setHover(n.id)}
+            onNodeMouseLeave={() => setHover(null)}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
@@ -636,6 +688,17 @@ function Editor() {
           >
             <Background gap={20} size={1} />
             <Controls showInteractive={false} />
+            <Panel position="top-right">
+              <Legend
+                hidden={hiddenCats}
+                onToggle={(c) => setHiddenCats(hiddenCats.includes(c) ? hiddenCats.filter((x) => x !== c) : [...hiddenCats, c])}
+                counts={countByCategory(doc, linkKindOf)}
+                labelMode={labelMode}
+                setLabelMode={setLabelMode}
+                lineMode={lineMode}
+                setLineMode={setLineMode}
+              />
+            </Panel>
             <MiniMap pannable zoomable className="!bg-panel" nodeColor={(n) => (n.type === "zone" ? "transparent" : "#4b5563")} nodeStrokeColor={(n) => (n.type === "zone" ? String((n.data as { color?: string }).color ?? "#666") : "#9ca3af")} />
           </ReactFlow>
           {doc.nodes.length === 0 && doc.zones.length === 0 && (
@@ -672,6 +735,7 @@ function Editor() {
                 })
               }
               onDelete={removeSelected}
+              onSelectLink={(id) => setSel({ kind: "link", id })}
             />
           )}
           {selZone && (
@@ -723,19 +787,23 @@ function refOf(kind: string, name: string): string {
 // ---------------------------------------------------------------------------
 // Canvas nodes
 
-type CompData = { node: TopoNode; nt: TopoNodeType };
+type CompData = { node: TopoNode; nt: TopoNodeType; dim?: boolean };
 
 const ComponentNode = memo(function ComponentNode({ data, selected }: NodeProps) {
-  const { node: n, nt } = data as CompData;
+  const { node: n, nt, dim } = data as CompData;
   const deps = n.deployments ?? [];
   const sub = [n.variant, n.vendor].filter(Boolean).join(" · ") || nt.label;
   return (
     <div
-      className={cx("rounded-lg border bg-panel shadow-sm px-2.5 py-2 text-left", selected ? "border-accent ring-2 ring-accent/30" : "border-line-strong")}
+      className={cx(
+        "group rounded-lg border bg-panel shadow-sm px-2.5 py-2 text-left transition-opacity",
+        selected ? "border-accent ring-2 ring-accent/30" : "border-line-strong",
+        dim && "opacity-30",
+      )}
       style={{ width: NODE_W, minHeight: NODE_H }}
     >
       {[Position.Top, Position.Right, Position.Bottom, Position.Left].map((p) => (
-        <Handle key={p} id={p} type="source" position={p} className="!size-2 !bg-accent !border-0 opacity-60 hover:opacity-100" />
+        <Handle key={p} id={p} type="source" position={p} className="!size-2.5 !bg-accent !border-0 opacity-0 group-hover:opacity-80 hover:!opacity-100" />
       ))}
       <div className="flex items-center gap-2">
         <span className="shrink-0 text-accent">
@@ -780,6 +848,157 @@ const ZoneNode = memo(function ZoneNode({ data, selected }: NodeProps) {
 });
 
 const NODE_TYPES = { component: ComponentNode, zone: ZoneNode };
+
+type ConnData = { label: string; color: string; dash?: string; width: number; dim: boolean; hot: boolean; fan: number; straight: boolean; showLabel: boolean };
+
+// ConnEdge draws a connection as right-angled (or straight) lines with a
+// readable label pill; dimmed when something else is in focus.
+const ConnEdge = memo(function ConnEdge(p: EdgeProps) {
+  const d = p.data as ConnData;
+  const horizontal = p.sourcePosition === Position.Left || p.sourcePosition === Position.Right;
+  // fan parallel connections out sideways
+  const sx = p.sourceX + (horizontal ? 0 : d.fan);
+  const sy = p.sourceY + (horizontal ? d.fan : 0);
+  const tx = p.targetX + (horizontal ? 0 : d.fan);
+  const ty = p.targetY + (horizontal ? d.fan : 0);
+  const [path, lx, ly] = d.straight
+    ? getStraightPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty })
+    : getSmoothStepPath({ sourceX: sx, sourceY: sy, sourcePosition: p.sourcePosition, targetX: tx, targetY: ty, targetPosition: p.targetPosition, borderRadius: 10, offset: 22 + Math.abs(d.fan) });
+  // nothing in focus: slightly faded so components stand out; in focus: full
+  const opacity = d.dim ? 0.1 : d.hot ? 1 : 0.6;
+  return (
+    <>
+      <BaseEdge
+        id={p.id}
+        path={path}
+        markerEnd={p.markerEnd}
+        markerStart={p.markerStart}
+        interactionWidth={18}
+        style={{ stroke: d.color, strokeDasharray: d.dash, strokeWidth: p.selected ? d.width + 1.5 : d.width, opacity, transition: "opacity 120ms" }}
+      />
+      {(d.showLabel || p.selected) && !d.dim && (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan absolute rounded-full border bg-panel px-1.5 py-px text-[10px] leading-4 whitespace-nowrap shadow-sm pointer-events-auto"
+            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, borderColor: d.color, color: "var(--c-fg, #e5e7eb)", zIndex: 30 }}
+          >
+            {d.label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+});
+
+const EDGE_TYPES = { conn: ConnEdge };
+
+// absCenters is the centre of every component on the canvas (layout
+// positions are relative to the enclosing zone).
+function absCenters(doc: TopologyDoc): Record<string, { x: number; y: number }> {
+  const layout = doc.layout ?? {};
+  const zoneOrigin = (id?: string, depth = 0): { x: number; y: number } => {
+    if (!id || depth > 20) return { x: 0, y: 0 };
+    const z = doc.zones.find((x) => x.id === id);
+    const o = zoneOrigin(z?.parent, depth + 1);
+    const b = layout[id] ?? { x: 0, y: 0 };
+    return { x: o.x + b.x, y: o.y + b.y };
+  };
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const n of doc.nodes) {
+    const o = zoneOrigin(n.zone);
+    const b = layout[n.id] ?? { x: 0, y: 0 };
+    out[n.id] = { x: o.x + b.x + NODE_W / 2, y: o.y + b.y + NODE_H / 2 };
+  }
+  return out;
+}
+
+// sides picks the facing sides of two components.
+function sides(a?: { x: number; y: number }, b?: { x: number; y: number }): [Position, Position] {
+  if (!a || !b) return [Position.Bottom, Position.Top];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // components are wider than tall: prefer top/bottom unless clearly side by side
+  if (Math.abs(dx) > Math.abs(dy) * 1.6) return dx > 0 ? [Position.Right, Position.Left] : [Position.Left, Position.Right];
+  return dy > 0 ? [Position.Bottom, Position.Top] : [Position.Top, Position.Bottom];
+}
+
+const CATEGORY_LABEL: Record<string, string> = { network: "Network", tunnel: "Tunnels / VPN", routing: "Routing", app: "Application", data: "Data", mgmt: "Management" };
+
+function countByCategory(doc: TopologyDoc, kindOf: (k?: string) => TopoLinkKind): Record<string, number> {
+  const c: Record<string, number> = {};
+  for (const l of doc.links) {
+    const cat = kindOf(l.kind).category;
+    c[cat] = (c[cat] ?? 0) + 1;
+  }
+  return c;
+}
+
+function Legend({
+  hidden,
+  onToggle,
+  counts,
+  labelMode,
+  setLabelMode,
+  lineMode,
+  setLineMode,
+}: {
+  hidden: string[];
+  onToggle: (c: string) => void;
+  counts: Record<string, number>;
+  labelMode: "auto" | "all" | "none";
+  setLabelMode: (v: "auto" | "all" | "none") => void;
+  lineMode: "step" | "straight";
+  setLineMode: (v: "step" | "straight") => void;
+}) {
+  const [open, setOpen] = useLocalStorage("opsdeck.topology.legend", false);
+  return (
+    <div className="rounded-lg border border-line bg-panel/95 shadow-sm text-[11px] w-48">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-2.5 h-7 text-muted hover:text-fg">
+        <span className="font-medium">Connections</span>
+        <span className="text-faint">{open ? "hide" : "show"}</span>
+      </button>
+      {open && (
+        <div className="px-2.5 pb-2 space-y-1">
+          {Object.entries(LINK_STYLE).map(([cat, st]) => {
+            const off = hidden.includes(cat);
+            return (
+              <button key={cat} onClick={() => onToggle(cat)} className={cx("w-full flex items-center gap-2 text-left", off && "opacity-40")} title={off ? "show" : "hide"}>
+                <svg width="26" height="8" className="shrink-0">
+                  <line x1="1" y1="4" x2="25" y2="4" stroke={st.stroke} strokeWidth={2} strokeDasharray={st.dash} />
+                </svg>
+                <span className={cx("flex-1", off && "line-through")}>{CATEGORY_LABEL[cat]}</span>
+                <span className="text-faint tabular-nums">{counts[cat] ?? 0}</span>
+              </button>
+            );
+          })}
+          <div className="pt-1.5 border-t border-line space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-faint">Labels</span>
+              <Segmented3 value={labelMode} onChange={setLabelMode} options={["auto", "all", "none"]} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-faint">Lines</span>
+              <Segmented3 value={lineMode} onChange={setLineMode} options={["step", "straight"]} />
+            </div>
+            <div className="text-faint leading-snug pt-0.5">Hover or select a component to highlight its connections.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Segmented3<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: T[] }) {
+  return (
+    <div className="inline-flex rounded border border-line">
+      {options.map((o) => (
+        <button key={o} onClick={() => onChange(o)} className={cx("px-1.5 h-5", value === o ? "bg-panel-3 text-fg" : "text-muted hover:text-fg")}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Palette
@@ -888,6 +1107,7 @@ function NodeInspector({
   onChange,
   onZone,
   onDelete,
+  onSelectLink,
 }: {
   n: TopoNode;
   doc: TopologyDoc;
@@ -898,6 +1118,7 @@ function NodeInspector({
   onChange: (fn: (n: TopoNode) => void) => void;
   onZone: (zone: string) => void;
   onDelete: () => void;
+  onSelectLink: (id: string) => void;
 }) {
   const nt = catalog.nodeTypes.find((t) => t.type === n.type);
   const set = <K extends keyof TopoNode>(k: K, v: TopoNode[K]) => onChange((x) => void (x[k] = v));
@@ -1032,13 +1253,13 @@ function NodeInspector({
         <FormField label="Notes">
           <Textarea value={n.notes ?? ""} onChange={(e) => set("notes", e.target.value || undefined)} className="min-h-16" />
         </FormField>
-        <Connections doc={doc} id={n.id} />
+        <Connections doc={doc} id={n.id} onSelect={onSelectLink} />
       </div>
     </div>
   );
 }
 
-function Connections({ doc, id }: { doc: TopologyDoc; id: string }) {
+function Connections({ doc, id, onSelect }: { doc: TopologyDoc; id: string; onSelect: (link: string) => void }) {
   const links = doc.links.filter((l) => l.from === id || l.to === id);
   if (!links.length) return null;
   const name = (x: string) => doc.nodes.find((n) => n.id === x)?.label || x;
@@ -1046,9 +1267,9 @@ function Connections({ doc, id }: { doc: TopologyDoc; id: string }) {
     <div className="border-t border-line pt-3">
       <div className="text-[12px] font-medium mb-1">Connections</div>
       {links.map((l) => (
-        <div key={l.id} className="text-[11.5px] text-muted">
+        <button key={l.id} onClick={() => onSelect(l.id)} className="block w-full text-left text-[11.5px] text-muted hover:text-fg">
           {l.from === id ? `→ ${name(l.to)}` : `← ${name(l.from)}`} <span className="text-faint">{[l.kind, l.port].filter(Boolean).join(" :")}</span>
-        </div>
+        </button>
       ))}
     </div>
   );

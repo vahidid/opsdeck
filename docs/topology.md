@@ -44,6 +44,20 @@ date with you.
   Each has a port, encryption, direction, bandwidth, VLAN and notes, and is drawn with
   the color and line style of its group.
 
+Reading a busy map:
+
+- Connections leave from the side of a component that faces the other end and run as
+  right-angled lines (or straight, see the legend). Several connections between the same
+  two components are drawn side by side.
+- **Hover or select a component**: its connections and neighbours stay bright with their
+  labels (`https:443 🔒`, `sql:5432`…) and everything else fades. Selecting a connection shows
+  only it and its two ends. The inspector lists the component's connections; clicking one
+  selects it.
+- The **Connections** legend (top right) gives the color and line style of each category
+  (network, tunnels/VPN, routing, application, data, management) with counts. Click a
+  category to hide or show it. Labels can be *auto* (only highlighted connections), *all*
+  or *none*.
+
 Other controls:
 
 - **Import inventory** adds the workspace's hosts, VPNs, clusters, databases… that are not on

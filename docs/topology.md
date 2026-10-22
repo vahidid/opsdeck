@@ -61,6 +61,10 @@ Reading a busy map:
   (network, tunnels/VPN, routing, application, data, management) with counts. Click a
   category to hide or show it. Labels can be *auto* (only highlighted connections), *all*
   or *none*.
+- The eye button next to **Connections** hides all lines to look at the components and
+  zones alone; hovering or selecting a component still shows its own connections. Like the
+  other legend settings it is only a view setting in this browser: nothing changes in
+  `topology.yaml` or in what the agent reads.
 
 Other controls:
 

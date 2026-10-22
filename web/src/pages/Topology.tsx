@@ -21,7 +21,7 @@ import {
 } from "@xyflow/react";
 import type { Connection, Edge, EdgeChange, EdgeProps, FitViewOptions, Node, NodeChange, NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowLeftRight, Bot, Download, FileText, Import, LayoutGrid, Lock, Network, Plus, Save, SquareDashed, Trash2, X } from "lucide-react";
+import { ArrowLeftRight, Bot, Download, Eye, EyeOff, FileText, Import, LayoutGrid, Lock, Network, Plus, Save, SquareDashed, Trash2, X } from "lucide-react";
 import { api, errMsg, ApiError } from "../api/client";
 import type { TopoBox, TopoCatalog, TopoDeployment, TopoLink, TopoLinkKind, TopoNode, TopoNodeType, TopoZone, TopologyDoc } from "../api/types";
 import { useApp, useWs } from "../context/app";
@@ -231,6 +231,9 @@ function Editor() {
   const [labelMode, setLabelMode] = useLocalStorage<"auto" | "all" | "none">("opsdeck.topology.labels", "auto");
   const [lineMode, setLineMode] = useLocalStorage<"routed" | "straight">("opsdeck.topology.lines2", "routed");
   const [hiddenCats, setHiddenCats] = useLocalStorage<string[]>("opsdeck.topology.hidden", []);
+  // view only (this browser): hide the lines; a hovered or selected
+  // component still shows its own connections
+  const [showLines, setShowLines] = useLocalStorage("opsdeck.topology.showLines", true);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [saving, setSaving] = useState(false);
@@ -415,7 +418,7 @@ function Editor() {
           target: l.to,
           sourceHandle: route?.sourceSide ?? Position.Bottom,
           targetHandle: route?.targetSide ?? Position.Top,
-          hidden: hiddenCats.includes(lk.category),
+          hidden: hiddenCats.includes(lk.category) || (!showLines && !hot),
           selected: sel?.kind === "link" && sel.id === l.id,
           data: {
             label,
@@ -434,7 +437,7 @@ function Editor() {
         };
       }),
     );
-  }, [doc, sel, linkKindOf, focus, labelMode, lineMode, hiddenCats, routes, dragging]);
+  }, [doc, sel, linkKindOf, focus, labelMode, lineMode, hiddenCats, showLines, routes, dragging]);
 
   // fit the view once the first diagram is on screen
   const fitted = useRef(false);
@@ -761,6 +764,8 @@ function Editor() {
                 setLabelMode={setLabelMode}
                 lineMode={lineMode}
                 setLineMode={setLineMode}
+                showLines={showLines}
+                setShowLines={setShowLines}
               />
             </Panel>
             <MiniMap pannable zoomable className="!bg-panel" style={{ width: 150, height: 100 }} nodeColor={(n) => (n.type === "zone" ? "transparent" : "#4b5563")} nodeStrokeColor={(n) => (n.type === "zone" ? String((n.data as { color?: string }).color ?? "#666") : "#9ca3af")} />
@@ -998,6 +1003,8 @@ function Legend({
   setLabelMode,
   lineMode,
   setLineMode,
+  showLines,
+  setShowLines,
 }: {
   hidden: string[];
   onToggle: (c: string) => void;
@@ -1006,14 +1013,27 @@ function Legend({
   setLabelMode: (v: "auto" | "all" | "none") => void;
   lineMode: "routed" | "straight";
   setLineMode: (v: "routed" | "straight") => void;
+  showLines: boolean;
+  setShowLines: (v: boolean) => void;
 }) {
   const [open, setOpen] = useLocalStorage("opsdeck.topology.legend", false);
   return (
     <div className="rounded-lg border border-line bg-panel/95 shadow-sm text-[11px] w-48">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-2.5 h-7 text-muted hover:text-fg">
-        <span className="font-medium">Connections</span>
-        <span className="text-faint">{open ? "hide" : "show"}</span>
-      </button>
+      <div className="flex items-center h-7">
+        <button
+          onClick={() => setShowLines(!showLines)}
+          className={cx("h-full ps-2.5 pe-1.5 flex items-center", showLines ? "text-muted hover:text-fg" : "text-accent")}
+          title={showLines ? "Hide the lines (hovered or selected components still show theirs)" : "Show the lines"}
+          aria-label={showLines ? "Hide connections" : "Show connections"}
+          aria-pressed={!showLines}
+        >
+          {showLines ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+        </button>
+        <button onClick={() => setOpen(!open)} className="flex-1 h-full flex items-center justify-between pe-2.5 text-muted hover:text-fg">
+          <span className={cx("font-medium", !showLines && "text-faint")}>Connections{!showLines && " (hidden)"}</span>
+          <span className="text-faint">{open ? "hide" : "show"}</span>
+        </button>
+      </div>
       {open && (
         <div className="px-2.5 pb-2 space-y-1">
           {Object.entries(LINK_STYLE).map(([cat, st]) => {

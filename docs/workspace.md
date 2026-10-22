@@ -22,13 +22,15 @@ acme/
 │   ├── INDEX.md          #   what was saved, when, from where, by which session, and why
 │   └── 2026-10-21/app-1/etc/nginx/nginx.conf
 ├── MEMORY.md             # facts the agent learned about this project (memory tool)
-├── .gitignore            # ignores .opsdeck/
+├── repos/                # working copies of the Git repositories (GitRemote), local-only
+│   └── deploy/
+├── .gitignore            # ignores .opsdeck/ and repos/
 └── .opsdeck/             # local-only, not shared: agent sessions (transcripts), pinned host keys
     ├── sessions/
     └── known_hosts
 ```
 
-Everything except `.opsdeck/` can be committed to git and shared with the team.
+Everything except `.opsdeck/` and `repos/` can be committed to git and shared with the team.
 **No secrets are ever stored in the folder** — only `vault://` references; secrets stay
 in each person's local vault. Command output in sessions and reports is redacted.
 
@@ -138,10 +140,19 @@ spec: { ... }         # provider-specific
     login: vault://acme/grafana-admin
 
 - kind: GitRemote
-  name: gitlab
+  name: deploy
+  environment: prod
+  via: network/office-wg                     # optional: server only reachable over the VPN
   spec:
-    url: https://gitlab.acme.com/shop
-    token: vault://global/gitlab-token
+    url: https://gitlab.acme.internal/ops/deploy.git
+    provider: gitlab                         # auto | gitlab | github
+    token: vault://acme/gitlab-deploy-token  # or deployKey: vault://acme/deploy-key for ssh:// URLs
+    caCert: |                                # private CA, optional
+      -----BEGIN CERTIFICATE-----
+      …
+    protectedBranches: [main, release/*]
+    docs: true                               # its README.md and docs/ are documentation
+    docsPaths: [README.md, docs]
 ```
 
 Later kinds (not designed yet, same envelope): `OpenVPN`, `DockerEngine`,

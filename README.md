@@ -18,6 +18,13 @@ plus a complete local workbench that is just as useful without AI.
   with connect/disconnect, login links, logs and live status. **Single sign-on** (SAML via
   Entra ID, Okta, …) for AnyConnect, GlobalProtect and FortiGate without copying cookies:
   opsdeck shows the login and takes the session itself — see [docs/vpn.md](docs/vpn.md).
+- **Git repositories** — connect the repositories that hold your deployment files
+  (self-hosted GitLab, gitlab.com, GitHub, GitHub Enterprise) to a workspace with a vault
+  token or deploy key, also behind a VPN. Working copies live in the workspace; a
+  Repositories page with files, editor, changes, history, branches, pull/push and merge
+  requests (create, comment, merge, CI status). The agent works the same way: branch →
+  edit → commit → push → merge request, with approvals on push and merge. Repositories can
+  be documentation for the agent — see [docs/git.md](docs/git.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -26,7 +33,8 @@ plus a complete local workbench that is just as useful without AI.
   port-forwarding for panels that are only reachable through a VPN.
 - **Agent** — chat with any model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…)
   that works through infra tools: `exec` (single host or groups), `read_file`/`edit_file`
-  with diffs and backups, `docker`, `kubernetes`, `net_check`, `git_sync`, docs, skills,
+  with diffs and backups, `docker`, `kubernetes`, `net_check`, Git (`repo`, `repo_files`,
+  `repo_write`, `merge_request`, `git_sync`), docs, skills,
   memory, and any MCP server you attach to the workspace.
 - **Local agents** — besides model APIs, the agent can be a CLI you already use with
   your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** (Google
@@ -118,6 +126,8 @@ external infrastructure needed.
 - OpenVPN, OpenConnect (AnyConnect/ocserv/FortiGate/…) and openfortivpn profiles need those
   programs installed (`ocproxy` for OpenConnect userspace mode); Tailscale, NetBird and
   WireGuard are built in. OpenVPN and openfortivpn only run in system mode.
+- Git repositories need `git` installed (and `ssh` for SSH URLs). Repository hooks don't
+  run in opsdeck's working copies.
 - Docker is driven through the `docker` CLI on the host over SSH (retries with `sudo -n`).
 - PuTTY `.ppk` keys must be converted to OpenSSH format first.
 - Kubeconfigs that use `exec` auth plugins run those plugins on this machine.
@@ -135,5 +145,6 @@ external infrastructure needed.
 - [docs/vault.md](docs/vault.md) — vault design
 - [docs/workspace.md](docs/workspace.md) — workspace model and files
 - [docs/vpn.md](docs/vpn.md) — VPN drivers, userspace vs system mode, credentials
+- [docs/git.md](docs/git.md) — Git repositories, working copies, merge requests
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

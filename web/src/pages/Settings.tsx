@@ -28,6 +28,7 @@ const NO_LOCAL: Settings["localAccess"] = { disabled: false, allowedDirs: [], au
 const normSettings = (v: Settings): Settings => ({
   ...v,
   vpn: { elevate: v.vpn?.elevate || "auto", browser: v.vpn?.browser ?? "" },
+  git: { name: v.git?.name ?? "", email: v.git?.email ?? "" },
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
 });
@@ -328,6 +329,14 @@ export function AppSettingsPage() {
             >
               <Input mono value={s.vpn.browser} onChange={(e) => setS({ ...s, vpn: { ...s.vpn, browser: e.target.value } })} placeholder="auto-detect (google-chrome, msedge, chromium…)" />
             </FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Git commit name" help="Author of commits made in workspace repositories. Empty = the access token's owner on GitLab/GitHub.">
+                <Input value={s.git.name} onChange={(e) => setS({ ...s, git: { ...s.git, name: e.target.value } })} placeholder="from the token" />
+              </FormField>
+              <FormField label="Git commit email" help="Agent commits also carry an Opsdeck-Agent-Session trailer.">
+                <Input value={s.git.email} onChange={(e) => setS({ ...s, git: { ...s.git, email: e.target.value } })} placeholder="from the token" />
+              </FormField>
+            </div>
             {!s.localAccess.disabled && (
               <>
                 <FormField label="Folders the agent may read without asking" help="Absolute paths or ~/… — e.g. ~/projects. Credential files inside them (.env, keys) still ask.">

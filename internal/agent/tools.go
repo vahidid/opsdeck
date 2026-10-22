@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 
 	"opsdeck/internal/connect"
 	"opsdeck/internal/docker"
+	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
@@ -36,6 +36,7 @@ type Env struct {
 	Hub        *connect.Hub
 	Docker     *docker.Client
 	Kube       *kube.Manager
+	Git        *gitx.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
 	MemoryPath string
@@ -225,6 +226,7 @@ func Tools() []Tool {
 		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
+		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(),
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 	}
 }
@@ -294,6 +296,10 @@ func renderInventory(env *Env, kind, envName, query string) string {
 				attrs = append(attrs, k+"=<credential "+s+">")
 				continue
 			}
+			if k == "caCert" {
+				attrs = append(attrs, k+"=<set>")
+				continue
+			}
 			attrs = append(attrs, fmt.Sprintf("%s=%v", k, v))
 		}
 		if len(r.Tags) > 0 {
@@ -305,6 +311,13 @@ func renderInventory(env *Env, kind, envName, query string) string {
 		}
 		if st, ok := netStatus[r.Name]; ok && workspace.IsNetworkKind(r.Kind) {
 			attrs = append(attrs, "status="+st)
+		}
+		if r.Kind == "GitRemote" {
+			if _, err := os.Stat(filepath.Join(env.WS.RepoDir(r.Name), ".git")); err == nil {
+				attrs = append(attrs, "working-copy=repos/"+r.Name)
+			} else {
+				attrs = append(attrs, "working-copy=not cloned")
+			}
 		}
 		if r.Kind == "HostGroup" {
 			var names []string
@@ -1070,7 +1083,7 @@ func toolGitSync() Tool {
 						if !it.Policy.AgentUse {
 							return "", fmt.Errorf("credential %s is not allowed for agent use", ref)
 						}
-						header = gitAuthHeader(it, field)
+						header = gitx.AuthHeader(it, field)
 					}
 					ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 					defer cancel()
@@ -1079,24 +1092,6 @@ func toolGitSync() Tool {
 				}}, nil
 		},
 	}
-}
-
-// gitAuthHeader builds an HTTP Basic header from a token or login item
-// (works for GitLab, GitHub and most Git hosts).
-func gitAuthHeader(it vault.Item, field string) string {
-	user, secret := "oauth2", ""
-	switch {
-	case field != "":
-		secret = it.Get(field)
-	case it.Type == "login":
-		user, secret = firstNonEmpty(it.Get("username"), "oauth2"), it.Get("password")
-	default:
-		secret = it.Get("token")
-	}
-	if secret == "" {
-		return ""
-	}
-	return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+secret))
 }
 
 func toolWriteReport() Tool {

@@ -125,6 +125,36 @@ Kinds: `Host`, `HostGroup`, network kinds `WireGuard`, `Tailscale`, `NetBird`, `
 
 Networks used by `via` are brought up automatically when needed.
 
+## Git repositories
+
+Under `/api/workspaces/{ws}/repos` (`{repo}` is the GitRemote name). Changes are audited
+as `git.*`.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/workspaces/{ws}/repos` | → `[{name, url, web, provider, via, environment, description, docs, auth: "token"\|"deployKey"\|"none", error, status?, last?}]` |
+| POST | `/{repo}/check` | → `{ok, defaultBranch, error, provider, canPush, webUrl, apiError}` (Git and API checked separately) |
+| POST / DELETE | `/{repo}/clone` | `{branch?}` clone into `repos/<name>` / remove the working copy |
+| POST | `/{repo}/fetch`, `/{repo}/pull` | pull: `{rebase?}` (fast-forward only otherwise) → `{output}` |
+| GET | `/{repo}/status` | → `{cloned, branch, head, upstream, ahead, behind, default, changes: [{path, orig, status, staged}], busy}` |
+| GET | `/{repo}/branches` | → `[{name, remote, current, commit, upstream, track, subject, date}]` |
+| POST | `/{repo}/checkout` | `{branch, create?, start?}` |
+| GET | `/{repo}/files?ref=` | → `{files, truncated}` (working copy, or a branch/commit) |
+| GET / PUT / DELETE | `/{repo}/file?path=&ref=` | → `{path, text, size, binary, truncated}` / `{path, content}` / delete |
+| GET | `/{repo}/diff?path=` | uncommitted changes, new files included → `{diff, truncated}` |
+| GET | `/{repo}/log?ref=&path=&n=` | → `[{hash, short, author, email, date, subject, refs}]` |
+| GET | `/{repo}/commits/{rev}` | a commit with its patch |
+| POST | `/{repo}/commit` | `{message, paths?}` (all changes when empty) |
+| POST | `/{repo}/push` | `{branch?, force?}` (`--force-with-lease`); sets the upstream |
+| POST | `/{repo}/discard` | `{paths?}` (everything when empty) |
+| GET | `/{repo}/info` | hosting API → `{provider, defaultBranch, webUrl, canPush}` |
+| GET / POST | `/{repo}/mrs?state=open\|merged\|closed\|all` | → `{provider, items: [{id, title, description, state, draft, source, target, author, url, mergeable, checks, created, updated}]}` / `{title, description, source?, target?, draft, removeSource}` |
+| GET | `/{repo}/mrs/{id}` | one merge request (GitLab iid / GitHub PR number) |
+| POST | `/{repo}/mrs/{id}/comment`, `/{repo}/mrs/{id}/merge` | `{body}` / `{method: merge\|squash\|rebase, removeSource}` |
+
+Documentation repositories appear in `GET /api/workspaces/{ws}/docs` as
+`repo/<name>/<path>` (read-only).
+
 ## Hosts
 
 | Method | Path | |

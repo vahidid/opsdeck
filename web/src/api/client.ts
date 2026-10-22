@@ -1,6 +1,13 @@
 import type {
   LogLine,
   VpnDrivers,
+  MergeRequest,
+  RepoBranch,
+  RepoCheck,
+  RepoCommit,
+  RepoFile,
+  RepoStatus,
+  RepoSummary,
   AgentEvent,
   AuditEntry,
   AuditVerify,
@@ -105,6 +112,8 @@ const W = (ws: string) => `/api/workspaces/${e(ws)}`;
 const H = (ws: string, host: string) => `${W(ws)}/hosts/${e(host)}`;
 const C = (ws: string, c: string) => `${W(ws)}/clusters/${e(c)}`;
 const S = (ws: string, id: string) => `${W(ws)}/sessions/${e(id)}`;
+const R = (ws: string, repo: string) => `${W(ws)}/repos/${e(repo)}`;
+type Out = { output: string };
 
 const arr = <T>(p: Promise<T[] | null>) => p.then((v) => v ?? []);
 
@@ -170,6 +179,33 @@ export const api = {
   skills: (ws: string) => arr(get<Skill[]>(`${W(ws)}/skills`)),
   mcp: (ws: string) => arr(get<McpStatus[]>(`${W(ws)}/mcp`)),
   trustMcp: (ws: string, name: string) => arr(post<McpStatus[]>(`${W(ws)}/mcp/${e(name)}/trust`)),
+
+  // git repositories
+  repos: (ws: string) => arr(get<RepoSummary[]>(`${W(ws)}/repos`)),
+  repoCheck: (ws: string, r: string) => post<RepoCheck>(`${R(ws, r)}/check`),
+  repoClone: (ws: string, r: string, branch = "") => post<Out>(`${R(ws, r)}/clone`, { branch }),
+  repoRemove: (ws: string, r: string) => del(`${R(ws, r)}/clone`),
+  repoFetch: (ws: string, r: string) => post<Out>(`${R(ws, r)}/fetch`),
+  repoPull: (ws: string, r: string, rebase = false) => post<Out>(`${R(ws, r)}/pull`, { rebase }),
+  repoStatus: (ws: string, r: string) => get<RepoStatus>(`${R(ws, r)}/status`),
+  repoBranches: (ws: string, r: string) => arr(get<RepoBranch[]>(`${R(ws, r)}/branches`)),
+  repoCheckout: (ws: string, r: string, branch: string, create = false, start = "") => post<Out>(`${R(ws, r)}/checkout`, { branch, create, start }),
+  repoFiles: (ws: string, r: string, ref = "") => get<{ files: string[] | null; truncated?: boolean }>(`${R(ws, r)}/files${qs({ ref })}`),
+  repoFile: (ws: string, r: string, path: string, ref = "") => get<RepoFile>(`${R(ws, r)}/file${qs({ path, ref })}`),
+  repoWrite: (ws: string, r: string, path: string, content: string) => put(`${R(ws, r)}/file`, { path, content }),
+  repoDelete: (ws: string, r: string, path: string) => del(`${R(ws, r)}/file${qs({ path })}`),
+  repoDiff: (ws: string, r: string, path = "") => get<{ diff: string; truncated: boolean }>(`${R(ws, r)}/diff${qs({ path })}`),
+  repoLog: (ws: string, r: string, ref = "", path = "", n = 100) => arr(get<RepoCommit[]>(`${R(ws, r)}/log${qs({ ref, path, n })}`)),
+  repoShow: (ws: string, r: string, rev: string) => get<{ diff: string; truncated: boolean }>(`${R(ws, r)}/commits/${e(rev)}`),
+  repoCommit: (ws: string, r: string, message: string, paths: string[] = []) => post<Out>(`${R(ws, r)}/commit`, { message, paths }),
+  repoPush: (ws: string, r: string, branch = "", force = false) => post<Out>(`${R(ws, r)}/push`, { branch, force }),
+  repoDiscard: (ws: string, r: string, paths: string[] = []) => post<Out>(`${R(ws, r)}/discard`, { paths }),
+  mrs: (ws: string, r: string, state = "open") => get<{ provider: string; items: MergeRequest[] | null }>(`${R(ws, r)}/mrs${qs({ state })}`),
+  mr: (ws: string, r: string, id: number) => get<MergeRequest>(`${R(ws, r)}/mrs/${id}`),
+  mrCreate: (ws: string, r: string, m: { title: string; description: string; source: string; target: string; draft: boolean; removeSource: boolean }) =>
+    post<MergeRequest>(`${R(ws, r)}/mrs`, m),
+  mrComment: (ws: string, r: string, id: number, body: string) => post(`${R(ws, r)}/mrs/${id}/comment`, { body }),
+  mrMerge: (ws: string, r: string, id: number, method: string, removeSource: boolean) => post<MergeRequest>(`${R(ws, r)}/mrs/${id}/merge`, { method, removeSource }),
 
   // networks
   networks: (ws: string) => arr(get<NetworkStatus[]>(`${W(ws)}/networks`)),

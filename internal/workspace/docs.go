@@ -27,12 +27,15 @@ func (w *Workspace) docPath(rel string) (string, error) {
 	if strings.HasPrefix(rel, "../") || strings.HasPrefix(rel, "/") || strings.Contains(rel, "/../") {
 		return "", errors.New("invalid path")
 	}
+	if strings.HasPrefix(rel, "repo/") {
+		return w.repoDocPath(rel)
+	}
 	ok := rel == "OPSDECK.md" ||
 		(strings.HasPrefix(rel, "docs/") && strings.HasSuffix(rel, ".md")) ||
 		(strings.HasPrefix(rel, "reports/") && strings.HasSuffix(rel, ".md")) ||
 		(strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") == 1)
 	if !ok {
-		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md or skills/*.md")
+		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md, skills/*.md or repo/<repository>/<path>.md")
 	}
 	return w.contained(filepath.Join(w.Path, filepath.FromSlash(rel)))
 }
@@ -86,6 +89,7 @@ func (w *Workspace) Docs() []Doc {
 			add(m, info)
 		}
 	}
+	out = append(out, w.repoDocs()...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if (out[i].Path == "OPSDECK.md") != (out[j].Path == "OPSDECK.md") {
 			return out[i].Path == "OPSDECK.md"
@@ -126,7 +130,13 @@ func (w *Workspace) ReadDoc(rel string) (string, error) {
 	return string(b), err
 }
 
+// errRepoDoc refuses edits of repository docs outside Git.
+var errRepoDoc = errors.New("documentation from a Git repository is read-only here: change it in the repository and commit")
+
 func (w *Workspace) WriteDoc(rel, content string) error {
+	if strings.HasPrefix(filepath.ToSlash(rel), "repo/") {
+		return errRepoDoc
+	}
 	p, err := w.docPath(rel)
 	if err != nil {
 		return err
@@ -138,6 +148,9 @@ func (w *Workspace) WriteDoc(rel, content string) error {
 }
 
 func (w *Workspace) DeleteDoc(rel string) error {
+	if strings.HasPrefix(filepath.ToSlash(rel), "repo/") {
+		return errRepoDoc
+	}
 	p, err := w.docPath(rel)
 	if err != nil {
 		return err

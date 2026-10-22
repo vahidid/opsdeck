@@ -38,6 +38,11 @@ func keys() (priv, pub []byte) {
 }
 
 func Start() (*Peer, error) {
+	return StartWith(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, Body) }))
+}
+
+// StartWith serves h on 10.9.0.2:8080 instead of the greeting.
+func StartWith(h http.Handler) (*Peer, error) {
 	cPriv, cPub := keys()
 	sPriv, sPub := keys()
 	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -62,7 +67,7 @@ func Start() (*Peer, error) {
 		dev.Close()
 		return nil, err
 	}
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, Body) })}
+	srv := &http.Server{Handler: h}
 	go srv.Serve(ln)
 	conf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.9.0.1/32\n\n[Peer]\nPublicKey = %s\nEndpoint = 127.0.0.1:%d\nAllowedIPs = 10.9.0.0/24\nPersistentKeepalive = 5\n",
 		base64.StdEncoding.EncodeToString(cPriv), base64.StdEncoding.EncodeToString(sPub), port)

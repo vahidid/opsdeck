@@ -24,6 +24,7 @@ import (
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/docker"
+	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
@@ -46,6 +47,7 @@ type Server struct {
 	hub      *connect.Hub
 	docker   *docker.Client
 	kube     *kube.Manager
+	git      *gitx.Manager
 	mcp      *mcpx.Manager
 	agents   *agent.Manager
 	forwards *connect.Forwards
@@ -92,11 +94,13 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.hub.Browser = func() string { return s.cfg.Settings().VPN.Browser }
 	s.docker = docker.New(s.hub)
 	s.kube = kube.New(s.hub, v)
+	s.git = gitx.New(s.hub)
+	s.git.Identity = func() (string, string) { g := s.cfg.Settings().Git; return g.Name, g.Email }
 	s.mcp = mcpx.New(v)
 	s.mcp.Trusted = func(ws string, c workspace.MCPServer) bool { return cfg.MCPTrusted(mcpx.Hash(ws, c)) }
 	s.forwards = connect.NewForwards()
 	s.agents = agent.NewManager(agent.Deps{
-		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, Vault: v, MCP: s.mcp, Audit: al,
+		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, Git: s.git, Vault: v, MCP: s.mcp, Audit: al,
 		Router:   s.router,
 		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {

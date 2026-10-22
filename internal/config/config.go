@@ -32,6 +32,14 @@ type Settings struct {
 	Providers       []Provider  `yaml:"providers" json:"providers"`
 	LocalAccess     LocalAccess `yaml:"localAccess" json:"localAccess"`
 	VPN             VPN         `yaml:"vpn" json:"vpn"`
+	Git             Git         `yaml:"git" json:"git"`
+}
+
+// Git holds the commit author for working copies ("" = the access token's
+// owner on GitLab/GitHub).
+type Git struct {
+	Name  string `yaml:"name,omitempty" json:"name"`
+	Email string `yaml:"email,omitempty" json:"email"`
 }
 
 // VPN holds machine-level VPN settings.

@@ -44,6 +44,10 @@ Built-in tools:
 | `net_check` — tcp / http (status, TLS expiry) / dns / ping, from here or from a host | read |
 | `docker` — ps, images, stats, inspect, logs / start, stop, restart / rm | read / change / destructive |
 | `kubernetes` — get, yaml, logs, rollout_status / restart, scale / delete_pod | read / change / destructive |
+| `repo` — Git working copies: list, status, log, diff, show, branches, clone, fetch, pull / checkout, commit, pull --rebase / push / discard, force push | read / change (one approval per repository per session) / change, protected for default and protected branches / destructive |
+| `repo_files` — list, read, search a repository (working copy or any ref) | read |
+| `repo_write` — write, edit (exact replacement), delete files in a working copy; diff preview | change (shares the repository's approval) |
+| `merge_request` — GitLab merge requests / GitHub pull requests: list, get / create, comment / merge | read / change / always asks |
 | `git_sync` — clone or update a GitRemote on a host with its vault token | change |
 | `mcp__<server>__<tool>` — workspace MCP servers | read if the tool is annotated read-only, else change |
 

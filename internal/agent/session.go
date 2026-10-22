@@ -17,6 +17,7 @@ import (
 	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/docker"
+	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
@@ -76,6 +77,7 @@ type Deps struct {
 	Hub        *connect.Hub
 	Docker     *docker.Client
 	Kube       *kube.Manager
+	Git        *gitx.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
 	Audit      *audit.Log

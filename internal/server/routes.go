@@ -148,6 +148,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/approvals/{aid}", u(s.sessApproval))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/stream", u(s.sessStream))
 
+	// git repositories
+	s.gitRoutes(mux, u)
+
 	// audit
 	mux.HandleFunc("GET /api/audit", u(s.auditList))
 	mux.HandleFunc("GET /api/audit/verify", u(func(w http.ResponseWriter, r *http.Request) {
@@ -790,6 +793,8 @@ func (s *Server) resPut(w http.ResponseWriter, r *http.Request, oldID string) {
 			s.hub.Disconnect(ws.Name(), name)
 		} else if workspace.IsNetworkKind(kind) {
 			s.hub.NetworkDown(ws.Name(), name)
+		} else if kind == "GitRemote" && res.Kind == "GitRemote" {
+			renameWorkingCopy(ws, name, res.Name)
 		}
 	}
 	action := "resource.create"

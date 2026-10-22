@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"opsdeck/internal/gitx"
 	"opsdeck/internal/paths"
 	"opsdeck/internal/server"
 )
@@ -43,6 +44,14 @@ func main() {
 	mcpURL := flag.String("url", "", "opsdeck MCP endpoint (mcp-stdio)")
 	flag.Usage = usage
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "socks-connect" {
+		// ssh ProxyCommand for Git over SSH through a VPN (internal use)
+		if err := gitx.SocksConnect(args[1:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "opsdeck socks-connect:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	cmd := "serve"
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]

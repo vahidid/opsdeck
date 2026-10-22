@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -16,18 +17,25 @@ import (
 // SOCKS5 proxy on 127.0.0.1 (CONNECT only, no authentication: it is bound to
 // loopback). Host names are resolved through the tunnel.
 type SocksServer struct {
-	ln   net.Listener
-	dial DialFunc
-	wg   sync.WaitGroup
+	ln         net.Listener
+	dial       DialFunc
+	wg         sync.WaitGroup
+	user, pass string // when set, clients must authenticate (RFC 1929)
 }
 
 // ServeSOCKS listens on 127.0.0.1:port.
 func ServeSOCKS(port int, dial DialFunc) (*SocksServer, error) {
+	return ServeSOCKSAuth(port, dial, "", "")
+}
+
+// ServeSOCKSAuth listens on 127.0.0.1:port (0 = any free port) and, when
+// user is set, only serves clients that present user and pass.
+func ServeSOCKSAuth(port int, dial DialFunc, user, pass string) (*SocksServer, error) {
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		return nil, fmt.Errorf("local proxy on port %d: %w", port, err)
 	}
-	s := &SocksServer{ln: ln, dial: dial}
+	s := &SocksServer{ln: ln, dial: dial, user: user, pass: pass}
 	s.wg.Add(1)
 	go s.serve()
 	return s, nil
@@ -56,7 +64,7 @@ func (s *SocksServer) serve() {
 func (s *SocksServer) handle(c net.Conn) {
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(30 * time.Second))
-	target, err := socksHandshake(c)
+	target, err := socksHandshake(c, s.user, s.pass)
 	if err != nil {
 		return
 	}
@@ -87,8 +95,9 @@ func closeWrite(c net.Conn) {
 	}
 }
 
-// socksHandshake reads the greeting and a CONNECT request, returning host:port.
-func socksHandshake(c net.Conn) (string, error) {
+// socksHandshake reads the greeting (and credentials when required) and a
+// CONNECT request, returning host:port.
+func socksHandshake(c net.Conn, user, pass string) (string, error) {
 	var h [2]byte
 	if _, err := io.ReadFull(c, h[:]); err != nil || h[0] != 5 {
 		return "", errors.New("not socks5")
@@ -97,18 +106,47 @@ func socksHandshake(c net.Conn) (string, error) {
 	if _, err := io.ReadFull(c, methods); err != nil {
 		return "", err
 	}
-	noAuth := false
+	want := byte(0)
+	if user != "" {
+		want = 2
+	}
+	ok := false
 	for _, m := range methods {
-		if m == 0 {
-			noAuth = true
+		if m == want {
+			ok = true
 		}
 	}
-	if !noAuth {
+	if !ok {
 		c.Write([]byte{5, 0xff})
 		return "", errors.New("no acceptable auth method")
 	}
-	if _, err := c.Write([]byte{5, 0}); err != nil {
+	if _, err := c.Write([]byte{5, want}); err != nil {
 		return "", err
+	}
+	if want == 2 {
+		var v [2]byte
+		if _, err := io.ReadFull(c, v[:]); err != nil || v[0] != 1 {
+			return "", errors.New("bad auth request")
+		}
+		u := make([]byte, v[1])
+		if _, err := io.ReadFull(c, u); err != nil {
+			return "", err
+		}
+		var pl [1]byte
+		if _, err := io.ReadFull(c, pl[:]); err != nil {
+			return "", err
+		}
+		p := make([]byte, pl[0])
+		if _, err := io.ReadFull(c, p); err != nil {
+			return "", err
+		}
+		if subtle.ConstantTimeCompare(u, []byte(user)) != 1 || subtle.ConstantTimeCompare(p, []byte(pass)) != 1 {
+			c.Write([]byte{1, 1})
+			return "", errors.New("bad credentials")
+		}
+		if _, err := c.Write([]byte{1, 0}); err != nil {
+			return "", err
+		}
 	}
 	var req [4]byte
 	if _, err := io.ReadFull(c, req[:]); err != nil {

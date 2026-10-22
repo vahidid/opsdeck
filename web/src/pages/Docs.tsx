@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Brain, ClipboardList, FileArchive, FilePlus2, FileText, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Brain, ClipboardList, FileArchive, FilePlus2, FileText, GitBranch, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { DocInfo } from "../api/types";
 import { useWs } from "../context/app";
 import { useTabTitle } from "../context/tabs";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Badge, Button, EmptyState, ErrorBox, FormField, Input, Loading, Textarea, cx } from "../components/ui";
 import { Modal, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
@@ -31,6 +31,8 @@ export function DocsPage() {
   const confirm = useConfirm();
   const editing = edit !== null;
   const isArtifact = sel.startsWith("artifacts/");
+  // docs of documentation repositories: repo/<name>/<path>, read-only here
+  const repoDoc = sel.startsWith("repo/") ? { repo: sel.split("/")[1], path: sel.split("/").slice(2).join("/") } : null;
   const [truncated, setTruncated] = useState(false);
   const dirty = editing && edit !== content;
 
@@ -58,9 +60,10 @@ export function DocsPage() {
 
   const groups = useMemo(() => {
     const docs = list.data ?? [];
-    const g: Record<string, DocInfo[]> = { root: [], docs: [], skills: [], reports: [] };
+    const g: Record<string, DocInfo[]> = { root: [], docs: [], skills: [], reports: [], repos: [] };
     for (const d of docs) {
-      if (d.path.startsWith("skills/")) g.skills.push(d);
+      if (d.path.startsWith("repo/")) g.repos.push(d);
+      else if (d.path.startsWith("skills/")) g.skills.push(d);
       else if (d.path.startsWith("reports/")) g.reports.push(d);
       else if (d.path.startsWith("docs/")) g.docs.push(d);
       else g.root.push(d);
@@ -140,6 +143,20 @@ export function DocsPage() {
               <DocLink key={d.path} active={sel === d.path} onClick={() => void choose(d.path)} icon={<FileText />} label={d.path.replace(/^docs\//, "")} />
             ))}
           </Group>
+          {groups.repos.length > 0 && (
+            <Group label="From repositories">
+              {groups.repos.map((d) => (
+                <DocLink
+                  key={d.path}
+                  active={sel === d.path}
+                  onClick={() => void choose(d.path)}
+                  icon={<GitBranch />}
+                  label={d.path.split("/").slice(2).join("/")}
+                  sub={d.path.split("/")[1]}
+                />
+              ))}
+            </Group>
+          )}
           <Group label="Reports">
             {groups.reports.length === 0 && <div className="text-[11px] text-faint px-2">Analyses and results the agent saves</div>}
             {groups.reports.map((d) => (
@@ -194,12 +211,20 @@ export function DocsPage() {
             </>
           ) : (
             <>
-              {sel !== MEMORY && sel !== "OPSDECK.md" && (
+              {repoDoc && (
+                <Link
+                  to={`../git/${encodeURIComponent(repoDoc.repo)}?tab=files&path=${encodeURIComponent(repoDoc.path)}`}
+                  className="inline-flex items-center gap-1.5 text-xs text-accent hover:underline"
+                >
+                  <GitBranch className="size-3.5" /> Edit in repository {repoDoc.repo}
+                </Link>
+              )}
+              {sel !== MEMORY && sel !== "OPSDECK.md" && !repoDoc && (
                 <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={remove}>
                   Delete
                 </Button>
               )}
-              {!isArtifact && (
+              {!isArtifact && !repoDoc && (
                 <Button size="sm" icon={<Pencil className="size-3.5" />} onClick={() => setEdit(content ?? "")} disabled={content === null}>
                   Edit
                 </Button>

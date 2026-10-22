@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NAV, SETTINGS_NAV } from "../lib/nav";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -12,7 +13,6 @@ import { cx } from "../components/ui";
 
 type Cmd = { id: string; group: string; label: string; hint?: string; icon: ReactNode; run: () => void };
 
-const SCREENS = ["overview", "agent", "resources", "terminal", "docker", "kubernetes", "logs", "docs", "vault", "activity", "settings"];
 
 export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: () => void; ws: string | null }) {
   const { workspaces, theme, setTheme } = useApp();
@@ -54,7 +54,8 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
           label: r.name,
           hint: r.kind,
           icon: <KindIcon kind={r.kind} className="size-4" />,
-          run: () => navigate(`${W}/resources?edit=${encodeURIComponent(`${r.kind}/${r.name}`)}`),
+          run: () =>
+            navigate(r.kind === "GitRemote" ? `${W}/git/${encodeURIComponent(r.name)}` : `${W}/resources?edit=${encodeURIComponent(`${r.kind}/${r.name}`)}`),
         });
       }
       out.push({
@@ -64,13 +65,13 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
         icon: <Bot className="size-4" />,
         run: () => navigate(`${W}/agent?new=1`),
       });
-      for (const s of SCREENS) {
+      for (const s of [...NAV, SETTINGS_NAV]) {
         out.push({
-          id: `go:${s}`,
+          id: `go:${s.to}`,
           group: "Go to",
-          label: s[0].toUpperCase() + s.slice(1),
+          label: s.label,
           icon: <ArrowRight className="size-4" />,
-          run: () => navigate(`${W}/${s}`),
+          run: () => navigate(`${W}/${s.to}`),
         });
       }
     }

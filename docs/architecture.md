@@ -81,11 +81,12 @@ See [harness.md](harness.md) for the agent side and [vault.md](vault.md),
 ## Code layout
 
 ```
-cmd/opsdeck          CLI entry point (serve, url, paths)
+cmd/opsdeck          CLI entry point (serve, url, paths; socks-connect for git over SSH through a VPN)
 internal/vault       encrypted store, SSH keys, TOTP, password generator
 internal/workspace   workspace/resource model, YAML files, docs, skills, validation
 internal/vpn         VPN drivers: WireGuard, Tailscale (tsnet), NetBird (embed), OpenVPN, OpenConnect, openfortivpn; userspace/system modes, local SOCKS5
 internal/connect     networks (VPN profiles, SOCKS), SSH pool + jump hosts, exec/PTY/SFTP, port forwards
+internal/gitx        Git working copies (system git, isolated config, token header / in-memory ssh-agent / SOCKS via), GitLab and GitHub APIs
 internal/docker      docker CLI over SSH
 internal/kube        Kubernetes client (kubeconfig from the vault, dialed through via)
 internal/llm         model gateway: Anthropic SDK + OpenAI-compatible streaming
@@ -104,7 +105,7 @@ tools/demo           local SSH servers + scripted model for trying the UI
 | Vault, workspaces, validation, topology | done |
 | SSH (keys, passwords, jump hosts, TOFU known_hosts), terminal, SFTP, stats | done |
 | VPNs: WireGuard, Tailscale/Headscale, NetBird, OpenVPN, OpenConnect (AnyConnect, ocserv, FortiGate, GlobalProtect, Pulse, F5), openfortivpn, SOCKS5 — userspace and system modes | done |
-| OpenVPN | not yet |
+| Git repositories: working copies, GitLab/GitHub merge requests, docs from repositories, agent tools | done |
 | Docker (CLI over SSH), Kubernetes (client-go) | done |
 | Logs streaming (journald, files, containers, pod logs) | done |
 | Agent: loop, tools, modes, approvals, redaction, sessions, compaction, memory, skills | done |

@@ -54,7 +54,7 @@ func (m *Manager) Send(ws, id, text string) error {
 }
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
-	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Vault: m.deps.Vault, MCP: m.deps.MCP,
+	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Git: m.deps.Git, Vault: m.deps.Vault, MCP: m.deps.MCP,
 		MemoryPath: w.MemoryPath(), Local: m.local()}
 }
 

@@ -55,6 +55,7 @@ export type Settings = {
   providers: ProviderConfig[];
   localAccess: LocalAccess;
   vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string };
+  git: { name: string; email: string };
 };
 export type ModelInfo = { id: string; provider: string; model: string; label: string };
 
@@ -253,3 +254,50 @@ export type AuditEntry = {
   hash: string;
 };
 export type AuditVerify = { ok: boolean; entries: number; brokenAt: number | null };
+
+// Git repositories (GitRemote resources) and their working copies.
+export type RepoChange = { path: string; orig?: string; status: "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflict" | "typechange"; staged?: boolean };
+export type RepoStatus = {
+  cloned: boolean;
+  branch: string;
+  head: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  default?: string;
+  changes: RepoChange[];
+  busy?: string;
+};
+export type RepoCommit = { hash: string; short: string; author: string; email: string; date: string; subject: string; refs?: string };
+export type RepoSummary = {
+  name: string;
+  url: string;
+  web: string;
+  provider: string;
+  via?: string;
+  environment?: string;
+  description?: string;
+  docs: boolean;
+  auth: "token" | "deployKey" | "none";
+  error?: string;
+  status?: RepoStatus;
+  last?: RepoCommit;
+};
+export type RepoBranch = { name: string; remote?: boolean; current?: boolean; commit: string; upstream?: string; track?: string; subject: string; date: string };
+export type RepoFile = { path: string; ref?: string; text: string; size: number; binary?: boolean; truncated?: boolean };
+export type RepoCheck = { ok: boolean; defaultBranch: string; error?: string; provider?: string; canPush?: boolean; webUrl?: string; apiError?: string };
+export type MergeRequest = {
+  id: number;
+  title: string;
+  description: string;
+  state: "open" | "merged" | "closed";
+  draft: boolean;
+  source: string;
+  target: string;
+  author: string;
+  url: string;
+  mergeable?: string;
+  checks?: "success" | "pending" | "failed" | "";
+  created: string;
+  updated: string;
+};

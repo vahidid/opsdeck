@@ -401,7 +401,7 @@ func (m *Manager) Create(meta Meta) (*Workspace, error) {
 	}
 	writeIfMissing(filepath.Join(dir, "OPSDECK.md"), fmt.Sprintf(opsdeckTemplate, meta.Title))
 	writeIfMissing(filepath.Join(dir, "docs", "README.md"), "# "+meta.Title+"\n\nProject documentation: architecture, contacts, runbooks.\n")
-	writeIfMissing(filepath.Join(dir, ".gitignore"), "# local-only: agent sessions, pinned host keys\n.opsdeck/\n")
+	writeIfMissing(filepath.Join(dir, ".gitignore"), "# local-only: agent sessions, pinned host keys, Git working copies\n.opsdeck/\nrepos/\n")
 	writeIfMissing(filepath.Join(dir, "MEMORY.md"), "# Memory\n\nFacts the agent learned about this project.\n")
 	return Load(dir)
 }

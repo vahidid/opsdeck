@@ -86,6 +86,15 @@ func (h *Hub) credential(ctx context.Context, w *workspace.Workspace, ref string
 	return it, nil
 }
 
+// Credential resolves a vault reference for w (with the field it names, if
+// any), enforcing scope isolation and the agent policy.
+func (h *Hub) Credential(ctx context.Context, w *workspace.Workspace, ref string) (vault.Item, string, error) {
+	if _, err := h.credential(ctx, w, ref); err != nil {
+		return vault.Item{}, "", err
+	}
+	return h.vault.ResolveFor(w.Name(), ref)
+}
+
 // Credentials lists the vault references needed to reach and log into r
 // (used by the agent permission layer for confirm-on-use).
 func (h *Hub) Credentials(w *workspace.Workspace, r *workspace.Resource) []string {

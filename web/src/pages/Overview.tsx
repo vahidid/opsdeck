@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowRight, Bot, CircleCheck, Plus, Power, PowerOff, RefreshCw, Server, SquareTerminal, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Bot, CircleCheck, GitBranch, Plus, Power, PowerOff, RefreshCw, Server, SquareTerminal, XCircle } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { NetworkStatus, Topology, TopologyNode } from "../api/types";
 import { useApp, useWs } from "../context/app";
@@ -21,6 +21,7 @@ export function OverviewPage() {
   const topo = useAsync(() => api.topology(ws), [ws, resources.length]);
   const issues = useAsync(() => api.validate(ws), [ws, resources]);
   const nets = useAsync(() => api.networks(ws), [ws]);
+  const repos = useAsync(() => api.repos(ws), [ws, resources.length]);
   const audit = useAsync(() => api.audit({ workspace: ws, limit: 12 }), [ws]);
   const [netBusy, setNetBusy] = useState<string | null>(null);
   useInterval(() => void nets.reload(), (nets.data ?? []).some((n) => n.status === "connecting" || n.status === "auth") ? 2000 : 8000);
@@ -190,6 +191,57 @@ export function OverviewPage() {
               </ul>
             )}
           </Card>
+
+          {(repos.data ?? []).length > 0 && (
+            <Card
+              title="Repositories"
+              bodyClass="p-0"
+              actions={
+                <Link to="../git" className="text-[11px] text-accent hover:underline">
+                  Open
+                </Link>
+              }
+            >
+              <ul>
+                {repos.data!.map((r) => {
+                  const st = r.status;
+                  return (
+                    <li key={r.name}>
+                      <Link to={`../git/${encodeURIComponent(r.name)}`} className="flex items-center gap-2.5 px-3 min-h-11 py-1.5 border-b border-line hover:bg-panel-2">
+                        <GitBranch className="size-3.5 text-faint shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13px] font-medium truncate">{r.name}</div>
+                          <div className="text-[11px] text-faint truncate">
+                            {!st?.cloned ? (
+                              "not cloned"
+                            ) : (
+                              <>
+                                <span className="font-mono">{st.branch || "detached"}</span>
+                                {st.changes.length > 0 && <span className="text-warn"> · {st.changes.length} uncommitted</span>}
+                                {r.last && ` · ${r.last.subject}`}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {st?.cloned && st.ahead > 0 && (
+                          <span className="inline-flex items-center text-[11px] text-accent font-mono">
+                            <ArrowUp className="size-3" />
+                            {st.ahead}
+                          </span>
+                        )}
+                        {st?.cloned && st.behind > 0 && (
+                          <span className="inline-flex items-center text-[11px] text-warn font-mono">
+                            <ArrowDown className="size-3" />
+                            {st.behind}
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
 
           <Card title="Validation" bodyClass="p-0">
             {(issues.data ?? []).length === 0 ? (

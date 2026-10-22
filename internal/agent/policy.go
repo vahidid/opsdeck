@@ -8,12 +8,50 @@ import (
 	"opsdeck/internal/workspace"
 )
 
-// Modes.
+// Modes, from the most to the least careful.
 const (
 	ModePlan = "plan" // read-only investigation, ends with a plan
 	ModeAsk  = "ask"  // changes need approval (default)
-	ModeAuto = "auto" // changes run without approval except on protected environments; destructive always asks
+	ModeAuto = "auto" // everything on this computer runs, except destructive commands and credentials; servers per Policy
+	ModeFull = "full" // everything on this computer runs; servers per Policy
 )
+
+// ValidMode reports whether m is a mode.
+func ValidMode(m string) bool { return m == ModePlan || m == ModeAsk || m == ModeAuto || m == ModeFull }
+
+// Policy is the user's agent policy (App settings → Agent).
+type Policy struct {
+	// AutoServerChanges lets Auto and Full change servers (hosts, clusters,
+	// remote repositories) without asking. Off: every change on a server
+	// asks, in every mode.
+	AutoServerChanges bool
+}
+
+// Where a call has its effect.
+const (
+	ScopeLocal  = "local"  // this computer: its files and commands, the workspace, working copies, the vault
+	ScopeRemote = "remote" // servers: hosts, clusters, remote repositories, MCP servers
+)
+
+var localEnvironments = map[string]bool{"local": true, "working copy": true, "workspace files": true, "this computer": true, "vault": true, "workspace topology": true}
+var localTargets = []string{"local", "docs/", "skill/", "memory", "workspace/", "script/", "scripts", "reports", "artifacts", "topology", "network/", "knowledge"}
+
+// scopeOf says where a call has its effect: what the tool set, else what
+// its environment and target say; anything unknown counts as a server.
+func scopeOf(c *Call) string {
+	if c.Scope != "" {
+		return c.Scope
+	}
+	if localEnvironments[c.Environment] {
+		return ScopeLocal
+	}
+	for _, t := range localTargets {
+		if c.Target == t || (strings.HasSuffix(t, "/") || t == "local") && strings.HasPrefix(c.Target, t) {
+			return ScopeLocal
+		}
+	}
+	return ScopeRemote
+}
 
 // Decision is the outcome of the permission check.
 type Decision struct {
@@ -22,8 +60,16 @@ type Decision struct {
 }
 
 // Decide applies, in order: plan mode, workspace rules (first match wins),
-// defaults, session grants, and credential confirm-on-use.
-func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted map[string]bool, v *vault.Vault) Decision {
+// the mode's defaults, session grants, and credential confirm-on-use.
+//
+//	                     Plan   Ask    Auto              Full
+//	reads                yes    yes    yes               yes
+//	reads with consent   ask    ask    yes (credentials  yes
+//	                                   and secrets ask)
+//	this computer        no     ask    yes (destructive  yes
+//	                                   and guarded ask)
+//	servers: changes     no     ask    ask, or per Policy (protected environments and destructive ask in Auto)
+func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted map[string]bool, v *vault.Vault, pol Policy) Decision {
 	if mode == ModePlan && c.Risk != RiskRead {
 		return Decision{"deny", "plan mode is read-only: include this step in your plan instead of running it"}
 	}
@@ -35,20 +81,7 @@ func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted m
 		}
 	}
 	if d.Effect == "" {
-		switch {
-		case c.Risk == RiskRead && c.Consent != "":
-			d = Decision{"ask", c.Consent}
-		case c.Risk == RiskRead:
-			d = Decision{"allow", "read-only"}
-		case c.Risk == RiskDestructive:
-			d = Decision{"ask", "destructive action"}
-		case c.Protected:
-			d = Decision{"ask", "protected environment " + c.Environment}
-		case mode == ModeAuto:
-			d = Decision{"allow", "auto mode"}
-		default:
-			d = Decision{"ask", "changes need approval in ask mode"}
-		}
+		d = byMode(mode, c, pol)
 	}
 	if d.Effect == "ask" && c.Risk != RiskDestructive && isGranted(tool, c, granted) {
 		d = Decision{"allow", "allowed for this session"}
@@ -61,6 +94,50 @@ func Decide(mode string, w *workspace.Workspace, tool string, c *Call, granted m
 		}
 	}
 	return d
+}
+
+func byMode(mode string, c *Call, pol Policy) Decision {
+	local := scopeOf(c) == ScopeLocal
+	if c.Risk == RiskRead && c.Consent == "" {
+		return Decision{"allow", "read-only"}
+	}
+	switch mode {
+	case ModeFull:
+		if local || c.Risk == RiskRead {
+			return Decision{"allow", "full access"}
+		}
+		if !pol.AutoServerChanges {
+			return Decision{"ask", "changes on servers ask in every mode (App settings → Agent)"}
+		}
+		return Decision{"allow", "full access"}
+	case ModeAuto:
+		switch {
+		case c.Risk == RiskRead && c.Sensitive:
+			return Decision{"ask", c.Consent}
+		case c.Risk == RiskRead:
+			return Decision{"allow", "auto mode"}
+		case c.Risk == RiskDestructive:
+			return Decision{"ask", "destructive action"}
+		case local && c.Guarded:
+			return Decision{"ask", firstNonEmpty(c.Consent, "asks in every mode but Full")}
+		case local:
+			return Decision{"allow", "auto mode: this computer"}
+		case !pol.AutoServerChanges:
+			return Decision{"ask", "changes on servers ask in every mode (App settings → Agent)"}
+		case c.Protected:
+			return Decision{"ask", "protected environment " + c.Environment}
+		}
+		return Decision{"allow", "auto mode"}
+	}
+	switch {
+	case c.Risk == RiskRead:
+		return Decision{"ask", c.Consent}
+	case c.Risk == RiskDestructive:
+		return Decision{"ask", "destructive action"}
+	case c.Protected:
+		return Decision{"ask", "protected environment " + c.Environment}
+	}
+	return Decision{"ask", "changes need approval in ask mode"}
 }
 
 // grantKey scopes an "always allow" answer to the same tool, target, risk

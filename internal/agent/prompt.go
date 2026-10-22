@@ -27,7 +27,8 @@ How to work:
 - Topology: the workspace has an infrastructure diagram (topology tool; summary below) of zones, components with their vendors/technologies and deployments, and connections. Use it to know where which tool or technology runs before acting. When you learn something it lacks or contradicts (a new server or service, a proxy/WAF/CDN in front of something, a deployment, a connection, a changed version), tell the user and propose the change; apply it with the topology tool, which asks for approval. If the diagram is empty and you have investigated the infrastructure, offer to build it (import_inventory, then add what you found).
 - Scripts: saved scripts (listed below) are the user's tested procedures. When one fits the task — e.g. a new server was added and a script is meant for new hosts — run it with run_script instead of redoing its steps by hand: check that the host's system is supported, fill its parameters (secrets as vault:// references) and, when it is a draft, tell the user it has not been reviewed yet. When you work out a multi-step procedure on hosts that is worth repeating, offer to save it with the script tool (idempotent, parameterised, no secrets inside); it is saved as a draft for the user to review.
 - Ansible: the workspace's Ansible projects (listed below) run on this computer with ansible_run — don't install or run ansible on a host with exec. Look before you run: ansible files/read, inventory, list_hosts/list_tasks, syntax. For changes that matter, do a check run first (check=true, diff=true), then run for real; on PROTECTED environments start small with limit (one host, then the rest) and report the PLAY RECAP. inventory=workspace targets the workspace's own hosts through their VPNs and jump hosts. Change project files with ansible write/edit; in a repository project follow the Git workflow above (branch, commit, push, merge request). Encrypted content goes through ansible_vault (view, edit, set — generate=true for new passwords —, encrypt); opsdeck asks the user for the vault password on the approval card, so never ask for it in chat, and never write secrets into plain files.
-- Remember durable facts about this project (layout, conventions, gotchas) with the memory tool; never store secrets there.
+- Knowledge first: the user's message may carry an <opsdeck-context> block with the workspace's skills, runbooks, reports and scripts that match it (found by opsdeck; a matching workspace skill is included in full). Before acting, follow what fits — load_skill a matching skill and follow its steps, read_doc a matching runbook or earlier report, run_script a matching script: the team's own procedures win over your general knowledge. When you need something else (how something was set up, a past incident, a procedure), search with the knowledge tool (skills, docs, repository docs, reports, memory, scripts in one call) instead of listing and opening docs one by one.
+- Memory: when you learn a durable fact about this project — where something runs, a convention, a gotcha, a fix that worked, a preference of the user — append it with the memory tool right away, one short fact per note, without waiting to be asked. When a note turns out wrong or outdated, fix it (memory replace with the corrected whole). Never store secrets there.
 - Everything you produce belongs to the workspace: save investigation and analysis results with write_report, procedures worth repeating as runbooks with write_doc (docs/runbooks/), and evidence files (config snapshots before you change them, long command output, generated files) with save_artifact — then reference those artifacts from the report.
 - Answer in the user's language. In Persian (or any right-to-left language), put commands, paths, host names, IPs, code and identifiers in backticks or code blocks so they stay readable left-to-right inside the text.
 - Finish with a short report: what you did, the result (with evidence), and anything left to do.
@@ -40,7 +41,11 @@ MODE: PLAN. Only read-only actions are allowed. Investigate as needed, then repl
 `)
 	case ModeAuto:
 		b.WriteString(`
-MODE: AUTO. Changes on non-protected environments run without asking; destructive actions and protected environments still need approval. Work step by step and verify as you go.
+MODE: AUTO. Everything on this computer runs without asking (files anywhere, local commands, the workspace, working copies) except destructive commands, credential files and the vault. ` + serverNote(env) + ` Work step by step and verify as you go.
+`)
+	case ModeFull:
+		b.WriteString(`
+MODE: FULL. Everything on this computer runs without asking, destructive commands and credential files included. ` + serverNote(env) + ` The user trusts you with this: still check before you change, prefer reversible steps, and never touch what the task does not need.
 `)
 	default:
 		b.WriteString(`
@@ -51,7 +56,7 @@ MODE: ASK. Read-only actions run directly; every change waits for the user's app
 	if lp := env.Local; lp != nil {
 		fmt.Fprintf(&b, `
 # This computer
-opsdeck runs on the user's own computer (%s, home %s). Besides the workspace hosts you can work here with the local_* tools: read, list and search files anywhere the user's account can (e.g. ~/.ssh/config, ~/.ssh/known_hosts, a project folder), write or edit files, and run local commands with local_exec. Reads outside the workspace folder (%s)%s ask the user once per folder; credential locations (~/.ssh, ~/.kube, ~/.aws, ...) ask per file; every write and every local command asks. Paths are absolute or start with ~/.
+opsdeck runs on the user's own computer (%s, home %s). Besides the workspace hosts you can work here with the local_* tools: read, list and search files anywhere the user's account can (e.g. ~/.ssh/config, ~/.ssh/known_hosts, a project folder), write or edit files, and run local commands with local_exec. Reads outside the workspace folder (%s)%s ask the user once per folder; credential locations (~/.ssh, ~/.kube, ~/.aws, ...) ask per file; every write and every local command asks — in Ask and Plan mode; in Auto and Full mode (see MODE) they run directly. Paths are absolute or start with ~/.
 Files holding private keys are never shown to you. To use the user's SSH key, import it with vault_import_ssh_key (opsdeck reads the file and stores it encrypted; you get the vault:// reference and public key), pin host keys the user already trusts with known_hosts_import, and add or update hosts with workspace_resource. Use vault_list to see existing credentials and vault_add_item to create new ones (generated or read from a file) without ever handling secret values.
 `, runtime.GOOS, lp.Home, w.Path, allowedNote(lp.AllowedDirs))
 	}
@@ -97,15 +102,18 @@ Files holding private keys are never shown to you. To use the user's SSH key, im
 	}
 	if list := AllSkills(w); len(list) > 0 {
 		b.WriteString("\n## Skills (load with load_skill before following one)\n")
+		var builtin []string
 		for _, s := range list {
-			d := s.Description
-			if r := []rune(d); len(r) > 220 {
-				d = string(r[:220]) + "…"
-			}
 			if s.Builtin {
-				fmt.Fprintf(&b, "- %s (built-in, %s): %s\n", s.Name, s.Category, d)
-			} else {
-				fmt.Fprintf(&b, "- %s: %s\n", s.Name, d)
+				builtin = append(builtin, fmt.Sprintf("%s (%s): %s", s.Name, s.Category, oneLine(firstSentence(s.Description), 110)))
+				continue
+			}
+			fmt.Fprintf(&b, "- %s: %s\n", s.Name, oneLine(s.Description, 220))
+		}
+		if len(builtin) > 0 {
+			b.WriteString("Built-in library (general practice; adapt to this workspace):\n")
+			for _, l := range builtin {
+				b.WriteString("- " + l + "\n")
 			}
 		}
 	}
@@ -172,6 +180,21 @@ Files holding private keys are never shown to you. To use the user's SSH key, im
 		b.WriteString(truncate(string(mem), 15000) + "\n")
 	}
 	return b.String()
+}
+
+// firstSentence is the text up to its first full stop.
+func firstSentence(s string) string {
+	if i := strings.Index(s, ". "); i > 0 {
+		return s[:i+1]
+	}
+	return s
+}
+
+func serverNote(env *Env) string {
+	if env.Policy.AutoServerChanges {
+		return "Changes on servers (hosts, clusters, remote repositories) run without asking too, except destructive ones and protected environments in Auto mode."
+	}
+	return "Every change on a server (hosts, clusters, remote repositories) still waits for the user's approval, so group related server changes sensibly."
 }
 
 func allowedNote(dirs []string) string {

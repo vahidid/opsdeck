@@ -5,6 +5,13 @@ front matter, optionally with supporting files. The agent sees every skill's nam
 description in its prompt. When a task matches, it loads the full instructions with
 `load_skill`, and the references and templates with `load_skill name=… file=…`.
 
+opsdeck also searches the skills (with the docs, reports, memory and scripts) for every
+message and attaches the ones that match to it; a workspace skill that clearly fits is
+included in full, so the agent starts from it without asking for it. The chat shows what was
+attached as a **Knowledge** row under the message. See [harness.md](harness.md#knowledge).
+Good names and descriptions — the words people use when they ask for the task — are what make
+a skill found.
+
 ## Where skills come from
 
 - **The workspace**: `skills/<name>.md`, or a folder `skills/<name>/SKILL.md` with

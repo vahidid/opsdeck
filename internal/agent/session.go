@@ -101,6 +101,8 @@ type Deps struct {
 	UserScripts string
 	// Local returns the policy for this computer, nil when local access is off.
 	Local func() *LocalPolicy
+	// Policy returns the user's agent policy.
+	Policy func() Policy
 }
 
 // Manager owns sessions.
@@ -156,7 +158,7 @@ func (m *Manager) Create(w *workspace.Workspace, model, mode string) (*Session, 
 	if mode == "" {
 		mode = ModeAsk
 	}
-	if mode != ModePlan && mode != ModeAsk && mode != ModeAuto {
+	if !ValidMode(mode) {
 		return nil, fmt.Errorf("invalid mode %q", mode)
 	}
 	now := time.Now().UTC()
@@ -255,7 +257,7 @@ func (s *Session) Update(title, model, mode string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if mode != "" {
-		if mode != ModePlan && mode != ModeAsk && mode != ModeAuto {
+		if !ValidMode(mode) {
 			return fmt.Errorf("invalid mode %q", mode)
 		}
 		s.info.Mode = mode

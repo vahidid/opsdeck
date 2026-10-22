@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   AlertTriangle,
   ArrowUp,
+  BookOpen,
   Bot,
   Check,
   ChevronDown,
@@ -11,12 +12,15 @@ import {
   Cpu,
   Eye,
   FileText,
+  FileClock,
+  ScrollText,
   Hand,
   KeyRound,
   Loader2,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
+  Rocket,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -29,14 +33,14 @@ import {
   Zap,
 } from "lucide-react";
 import { ApiError, api, errMsg } from "../api/client";
-import type { AgentEvent, ModelInfo, SessionInfo, SessionMode, SessionState } from "../api/types";
+import type { AgentEvent, ModelInfo, RecallItem, SessionInfo, SessionMode, SessionState } from "../api/types";
 import { useWs } from "../context/app";
 import { useOpenInTab, useTabTitle, useTabs } from "../context/tabs";
-import { Badge, Button, CodeBlock, EmptyState, IconButton, Input, Select, StatusDot, cx, riskTone } from "../components/ui";
+import { Badge, Button, CodeBlock, EmptyState, IconButton, Input, Segmented, Select, StatusDot, cx, riskTone } from "../components/ui";
 import { MenuItem, Modal, Popover, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
 import { textDir } from "../lib/rtl";
-import { useAsync } from "../hooks";
+import { useAsync, useLocalStorage } from "../hooks";
 import { fmtMs, fmtTokens, timeAgo } from "../lib/format";
 
 // ---------------------------------------------------------------- page
@@ -228,14 +232,31 @@ function RenameModal({ session, onClose, onSave }: { session: SessionInfo | null
 
 // ---------------------------------------------------------------- mode/model controls
 
-const MODES: { id: SessionMode; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "plan", label: "Plan", icon: <Eye className="size-3.5" />, desc: "Read-only investigation. The agent proposes a plan; nothing is changed." },
-  { id: "ask", label: "Ask", icon: <Hand className="size-3.5" />, desc: "Reads run freely; every change asks for your approval (per workspace rules)." },
-  { id: "auto", label: "Auto", icon: <Zap className="size-3.5" />, desc: "Changes on non-protected environments run without asking. Destructive actions and protected environments still ask." },
+const MODES: { id: SessionMode; label: string; icon: React.ReactNode; desc: (servers: boolean) => string }[] = [
+  { id: "plan", label: "Plan", icon: <Eye className="size-3.5" />, desc: () => "Read-only investigation. The agent proposes a plan; nothing is changed." },
+  { id: "ask", label: "Ask", icon: <Hand className="size-3.5" />, desc: () => "Reads run freely; every change asks for your approval (per workspace rules)." },
+  {
+    id: "auto",
+    label: "Auto",
+    icon: <Zap className="size-3.5" />,
+    desc: (servers) =>
+      "Everything on this computer runs without asking — files anywhere, local commands, the workspace. Destructive commands, credential files and the vault still ask. " +
+      (servers ? "Server changes run too, except destructive ones and protected environments." : "Every change on a server asks."),
+  },
+  {
+    id: "full",
+    label: "Full",
+    icon: <Rocket className="size-3.5" />,
+    desc: (servers) =>
+      "No questions on this computer, destructive commands and credential files included. " +
+      (servers ? "Server changes run without asking too — destructive ones and protected environments included." : "Every change on a server still asks."),
+  },
 ];
 
 function ModePicker({ value, onChange }: { value: SessionMode; onChange: (m: SessionMode) => void }) {
   const [open, setOpen] = useState(false);
+  const settings = useAsync(() => api.settings(), [open]);
+  const servers = !!settings.data?.agent?.autoServerChanges;
   const cur = MODES.find((m) => m.id === value) ?? MODES[1];
   return (
     <div className="relative">
@@ -243,14 +264,14 @@ function ModePicker({ value, onChange }: { value: SessionMode; onChange: (m: Ses
         onClick={() => setOpen((o) => !o)}
         className={cx(
           "flex items-center gap-1.5 h-7 px-2 rounded-md border text-xs font-medium",
-          value === "auto" ? "border-warn/40 bg-warn/10 text-warn" : value === "plan" ? "border-info/40 bg-info/10 text-info" : "border-line bg-panel-2 text-fg",
+          value === "full" ? "border-err/40 bg-err/10 text-err" : value === "auto" ? "border-warn/40 bg-warn/10 text-warn" : value === "plan" ? "border-info/40 bg-info/10 text-info" : "border-line bg-panel-2 text-fg",
         )}
       >
         {cur.icon}
         {cur.label}
         <ChevronDown className="size-3 opacity-60" />
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} className="bottom-full mb-1 left-0 w-80 p-1">
+      <Popover open={open} onClose={() => setOpen(false)} className="bottom-full mb-1 left-0 w-96 p-1">
         {MODES.map((m) => (
           <button
             key={m.id}
@@ -266,15 +287,18 @@ function ModePicker({ value, onChange }: { value: SessionMode; onChange: (m: Ses
                 {m.label}
                 {m.id === value && <Check className="size-3.5 text-accent" />}
               </span>
-              <span className="block text-[11.5px] text-muted mt-0.5">{m.desc}</span>
-              {m.id === "auto" && (
-                <span className="flex items-center gap-1 text-[11px] text-warn mt-1">
-                  <AlertTriangle className="size-3" /> Use with care on shared infrastructure.
+              <span className="block text-[11.5px] text-muted mt-0.5">{m.desc(servers)}</span>
+              {(m.id === "auto" || m.id === "full") && (
+                <span className={cx("flex items-center gap-1 text-[11px] mt-1", m.id === "full" ? "text-err" : "text-warn")}>
+                  <AlertTriangle className="size-3" /> {m.id === "full" ? "Only for work you would let it do unattended." : "Use with care on shared infrastructure."}
                 </span>
               )}
             </span>
           </button>
         ))}
+        <div className="border-t border-line mt-1 px-2.5 py-1.5 text-[11px] text-faint">
+          Server changes in Auto and Full: <b>{servers ? "run without asking" : "always ask"}</b> — App settings → Agent.
+        </div>
       </Popover>
     </div>
   );
@@ -357,7 +381,7 @@ function Composer({
       <div className="flex items-center gap-2 px-2 pb-2">
         {left}
         <div className="flex-1" />
-        <span className="text-[10.5px] text-faint hidden md:inline">/plan /ask /auto to switch mode</span>
+        <span className="text-[10.5px] text-faint hidden md:inline">/plan /ask /auto /full to switch mode</span>
         {running ? (
           <Button size="sm" variant="danger" icon={<Square className="size-3 fill-current" />} onClick={onStop}>
             Stop
@@ -378,7 +402,7 @@ function Composer({
 }
 
 function parseModeCommand(t: string): SessionMode | null {
-  const m = /^\/(plan|ask|auto)\s*$/i.exec(t.trim());
+  const m = /^\/(plan|ask|auto|full)\s*$/i.exec(t.trim());
   return m ? (m[1].toLowerCase() as SessionMode) : null;
 }
 
@@ -514,10 +538,13 @@ function mergeEvents(live: AgentEvent[], server: AgentEvent[]): AgentEvent[] {
 
 type Timeline =
   | { kind: "user"; id: string; text: string }
+  | { kind: "recall"; id: string; items: RecallItem[]; preloaded?: string }
   | { kind: "assistant"; id: string; text: string; streaming: boolean }
   | { kind: "tool"; id: string; call?: Extract<AgentEvent, { type: "tool_call" }>; result?: Extract<AgentEvent, { type: "tool_result" }>; approval?: Extract<AgentEvent, { type: "approval_request" }>; resolved?: Extract<AgentEvent, { type: "approval_resolved" }> }
   | { kind: "error"; id: string; message: string }
   | { kind: "compaction"; id: string; summary: string };
+
+type ToolItem = Extract<Timeline, { kind: "tool" }>;
 
 function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; models: ModelInfo[]; onChanged: () => void }) {
   const toast = useToast();
@@ -618,6 +645,9 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
         case "user":
           out.push({ kind: "user", id: e.id, text: e.text });
           break;
+        case "recall":
+          if (e.items?.length) out.push({ kind: "recall", id: e.id, items: e.items, preloaded: e.preloaded });
+          break;
         case "assistant":
           if (e.text?.trim()) out.push({ kind: "assistant", id: e.messageId || e.id, text: e.text, streaming: false });
           break;
@@ -655,6 +685,20 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [timeline]);
+
+  // consecutive tool calls are shown as one group (like Claude Code)
+  const blocks = useMemo(() => {
+    const out: (Exclude<Timeline, { kind: "tool" }> | { kind: "tools"; id: string; items: ToolItem[] })[] = [];
+    for (const t of timeline) {
+      if (t.kind === "tool") {
+        const last = out[out.length - 1];
+        if (last?.kind === "tools") last.items.push(t);
+        else out.push({ kind: "tools", id: "g-" + t.id, items: [t] });
+      } else out.push(t);
+    }
+    return out;
+  }, [timeline]);
+  const [toolView, setToolView] = useLocalStorage<"grouped" | "open">("opsdeck.agent.toolView", "grouped");
 
   const state = session?.state ?? "idle";
   const running = state === "running" || state === "waiting_approval";
@@ -719,6 +763,15 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
           </span>
         )}
         {!connected && <Badge tone="warn">reconnecting</Badge>}
+        <Segmented
+          size="xs"
+          value={toolView}
+          onChange={setToolView}
+          options={[
+            { id: "grouped", label: "Grouped", title: "Tool calls collapsed into groups" },
+            { id: "open", label: "Detailed", title: "Every tool call shown" },
+          ]}
+        />
       </div>
       <div
         ref={scrollRef}
@@ -731,14 +784,16 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
         <div className="max-w-[880px] mx-auto px-5 py-5 space-y-4">
           {!session && <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted" /></div>}
           {session && timeline.length === 0 && <div className="text-center text-muted py-10">Send a message to start.</div>}
-          {timeline.map((t) => {
+          {blocks.map((t, bi) => {
             switch (t.kind) {
               case "user":
                 return <UserMsg key={t.id} text={t.text} />;
+              case "recall":
+                return <Recall key={t.id} items={t.items} preloaded={t.preloaded} />;
               case "assistant":
                 return <AssistantMsg key={t.id} text={t.text} streaming={t.streaming} />;
-              case "tool":
-                return <ToolCard key={t.id} item={t} ws={ws} sid={sid} />;
+              case "tools":
+                return <ToolGroup key={t.id} items={t.items} ws={ws} sid={sid} live={running && bi === blocks.length - 1} expandAll={toolView === "open"} />;
               case "error":
                 return (
                   <div key={t.id} className="flex gap-2 rounded-lg border border-err/30 bg-err/8 px-3 py-2.5 text-err text-[13px]">
@@ -782,6 +837,50 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
             }
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+const RECALL_ICON = { skill: Sparkles, doc: FileText, report: FileClock, script: ScrollText, memory: BookOpen } as const;
+
+function recallPath(it: RecallItem): string {
+  switch (it.kind) {
+    case "skill":
+      return "skills?skill=" + encodeURIComponent(it.ref);
+    case "script":
+      return "scripts?script=" + encodeURIComponent(it.ref);
+    default:
+      return "docs?path=" + encodeURIComponent(it.ref);
+  }
+}
+
+/** the workspace knowledge opsdeck attached to the message above */
+function Recall({ items, preloaded }: { items: RecallItem[]; preloaded?: string }) {
+  const openInTab = useOpenInTab();
+  return (
+    <div className="flex items-start gap-2 pl-9 -mt-2 text-[11.5px] text-muted">
+      <span className="flex items-center gap-1 h-5 shrink-0" title="Skills, docs, reports and scripts of this workspace that match the message; given to the agent with it">
+        <BookOpen className="size-3.5" /> Knowledge
+      </span>
+      <div className="flex flex-wrap gap-1 min-w-0">
+        {items.map((it) => {
+          const Icon = RECALL_ICON[it.kind] ?? FileText;
+          const label = it.kind === "skill" || it.kind === "script" ? it.ref : it.title || it.ref;
+          return (
+            <a
+              key={it.kind + it.ref}
+              href="#"
+              {...openInTab(recallPath(it))}
+              title={`${it.kind}: ${it.ref}${preloaded === it.ref ? " — included in full" : ""}`}
+              className="inline-flex items-center gap-1 h-5 max-w-[260px] rounded border border-line bg-panel-2 px-1.5 hover:text-fg hover:border-line-strong"
+            >
+              <Icon className="size-3 shrink-0" />
+              <span className="truncate">{label}</span>
+              {preloaded === it.ref && <Check className="size-3 shrink-0 text-ok" />}
+            </a>
+          );
+        })}
       </div>
     </div>
   );
@@ -858,7 +957,64 @@ function inputSummary(tool: string, input: unknown): string {
   return "";
 }
 
-function ToolCard({ item, ws, sid }: { item: Extract<Timeline, { kind: "tool" }>; ws: string; sid: string }) {
+// ToolGroup is a run of tool calls between two messages: one line with
+// what ran and how it went; open, one compact line per call. It stays open
+// while it is running or waits for an approval.
+function ToolGroup({ items, ws, sid, live, expandAll }: { items: ToolItem[]; ws: string; sid: string; live: boolean; expandAll: boolean }) {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const pending = items.filter((t) => t.approval && !t.resolved).length;
+  const failed = items.filter((t) => t.result?.isError || t.resolved?.decision === "deny").length;
+  const runningCount = items.filter((t) => !t.result && !(t.resolved?.decision === "deny")).length;
+  if (items.length === 1 && !expandAll) return <ToolCard item={items[0]} ws={ws} sid={sid} />;
+  const open = expandAll || pending > 0 || (userOpen ?? live);
+  const counts = new Map<string, number>();
+  for (const t of items) {
+    const n = t.call?.tool ?? t.approval?.tool ?? "tool";
+    counts.set(n, (counts.get(n) ?? 0) + 1);
+  }
+  const total = items.reduce((n, t) => n + (t.result?.durationMs ?? 0), 0);
+  return (
+    <div className={cx("ml-9 rounded-lg border bg-panel overflow-hidden", pending ? "border-warn/50" : failed ? "border-err/30" : "border-line")}>
+      <button onClick={() => setUserOpen(!open)} className="w-full flex items-center gap-2 px-3 h-9 text-left hover:bg-panel-2">
+        {open ? <ChevronDown className="size-3.5 text-faint" /> : <ChevronRight className="size-3.5 text-faint" />}
+        <Wrench className="size-3.5 text-muted" />
+        <span className="text-[12.5px] font-medium">{items.length} tool calls</span>
+        <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-muted">
+          {Array.from(counts)
+            .map(([n, c]) => (c > 1 ? `${n} ×${c}` : n))
+            .join(" · ")}
+        </span>
+        {pending > 0 && <Badge tone="warn">{pending} waiting for you</Badge>}
+        {failed > 0 && <Badge tone="err">{failed} failed</Badge>}
+        {total > 0 && <span className="text-[10.5px] text-faint tabular-nums">{fmtMs(total)}</span>}
+        {runningCount > 0 && live ? <Loader2 className="size-3.5 animate-spin text-info" /> : failed === 0 && pending === 0 ? <Check className="size-3.5 text-ok" /> : null}
+      </button>
+      {open && (
+        <div className="border-t border-line divide-y divide-line">
+          {items.map((t) => (
+            <ToolCard key={t.id} item={t} ws={ws} sid={sid} nested />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** a short summary of a tool's output for its collapsed line */
+function outputSummary(output: string | undefined, isError: boolean): string {
+  if (!output) return "";
+  const lines = output.split("\n").filter((l) => l.trim() !== "");
+  const exit = /^exit code: (-?\d+)/.exec(output);
+  const first = lines.find((l) => !l.startsWith("exit code:") && !/^(stdout|stderr):$/.test(l.trim())) ?? "";
+  const parts = [];
+  if (exit) parts.push(`exit ${exit[1]}`);
+  else if (isError) parts.push(first.replace(/^error:\s*/, "").slice(0, 80));
+  else if (first) parts.push(first.slice(0, 60));
+  if (lines.length > 1) parts.push(`${lines.length} lines`);
+  return parts.join(" · ");
+}
+
+function ToolCard({ item, ws, sid, nested }: { item: ToolItem; ws: string; sid: string; nested?: boolean }) {
   const { call, result, approval, resolved } = item;
   const tool = call?.tool ?? approval?.tool ?? "tool";
   const input = call?.input ?? approval?.input;
@@ -884,12 +1040,13 @@ function ToolCard({ item, ws, sid }: { item: Extract<Timeline, { kind: "tool" }>
   return (
     <div
       className={cx(
-        "ml-9 rounded-lg border bg-panel overflow-hidden",
-        pending ? (risk === "destructive" ? "border-err/50 ring-1 ring-err/20" : "border-warn/50 ring-1 ring-warn/20") : failed || denied ? "border-err/30" : "border-line",
+        nested ? "bg-panel" : "ml-9 rounded-lg border bg-panel overflow-hidden",
+        !nested && (pending ? (risk === "destructive" ? "border-err/50 ring-1 ring-err/20" : "border-warn/50 ring-1 ring-warn/20") : failed || denied ? "border-err/30" : "border-line"),
+        nested && pending && "ring-1 ring-inset ring-warn/40",
       )}
       {...(pending ? { "data-pending-approval": true } : {})}
     >
-      <button onClick={() => setOpen(!expanded)} className="w-full flex items-center gap-2 px-3 h-9 text-left hover:bg-panel-2">
+      <button onClick={() => setOpen(!expanded)} className={cx("w-full flex items-center gap-2 px-3 text-left hover:bg-panel-2", nested ? "h-8" : "h-9")}>
         {expanded ? <ChevronDown className="size-3.5 text-faint" /> : <ChevronRight className="size-3.5 text-faint" />}
         <Wrench className="size-3.5 text-muted" />
         <span className="font-mono text-[12px] font-medium">{tool}</span>
@@ -899,6 +1056,9 @@ function ToolCard({ item, ws, sid }: { item: Extract<Timeline, { kind: "tool" }>
           </Badge>
         )}
         <span className="font-mono text-[11.5px] text-muted truncate flex-1 min-w-0">{summary}</span>
+        {result && !expanded && (
+          <span className={cx("hidden md:inline font-mono text-[11px] truncate max-w-56", result.isError ? "text-err" : "text-faint")}>{outputSummary(result.output, result.isError)}</span>
+        )}
         {env && <Badge tone={/prod/i.test(env) ? "err" : "neutral"}>{env}</Badge>}
         {risk && <Badge tone={riskTone(risk)}>{risk}</Badge>}
         {result?.durationMs !== undefined && <span className="text-[10.5px] text-faint tabular-nums">{fmtMs(result.durationMs)}</span>}

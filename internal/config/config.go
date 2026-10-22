@@ -32,6 +32,7 @@ type Settings struct {
 	DefaultModel    string      `yaml:"defaultModel,omitempty" json:"defaultModel"`
 	Providers       []Provider  `yaml:"providers" json:"providers"`
 	LocalAccess     LocalAccess `yaml:"localAccess" json:"localAccess"`
+	Agent           Agent       `yaml:"agent" json:"agent"`
 	VPN             VPN         `yaml:"vpn" json:"vpn"`
 	Git             Git         `yaml:"git" json:"git"`
 }
@@ -63,6 +64,14 @@ type LocalAccess struct {
 	AllowedDirs []string `yaml:"allowedDirs,omitempty" json:"allowedDirs"`
 	// AutoReadCommands runs local commands classified read-only without asking.
 	AutoReadCommands bool `yaml:"autoReadCommands,omitempty" json:"autoReadCommands"`
+}
+
+// Agent is the agent's permission policy.
+type Agent struct {
+	// AutoServerChanges lets the Auto and Full modes change servers (hosts,
+	// clusters, remote repositories) without asking. Off (the default):
+	// every change on a server asks, in every mode.
+	AutoServerChanges bool `yaml:"autoServerChanges,omitempty" json:"autoServerChanges"`
 }
 
 type file struct {

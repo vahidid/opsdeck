@@ -63,7 +63,8 @@ type Settings = { autoLockMinutes: number; defaultModel: string;
          browser: string };                         // Chrome/Edge/Chromium for SSO login windows ("" = detect)
   localAccess: { disabled: boolean;        // agent access to this computer (default on)
                  allowedDirs: string[];    // readable without asking; "~/..." is expanded
-                 autoReadCommands: boolean } } // run read-only local_exec commands without asking
+                 autoReadCommands: boolean };  // run read-only local_exec commands without asking
+  agent: { autoServerChanges: boolean } }   // false (default): changes on servers ask in every mode
 ```
 Local agent providers use `type: "claude-code" | "codex" | "gemini-cli" | "acp"` with
 `command`, `args`, `env` (no base URL or key). Their sessions reach opsdeck's tools through
@@ -375,10 +376,12 @@ call (e.g. every read in a folder).
 | GET | `/api/workspaces/{ws}/sessions/{id}/stream` | SSE: every new `Event` as `data: <json>` |
 
 ```ts
-type SessionInfo = { id; workspace; title; model; mode: "plan"|"ask"|"auto"; state: "idle"|"running"|"waiting_approval";
+type SessionInfo = { id; workspace; title; model; mode: "plan"|"ask"|"auto"|"full"; state: "idle"|"running"|"waiting_approval";
                      created; updated; usage: {inputTokens: number; outputTokens: number} }
 type Event = { id: string; ts: string; type: string; ... }
 // user              {text}
+// recall            {items: [{kind: "skill"|"doc"|"report"|"script", ref, title}], preloaded}
+//                   workspace knowledge attached to the message above; preloaded = skill included in full
 // assistant_delta   {messageId, text}            streaming chunk (not persisted)
 // assistant         {messageId, text}            final text of a message
 // tool_call         {callId, tool, input, risk, target, environment}

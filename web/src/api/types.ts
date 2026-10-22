@@ -54,6 +54,7 @@ export type Settings = {
   defaultModel: string;
   providers: ProviderConfig[];
   localAccess: LocalAccess;
+  agent?: { autoServerChanges: boolean };
   vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string };
   git: { name: string; email: string };
 };
@@ -377,7 +378,7 @@ export type KubeRevision = { revision: number; name: string; created: string; im
 export type HelmRelease = { name: string; namespace: string; revision: number; status: string; chart: string; chartVersion: string; appVersion?: string; updated: string; description?: string };
 export type HelmDetail = HelmRelease & { values: string; manifest: string; notes?: string; history: HelmRelease[] };
 
-export type SessionMode = "plan" | "ask" | "auto";
+export type SessionMode = "plan" | "ask" | "auto" | "full";
 export type SessionState = "idle" | "running" | "waiting_approval";
 export type Usage = { inputTokens: number; outputTokens: number };
 export type SessionInfo = {
@@ -393,8 +394,12 @@ export type SessionInfo = {
 };
 
 type EventBase = { id: string; ts: string };
+/** workspace knowledge opsdeck found for a message and gave the agent with it */
+export type RecallItem = { kind: "skill" | "doc" | "report" | "script" | "memory"; ref: string; title?: string };
+
 export type AgentEvent =
   | (EventBase & { type: "user"; text: string })
+  | (EventBase & { type: "recall"; items: RecallItem[]; preloaded?: string })
   | (EventBase & { type: "assistant_delta"; messageId: string; text: string })
   | (EventBase & { type: "assistant"; messageId: string; text: string })
   | (EventBase & {

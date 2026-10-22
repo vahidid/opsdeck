@@ -528,7 +528,7 @@ func toolLocalEditFile() Tool {
 
 func toolLocalExec() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "local_exec", Description: "Run a non-interactive shell command on THIS computer (sh -c; cmd /C on Windows), e.g. ssh-keygen -lf, ssh -G <host>, git status in a local project, docker compose config, kubectl config get-contexts. Use it for local tooling, not for workspace hosts (use exec for those). stdin is empty; output is limited. Every command needs the user's approval unless they allowed it.",
+		Def: llm.Tool{Name: "local_exec", Description: "Run a non-interactive shell command on THIS computer (sh -c; cmd /C on Windows), e.g. ssh-keygen -lf, ssh -G <host>, git status in a local project, docker compose config, kubectl config get-contexts. Use it for local tooling, not for workspace hosts (use exec for those). stdin is empty; output is limited. In Ask mode every command waits for the user's approval; in Auto mode only destructive ones; in Full mode none.",
 			Schema: obj(map[string]any{
 				"command":     str("Shell command"),
 				"cwd":         str("Working directory, absolute or ~/... (default: home)"),

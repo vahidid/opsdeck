@@ -95,7 +95,8 @@ plus a complete local workbench that is just as useful without AI.
   right-to-left language) are laid out right-to-left with a Persian font, while commands,
   paths and code stay left-to-right.
 - **Safety** — every tool call is classified (`read` / `change` / `destructive`; shell
-  commands are parsed); Plan / Ask / Auto modes; protected environments; per-workspace
+  commands are parsed); Plan / Ask / Auto / Full modes (changes on servers ask in every mode
+  by default); protected environments; per-workspace
   permission rules; approvals with previews; secrets redacted from everything the model
   sees; a hash-chained audit journal of every action.
 

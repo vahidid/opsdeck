@@ -31,6 +31,7 @@ const normSettings = (v: Settings): Settings => ({
   git: { name: v.git?.name ?? "", email: v.git?.email ?? "" },
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
+  agent: { autoServerChanges: !!v.agent?.autoServerChanges },
 });
 
 const KIND_LABEL: Record<string, string> = {
@@ -304,13 +305,24 @@ export function AppSettingsPage() {
             <div className="text-xs text-muted leading-relaxed">
               Lets the agent work with this machine like a coding harness does: read your files (e.g. <span className="font-mono">~/.ssh/config</span>,{" "}
               <span className="font-mono">known_hosts</span>, a project folder), write files, run local commands, and import your SSH keys straight into the
-              vault without the model ever seeing them. Reads outside the workspace ask once per folder, credential files ask per file, and every write and
-              command asks for approval. opsdeck's own vault, login token and settings are never accessible.
+              vault without the model ever seeing them. In Ask mode reads outside the workspace ask once per folder, credential files per file, and every
+              write and command asks; in Auto mode all of it runs except destructive commands, credential files and the vault; in Full mode nothing asks.
+              opsdeck's own vault, login token and settings are never accessible.
             </div>
             <Toggle
               checked={!s.localAccess.disabled}
               onChange={(v) => setS({ ...s, localAccess: { ...s.localAccess, disabled: !v } })}
               label="Allow the agent to access this computer"
+            />
+            <Toggle
+              checked={!s.agent?.autoServerChanges}
+              onChange={(v) => setS({ ...s, agent: { autoServerChanges: !v } })}
+              label={
+                <span>
+                  Ask before every change on a server, in every mode{" "}
+                  <span className="text-faint">(hosts, clusters, pushes and merges — off: Auto and Full change servers without asking)</span>
+                </span>
+              }
             />
             <FormField
               label="Run system-mode VPNs with"

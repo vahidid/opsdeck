@@ -127,6 +127,7 @@ func TestScripts(t *testing.T) {
 	defer fake.Close()
 	var settings map[string]any
 	c.must("GET", "/api/settings", nil, &settings)
+	settings["agent"] = map[string]any{"autoServerChanges": true} // auto mode changes servers too
 	settings["providers"] = []map[string]any{{"id": "fake", "type": "openai", "name": "Fake", "baseUrl": fake.URL, "models": []string{"m1"}}}
 	c.must("PUT", "/api/settings", settings, nil)
 	var sess map[string]any

@@ -813,8 +813,8 @@ func toolAnsibleVault() Tool {
 					return nil, fmt.Errorf("%s is not encrypted: read it with the ansible tool", in.Path)
 				}
 				c := &Call{Risk: RiskRead, Target: "ansible/" + p.Name(), Match: "view " + in.Path,
-					Consent: "shows the decrypted content of " + label + " to the agent",
-					Grant:   "ansible-view:" + p.Name(), GrantLabel: "Always allow the agent to see decrypted vault content of " + p.Name() + " in this session",
+					Consent: "shows the decrypted content of " + label + " to the agent", Sensitive: true,
+					Grant: "ansible-view:" + p.Name(), GrantLabel: "Always allow the agent to see decrypted vault content of " + p.Name() + " in this session",
 					Run: func(ctx context.Context) (string, error) { return m.View(ctx, p, in.Path) }}
 				c.Preview = "decrypt " + label + " and show it to the agent (values that look like credentials are masked)"
 				return need(c, "decrypting needs the vault password", ids...), nil

@@ -125,7 +125,7 @@ func toolVaultList() Tool {
 
 // vaultCall marks a vault change: always approved by the user.
 func vaultCall(c *Call, scope string) *Call {
-	c.Risk, c.Environment, c.Protected = RiskChange, "vault", true
+	c.Risk, c.Environment, c.Protected, c.Guarded = RiskChange, "vault", true, true
 	c.Target = "vault/" + scope
 	return c
 }
@@ -484,7 +484,7 @@ func toolKnownHostsImport() Tool {
 					Consent: "reads " + path + " on this computer", Grant: "local-read-file:" + path, GrantLabel: "Always allow reading " + path + " in this session",
 					Run: func(ctx context.Context) (string, error) { return "nothing to pin\n" + report, nil }}, nil
 			}
-			c := &Call{Risk: RiskChange, Target: "workspace/" + env.WS.Name() + "/known_hosts", Environment: "local", Protected: true, Match: path,
+			c := &Call{Risk: RiskChange, Target: "workspace/" + env.WS.Name() + "/known_hosts", Environment: "local", Protected: true, Guarded: true, Match: path,
 				Preview: "Pin host keys from " + path + "\n\n" + report}
 			c.Run = func(ctx context.Context) (string, error) {
 				n, err := env.Hub.ApplyKnownHostsImport(env.WS, plan)

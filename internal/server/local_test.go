@@ -140,8 +140,9 @@ func TestLocalHarness(t *testing.T) {
 		}
 	}
 
-	want := []string{"local_read_file", "local_read_file", "vault_import_ssh_key", "known_hosts_import", // workspace_resource runs in auto mode
-		"local_list_dir", "local_exec", "local_write_file"}
+	// auto mode: credential files, the vault and pinned host keys ask; listing,
+	// local commands, writes and workspace_resource run directly
+	want := []string{"local_read_file", "local_read_file", "vault_import_ssh_key", "known_hosts_import"}
 	if strings.Join(asked, ",") != strings.Join(want, ",") {
 		t.Fatalf("approvals asked:\n got %v\nwant %v", asked, want)
 	}

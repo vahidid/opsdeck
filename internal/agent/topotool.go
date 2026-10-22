@@ -327,7 +327,7 @@ func toolTopology() Tool {
 				return nil, err
 			}
 			diff := unifiedDiff("topology", topology.Render(before, nil), topology.Render(after, nil))
-			return &Call{Risk: RiskChange, Target: "topology", Environment: "workspace topology", Protected: true, Match: in.Action,
+			return &Call{Risk: RiskChange, Target: "topology", Environment: "workspace topology", Protected: true, Guarded: true, Match: in.Action,
 				Reasons:    []string{"changes topology.yaml, the workspace's shared infrastructure diagram"},
 				Grant:      "topology-edit",
 				GrantLabel: "Always allow topology changes in this session",

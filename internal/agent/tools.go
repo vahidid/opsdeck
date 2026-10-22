@@ -48,6 +48,7 @@ type Env struct {
 	SessionID   string
 	Model       string
 	Local       *LocalPolicy // nil = no access to this computer outside the workspace
+	Policy      Policy
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -64,6 +65,15 @@ type Call struct {
 	// Consent makes even a read ask (e.g. a local file outside the allowed
 	// folders); the text is the reason shown to the user.
 	Consent string
+	// Sensitive marks a read of credentials or secrets: it asks in Auto mode
+	// too (only Full skips it).
+	Sensitive bool
+	// Guarded marks a change on this computer that asks in Auto mode too
+	// (the vault, the topology map).
+	Guarded bool
+	// Scope is where the call has its effect (ScopeLocal, ScopeRemote); ""
+	// = from the environment and target.
+	Scope string
 	// Grant, when set, is what an "always allow" answer covers instead of the
 	// exact tool/target/match; GrantLabel describes it on the approval card.
 	Grant        string
@@ -245,7 +255,7 @@ func unifiedDiff(path, before, after string) string {
 // Tools returns the built-in tool set.
 func Tools() []Tool {
 	return []Tool{
-		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
+		toolInventory(), toolReadDoc(), toolKnowledge(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
 		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(), toolTopology(),

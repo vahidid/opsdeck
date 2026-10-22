@@ -40,6 +40,7 @@ func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Work
 		resume = id
 	}
 	s.mu.Unlock()
+	text += m.recallFor(s, env, text)
 
 	m.deps.MCP.Ensure(ctx, w)
 	tok := m.openBridge(s)

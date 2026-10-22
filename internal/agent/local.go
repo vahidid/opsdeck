@@ -135,7 +135,7 @@ func (p *LocalPolicy) Allowed(path string, extra ...string) bool {
 func (p *LocalPolicy) readAccess(c *Call, env *Env, path string, isDir bool) {
 	c.Environment = "local"
 	if p.Sensitive(path) {
-		c.Consent = "reads a credential location on this computer"
+		c.Consent, c.Sensitive = "reads a credential location on this computer", true
 		c.Grant, c.GrantLabel = "local-read-file:"+path, "Always allow reading "+path+" in this session"
 		return
 	}

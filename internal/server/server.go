@@ -131,6 +131,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		},
 		UserScripts: dirs.Scripts(),
 		Local:       s.localPolicy,
+		Policy:      func() agent.Policy { return agent.Policy{AutoServerChanges: s.cfg.Settings().Agent.AutoServerChanges} },
 	})
 	v.OnLock(func() {
 		// Locking ends all live access: agents, MCP servers, terminals and

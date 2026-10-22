@@ -55,7 +55,34 @@ func (m *Manager) Send(ws, id, text string) error {
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
 	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Git: m.deps.Git, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
-		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local()}
+		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local(), Policy: m.policy()}
+}
+
+// recallFor attaches the workspace knowledge matching the user's message to
+// it (for the model), shows what was found in the chat, and returns the
+// attached text.
+func (m *Manager) recallFor(s *Session, env *Env, text string) string {
+	s.mu.Lock()
+	history := append([]llm.Message(nil), s.messages...)
+	s.mu.Unlock()
+	r, block := recall(env, text, history[:len(history)-1])
+	if r == nil {
+		return ""
+	}
+	block = "\n\n" + m.redactor.Redact(block)
+	s.mu.Lock()
+	last := &s.messages[len(s.messages)-1]
+	last.Content = append(last.Content, llm.Block{Type: "text", Text: block})
+	s.mu.Unlock()
+	s.emit("recall", map[string]any{"items": r.Items, "preloaded": r.Preloaded}, true)
+	return block
+}
+
+func (m *Manager) policy() Policy {
+	if m.deps.Policy == nil {
+		return Policy{}
+	}
+	return m.deps.Policy()
 }
 
 func (m *Manager) local() *LocalPolicy {
@@ -113,6 +140,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 	}
 	env := m.env(w)
 	env.SessionID, env.Model = s.info.ID, modelID
+	m.recallFor(s, env, text)
 	m.deps.MCP.Ensure(ctx, w)
 	tools, toolMap := m.toolset(w)
 
@@ -266,7 +294,7 @@ func (m *Manager) runTool(ctx context.Context, s *Session, env *Env, w *workspac
 		granted[k] = true
 	}
 	s.mu.Unlock()
-	d := Decide(mode, w, c.Name, call, granted, m.deps.Vault)
+	d := Decide(mode, w, c.Name, call, granted, m.deps.Vault, m.policy())
 	if call.Secret != nil && d.Effect == "allow" {
 		// the tool needs a password only the user can give
 		d = Decision{"ask", firstNonEmpty(call.Secret.Reason, "needs a password from you")}

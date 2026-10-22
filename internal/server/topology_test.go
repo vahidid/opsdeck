@@ -128,7 +128,7 @@ func TestTopologyAndSkills(t *testing.T) {
 		}
 	}
 	sys := fake.LastSystem()
-	for _, want := range []string{"## Topology (topology tool)", "[lb] HAProxy: Load balancer", "connectivity-triage (built-in, Networking)", "propose the change"} {
+	for _, want := range []string{"## Topology (topology tool)", "[lb] HAProxy: Load balancer", "- connectivity-triage (Networking): ", "propose the change"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system prompt misses %q", want)
 		}

@@ -32,7 +32,6 @@ import { useAsync, useInterval } from "../hooks";
 
 type Sel = { kind: "node" | "zone" | "link"; id: string } | null;
 
-const EMPTY: TopologyDoc = { version: 1, zones: [], nodes: [], links: [], layout: {} };
 
 const LINK_STYLE: Record<string, { stroke: string; dash?: string; width?: number }> = {
   network: { stroke: "var(--c-muted, #8b93a1)", width: 2 },
@@ -165,6 +164,20 @@ function autoLayout(doc: TopologyDoc): Record<string, TopoBox> {
   return out;
 }
 
+// clean fills in what an older, empty or hand-edited file may lack.
+function clean(t: Partial<TopologyDoc> | null | undefined): TopologyDoc {
+  const arr = <T,>(v: T[] | null | undefined): T[] => (Array.isArray(v) ? v : []);
+  return {
+    version: t?.version || 1,
+    zones: arr(t?.zones).filter((z) => z && z.id),
+    nodes: arr(t?.nodes)
+      .filter((n) => n && n.id)
+      .map((n) => ({ ...n, type: n.type || "generic", deployments: n.deployments ? arr(n.deployments) : undefined })),
+    links: arr(t?.links).filter((l) => l && l.id && l.from && l.to),
+    layout: t?.layout && typeof t.layout === "object" ? t.layout : {},
+  };
+}
+
 // fillLayout gives every zone and component a position: everything
 // auto-arranged when nothing has one yet, otherwise new things (e.g. added
 // by the agent) go below their siblings.
@@ -223,7 +236,7 @@ function Editor() {
   const load = useCallback(async () => {
     try {
       const r = await api.topologyDoc(ws);
-      const d = fillLayout({ ...EMPTY, ...r.topology, layout: r.topology.layout ?? {} });
+      const d = fillLayout(clean(r.topology));
       setDoc(d);
       setSaved(JSON.stringify(d));
       setRev(r.rev);
@@ -528,7 +541,7 @@ function Editor() {
         toast.info("Nothing to import", "Every inventory resource is already on the diagram.");
         return;
       }
-      setDoc(fillLayout({ ...r.topology, layout: r.topology.layout ?? doc.layout ?? {} }));
+      setDoc(fillLayout(clean({ ...r.topology, layout: r.topology.layout ?? doc.layout ?? {} })));
       toast.success(`Added ${r.added.length} components from the inventory`, "Arrange them, add what runs on them, then save.");
     } catch (e) {
       toast.error("Import failed", errMsg(e));
@@ -1077,7 +1090,14 @@ function ZoneInspector({ z, doc, catalog, onChange, onDelete }: { z: TopoZone; d
             <Input mono value={z.cidr ?? ""} onChange={(e) => set("cidr", e.target.value || undefined)} placeholder="10.0.1.0/24" />
           </FormField>
           <FormField label="Provider">
-            <Input value={z.provider ?? ""} onChange={(e) => set("provider", e.target.value || undefined)} placeholder="AWS, Hetzner, on-prem" />
+            <Input list="topo-providers" value={z.provider ?? ""} onChange={(e) => set("provider", e.target.value || undefined)} placeholder="ArvanCloud, AWS, on-prem" />
+            <datalist id="topo-providers">
+              {(catalog.providers ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </datalist>
           </FormField>
         </div>
         <FormField label="Notes">

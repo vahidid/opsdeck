@@ -230,6 +230,12 @@ func topoCatalog() string {
 		zk = append(zk, z.ID)
 	}
 	b.WriteString(strings.Join(zk, ", "))
+	b.WriteString("\nZone providers (clouds / hosting): ")
+	var pv []string
+	for _, p := range topology.Providers {
+		pv = append(pv, p.ID)
+	}
+	b.WriteString(strings.Join(pv, ", "))
 	b.WriteString("\nDeployment kinds: ")
 	var dk []string
 	for _, d := range topology.DeploymentKinds {
@@ -245,7 +251,7 @@ func toolTopology() Tool {
 			"connect", "update_link", "disconnect", "import_inventory", "replace", "batch"),
 		"id":   str("update_*/remove_*/disconnect: the node, zone or link id"),
 		"node": map[string]any{"type": "object", "description": "add_node / update_node fields: id, type (see catalog), variant, label, zone, vendor, tech[], resource (inventory ref, e.g. host/app-1), addresses[], environment, deployments[{name, kind, image, ports[], replicas, repo, path, notes}], tags[], notes. update_node merges; null removes a field."},
-		"zone": map[string]any{"type": "object", "description": "add_zone / update_zone fields: id, label, kind (region, datacenter, cloud, vpc, subnet, vlan, dmz, office, cluster, namespace, environment), parent, cidr, provider, notes"},
+		"zone": map[string]any{"type": "object", "description": "add_zone / update_zone fields: id, label, kind (region, datacenter, cloud, vpc, subnet, vlan, dmz, office, cluster, namespace, environment), parent, cidr, provider (ArvanCloud, AWS, Hetzner, on-prem…), notes"},
 		"link": map[string]any{"type": "object", "description": "connect / update_link fields: from, to (node ids), kind (https, http, grpc, tcp, sql, redis, kafka, replication, ipsec, wireguard, bgp, lan, wan, ssh, metrics…), port, label, encrypted, bidirectional, bandwidth, vlan, notes"},
 		"yaml": str("replace: the complete topology YAML (zones, nodes, links)"),
 	}

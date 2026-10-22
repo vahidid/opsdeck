@@ -10,7 +10,7 @@ import (
 func (s *Server) topologyRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("GET /api/topology/catalog", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"nodeTypes": topology.NodeTypes, "linkKinds": topology.LinkKinds,
-			"zoneKinds": topology.ZoneKinds, "deploymentKinds": topology.DeploymentKinds})
+			"zoneKinds": topology.ZoneKinds, "deploymentKinds": topology.DeploymentKinds, "providers": topology.Providers})
 	})
 	mux.HandleFunc("GET /api/workspaces/{ws}/diagram", u(s.topoGet))
 	mux.HandleFunc("PUT /api/workspaces/{ws}/diagram", u(s.topoPut))

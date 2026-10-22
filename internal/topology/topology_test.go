@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,10 @@ func TestSaveLoadRender(t *testing.T) {
 	tp, rev, err := Load(w)
 	if err != nil || rev != "" || !tp.Empty() {
 		t.Fatalf("empty load: %+v %q %v", tp, rev, err)
+	}
+	// the UI gets lists, never null
+	if b, _ := json.Marshal(tp); string(b) != `{"version":1,"zones":[],"nodes":[],"links":[],"layout":{}}` {
+		t.Fatalf("empty JSON: %s", b)
 	}
 	tp.Zones = []Zone{{ID: "dc", Label: "DC", Kind: "datacenter"}, {ID: "dmz", Label: "DMZ", Kind: "dmz", Parent: "dc", CIDR: "10.0.1.0/24"}}
 	tp.Nodes = []Node{

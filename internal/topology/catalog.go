@@ -41,7 +41,7 @@ var NodeTypes = []NodeType{
 		Tech: []string{"Cloudflare WAF", "AWS WAF", "ModSecurity", "Coraza", "F5 Advanced WAF", "FortiWeb", "Imperva", "ArvanCloud WAF"}},
 	{Type: "ddos", Label: "DDoS protection", Category: "Edge & access", Icon: "shield-alert", Tech: []string{"Cloudflare", "AWS Shield", "Akamai Prolexic", "ArvanCloud", "Arbor"}},
 	{Type: "load-balancer", Label: "Load balancer", Category: "Edge & access", Icon: "split", Variants: []string{"L4 (TCP/UDP)", "L7 (HTTP)", "global / GSLB", "cloud LB", "keepalived VIP"},
-		Tech: []string{"HAProxy", "nginx", "F5 BIG-IP", "AWS ALB", "AWS NLB", "MetalLB", "Keepalived", "Envoy", "Traefik", "Citrix ADC"}},
+		Tech: []string{"HAProxy", "nginx", "F5 BIG-IP", "AWS ALB", "AWS NLB", "ArvanCloud Load Balancer", "MetalLB", "Keepalived", "Envoy", "Traefik", "Citrix ADC"}},
 	{Type: "reverse-proxy", Label: "Reverse proxy", Category: "Edge & access", Icon: "arrow-left-right", Variants: []string{"edge", "ingress controller", "sidecar"},
 		Tech: []string{"nginx", "Traefik", "Caddy", "Envoy", "HAProxy", "Apache httpd", "ingress-nginx"}},
 	{Type: "api-gateway", Label: "API gateway", Category: "Edge & access", Icon: "waypoints", Tech: []string{"Kong", "Apache APISIX", "Tyk", "KrakenD", "AWS API Gateway", "Envoy Gateway"}},
@@ -64,16 +64,16 @@ var NodeTypes = []NodeType{
 	// Compute
 	{Type: "server", Label: "Server", Category: "Compute", Icon: "server", Variants: []string{"bare metal", "dedicated", "VPS"},
 		Tech: []string{"Ubuntu", "Debian", "RHEL", "Rocky Linux", "AlmaLinux", "Windows Server"}},
-	{Type: "vm", Label: "Virtual machine", Category: "Compute", Icon: "monitor", Tech: []string{"Ubuntu", "Debian", "RHEL", "Rocky Linux", "Windows Server", "EC2", "Compute Engine"}},
+	{Type: "vm", Label: "Virtual machine", Category: "Compute", Icon: "monitor", Tech: []string{"Ubuntu", "Debian", "RHEL", "Rocky Linux", "Windows Server", "ArvanCloud Cloud Server", "EC2", "Compute Engine", "Hetzner Cloud"}},
 	{Type: "hypervisor", Label: "Hypervisor", Category: "Compute", Icon: "layers", Tech: []string{"Proxmox VE", "VMware ESXi", "Hyper-V", "KVM / libvirt", "XCP-ng", "OpenStack"}},
-	{Type: "container-host", Label: "Container host", Category: "Compute", Icon: "container", Tech: []string{"Docker", "Docker Swarm", "Podman", "containerd", "Nomad"}},
+	{Type: "container-host", Label: "Container host", Category: "Compute", Icon: "container", Tech: []string{"Docker", "Docker Swarm", "Podman", "containerd", "Nomad", "ArvanCloud Container (PaaS)"}},
 	{Type: "k8s-cluster", Label: "Kubernetes cluster", Category: "Compute", Icon: "boxes", Variants: []string{"self-managed", "managed"},
-		Tech: []string{"Kubernetes", "k3s", "RKE2", "OpenShift", "Talos", "EKS", "GKE", "AKS", "MicroK8s"}},
+		Tech: []string{"Kubernetes", "k3s", "RKE2", "OpenShift", "Talos", "EKS", "GKE", "AKS", "ArvanCloud Managed Kubernetes", "MicroK8s"}},
 	{Type: "serverless", Label: "Serverless function", Category: "Compute", Icon: "zap", Tech: []string{"AWS Lambda", "Cloudflare Workers", "Cloud Functions", "Knative", "OpenFaaS"}},
 
 	// Data
 	{Type: "database", Label: "Database", Category: "Data", Icon: "database", Variants: []string{"primary", "replica", "cluster", "managed"},
-		Tech: []string{"PostgreSQL", "MySQL", "MariaDB", "MongoDB", "ClickHouse", "SQL Server", "Oracle", "Cassandra", "CockroachDB", "Patroni"}},
+		Tech: []string{"PostgreSQL", "MySQL", "MariaDB", "MongoDB", "ClickHouse", "SQL Server", "Oracle", "Cassandra", "CockroachDB", "Patroni", "ArvanCloud DBaaS"}},
 	{Type: "cache", Label: "Cache", Category: "Data", Icon: "gauge", Tech: []string{"Redis", "Valkey", "Memcached", "KeyDB", "Varnish"}},
 	{Type: "queue", Label: "Queue / stream", Category: "Data", Icon: "list-ordered", Tech: []string{"Kafka", "RabbitMQ", "NATS", "Redis Streams", "Pulsar", "ActiveMQ", "SQS"}},
 	{Type: "object-storage", Label: "Object storage", Category: "Data", Icon: "package", Tech: []string{"S3", "MinIO", "Ceph RGW", "Google Cloud Storage", "Azure Blob", "ArvanCloud Object Storage"}},
@@ -96,6 +96,8 @@ var NodeTypes = []NodeType{
 	{Type: "mail", Label: "Mail", Category: "Platform & DevOps", Icon: "mail", Tech: []string{"Postfix", "Exim", "Mailcow", "Amazon SES", "Mailgun"}},
 
 	// External
+	{Type: "cloud-provider", Label: "Cloud provider", Category: "External", Icon: "cloud", Variants: []string{"IaaS", "PaaS", "managed services"},
+		Tech: []string{"ArvanCloud", "AWS", "Google Cloud", "Azure", "Hetzner", "DigitalOcean", "OVHcloud", "Oracle Cloud", "Alibaba Cloud", "Iran Server", "ParsPack", "Asiatech"}},
 	{Type: "external", Label: "External service", Category: "External", Icon: "plug", Hint: "SaaS, partner API, payment provider…"},
 	{Type: "generic", Label: "Other component", Category: "External", Icon: "box"},
 }
@@ -149,6 +151,16 @@ var ZoneKinds = []Option{
 	{ID: "vpc", Label: "VPC / VNet"}, {ID: "subnet", Label: "Subnet"}, {ID: "vlan", Label: "VLAN"}, {ID: "dmz", Label: "DMZ"},
 	{ID: "office", Label: "Office / site"}, {ID: "cluster", Label: "Cluster"}, {ID: "namespace", Label: "Namespace"},
 	{ID: "environment", Label: "Environment"}, {ID: "zone", Label: "Other zone"},
+}
+
+// Providers are well-known clouds and hosting companies (zone provider).
+var Providers = []Option{
+	{ID: "ArvanCloud", Label: "ArvanCloud (ابرآروان)"}, {ID: "AWS", Label: "Amazon Web Services"}, {ID: "Google Cloud", Label: "Google Cloud"},
+	{ID: "Azure", Label: "Microsoft Azure"}, {ID: "Hetzner", Label: "Hetzner"}, {ID: "DigitalOcean", Label: "DigitalOcean"},
+	{ID: "OVHcloud", Label: "OVHcloud"}, {ID: "Oracle Cloud", Label: "Oracle Cloud"}, {ID: "Alibaba Cloud", Label: "Alibaba Cloud"},
+	{ID: "Linode / Akamai", Label: "Linode (Akamai)"}, {ID: "Vultr", Label: "Vultr"}, {ID: "Scaleway", Label: "Scaleway"},
+	{ID: "Cloudflare", Label: "Cloudflare"}, {ID: "Iran Server", Label: "Iran Server"}, {ID: "Pars Pack", Label: "ParsPack"},
+	{ID: "Asiatech", Label: "Asiatech"}, {ID: "Afranet", Label: "Afranet"}, {ID: "on-prem", Label: "On-premises"},
 }
 
 var DeploymentKinds = []Option{

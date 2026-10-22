@@ -394,4 +394,5 @@ export type TopoCatalog = {
   linkKinds: TopoLinkKind[];
   zoneKinds: { id: string; label: string }[];
   deploymentKinds: { id: string; label: string }[];
+  providers?: { id: string; label: string }[];
 };

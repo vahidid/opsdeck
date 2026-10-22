@@ -10,7 +10,9 @@ date with you.
 
 - **Zones**: data center, region, cloud account, VPC/VNet, subnet, VLAN, DMZ,
   office/site, cluster, namespace, environment. Zones nest (a DMZ inside a data center)
-  and carry a CIDR, a provider and notes. Drag a component or a zone into a zone to move
+  and carry a CIDR, a provider (suggested: ArvanCloud, AWS, Google Cloud, Azure, Hetzner,
+  DigitalOcean, OVHcloud, Oracle, Alibaba, Iran Server, ParsPack, Asiatech, Afranet,
+  on-prem…) and notes. Drag a component or a zone into a zone to move
   it there; drag a selected zone's corners to resize it.
 - **Components**: about 45 types in six groups, each with kinds (variants) and suggested
   products:
@@ -22,7 +24,7 @@ date with you.
   | Compute | server, VM, hypervisor, container host, Kubernetes cluster, serverless |
   | Data | database (primary, replica, cluster), cache, queue/stream, object storage, file/block storage, search |
   | Platform & DevOps | Git hosting, CI/CD, registry, monitoring, logging, tracing, alerting, secrets, identity/SSO, backup, mail |
-  | External | external service, other |
+  | External | cloud provider (ArvanCloud/ابرآروان, AWS, Google Cloud, Azure, Hetzner, DigitalOcean, OVHcloud, Iran Server, ParsPack, Asiatech…), external service, other |
 
   Each component has a name, kind, product/vendor (e.g. *MikroTik CCR2004*, *FortiGate
   100F*, *Cloudflare*), technologies (*RouterOS 7, BGP*, *nginx 1.25*), addresses, an

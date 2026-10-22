@@ -112,7 +112,9 @@ func Path(w *workspace.Workspace) string { return filepath.Join(w.Path, FileName
 func Load(w *workspace.Workspace) (*Topology, string, error) {
 	b, err := os.ReadFile(Path(w))
 	if errors.Is(err, os.ErrNotExist) {
-		return &Topology{Version: 1}, "", nil
+		t := &Topology{}
+		t.normalize()
+		return t, "", nil
 	}
 	if err != nil {
 		return nil, "", err
@@ -161,7 +163,11 @@ func Save(w *workspace.Workspace, t *Topology, expect string) (string, error) {
 
 // Marshal is the file content of t.
 func Marshal(t *Topology) ([]byte, error) {
-	b, err := yaml.Marshal(t)
+	c := *t
+	if len(c.Layout) == 0 {
+		c.Layout = nil
+	}
+	b, err := yaml.Marshal(&c)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +189,9 @@ func (t *Topology) normalize() {
 	}
 	if t.Links == nil {
 		t.Links = []Link{}
+	}
+	if t.Layout == nil {
+		t.Layout = map[string]Box{}
 	}
 	for i := range t.Links {
 		if t.Links[i].ID == "" {

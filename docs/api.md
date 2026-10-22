@@ -189,6 +189,19 @@ Documentation repositories appear in `GET /api/workspaces/{ws}/docs` as
 | GET | `/api/skills/library/{name}?file=` | → `{content}` (SKILL.md or a supporting file) |
 | POST | `/api/workspaces/{ws}/skills/{name}/copy` | copies a built-in skill into `skills/<name>/` |
 
+## Scripts
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/workspaces/{ws}/scripts` | → `{user, workspace}`: the user's library and the workspace's scripts (without bodies) |
+| GET | `/api/workspaces/{ws}/scripts/{scope}/{name}?version=` | → script with `body`, `hash`, `status`, `versions`; `scope` is `user` or `workspace` |
+| PUT | `/api/workspaces/{ws}/scripts/{scope}/{name}` | create/update (saved as approved; a change of what runs makes a new version) |
+| DELETE | `/api/workspaces/{ws}/scripts/{scope}/{name}` | delete with its versions |
+| POST | `/api/workspaces/{ws}/scripts/{scope}/{name}/approve` | `{hash}` — approve the content the user reviewed (409 if it changed) |
+| POST | `/api/workspaces/{ws}/scripts/{scope}/{name}/copy` | copy to the other scope (pin into the workspace / save to my library) |
+| POST | `/api/workspaces/{ws}/scripts/{scope}/{name}/run` | `{target, params, force, hash}` → `{script, results: [{host, exitCode, skipped, stdout, stderr, durationMs, error, log}]}` |
+| GET | `/api/workspaces/{ws}/script-runs?script=&host=&limit=` | run history, newest first |
+
 ## Hosts
 
 | Method | Path | |

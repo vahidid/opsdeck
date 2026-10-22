@@ -41,9 +41,11 @@ type Env struct {
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
 	MemoryPath string
-	SessionID  string
-	Model      string
-	Local      *LocalPolicy // nil = no access to this computer outside the workspace
+	// UserScripts is the user's own script library ("" = none).
+	UserScripts string
+	SessionID   string
+	Model       string
+	Local       *LocalPolicy // nil = no access to this computer outside the workspace
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -229,6 +231,7 @@ func Tools() []Tool {
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
 		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(), toolTopology(),
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
+		toolScript(), toolRunScript(),
 	}
 }
 

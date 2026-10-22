@@ -31,6 +31,10 @@ description in its prompt. When a task matches, it loads the full instructions w
   hosts, `local_exec` here, `repo_write` for repositories) under the workspace's approval
   rules.
 
+Skills are knowledge the agent follows with judgment. For code that should run exactly
+as written (a server bootstrap, an install), use [scripts](scripts.md); a skill can tell
+the agent which script to run.
+
 ## The Skills page
 
 The page lists the workspace's skills and the library by category. Opening a skill shows

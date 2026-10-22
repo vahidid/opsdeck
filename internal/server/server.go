@@ -118,7 +118,8 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 			}
 			return ""
 		},
-		Local: s.localPolicy,
+		UserScripts: dirs.Scripts(),
+		Local:       s.localPolicy,
 	})
 	v.OnLock(func() {
 		// Locking ends all live access: agents, MCP servers, terminals and
@@ -140,8 +141,9 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 func (s *Server) elevation() []string { return vpn.Elevation(s.cfg.Settings().VPN.Elevate) }
 
 // localPolicy is the agent's access to this computer (nil when turned off).
-// opsdeck's vault, state (login token, audit, sessions) and settings are
-// always out of reach of the file tools.
+// opsdeck's vault, state (login token, audit, sessions), settings and the
+// user's script library (changed only through the script tool, so the
+// agent's edits stay drafts) are always out of reach of the file tools.
 func (s *Server) localPolicy() *agent.LocalPolicy {
 	la := s.cfg.Settings().LocalAccess
 	if la.Disabled {
@@ -154,7 +156,7 @@ func (s *Server) localPolicy() *agent.LocalPolicy {
 		AllowedDirs:      la.AllowedDirs,
 		AutoReadCommands: la.AutoReadCommands,
 		Forbidden: []string{vf, vf + "-wal", vf + "-shm", vf + "-journal", cf, cf + ".tmp", s.dirs.State,
-			filepath.Join(s.dirs.Data, "vault.db.tmp")},
+			filepath.Join(s.dirs.Data, "vault.db.tmp"), s.dirs.Scripts()},
 	}
 }
 

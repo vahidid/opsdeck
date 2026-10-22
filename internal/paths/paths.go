@@ -54,7 +54,7 @@ func xdg(env, fallback string) string {
 
 // Ensure creates all directories with private permissions.
 func (d Dirs) Ensure() error {
-	for _, p := range []string{d.Data, d.State, d.Config, d.Workspaces()} {
+	for _, p := range []string{d.Data, d.State, d.Config, d.Workspaces(), d.Scripts()} {
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			return err
 		}
@@ -64,6 +64,7 @@ func (d Dirs) Ensure() error {
 
 func (d Dirs) VaultFile() string  { return filepath.Join(d.Data, "vault.db") }
 func (d Dirs) Workspaces() string { return filepath.Join(d.Data, "workspaces") }
+func (d Dirs) Scripts() string    { return filepath.Join(d.Data, "scripts") }
 func (d Dirs) ConfigFile() string { return filepath.Join(d.Config, "config.yaml") }
 func (d Dirs) AuditDir() string   { return filepath.Join(d.State, "audit") }
 func (d Dirs) WorkspaceState(ws string) string {

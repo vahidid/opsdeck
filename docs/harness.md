@@ -51,6 +51,8 @@ Built-in tools:
 | `git_sync` — clone or update a GitRemote on a host with its vault token | change |
 | `topology` — get / catalog / add, update, remove nodes, zones and links, import_inventory, replace, batch | read / change, always asks (one "always" per session) |
 | `load_skill(name, file?)` — a workspace or built-in skill, and its supporting files | read |
+| `script` — saved scripts: list, read, save ([scripts.md](scripts.md)) | read / change (saved as a draft for review) |
+| `run_script(script, target, params)` — run a saved script on hosts as one unit; secrets injected from the vault | change for approved scripts; destructive for drafts (refused on protected environments) |
 | `mcp__<server>__<tool>` — workspace MCP servers | read if the tool is annotated read-only, else change |
 
 ### 2. No undo

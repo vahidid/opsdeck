@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Activity, Bot, Boxes, Container, FileText, GitBranch, KeyRound, LayoutGrid, Network, ScrollText, Server, Settings, ShieldCheck, Sparkles, SquareTerminal } from "lucide-react";
+import { Activity, Bot, Boxes, Container, FileCode2, FileText, GitBranch, KeyRound, LayoutGrid, Network, ScrollText, Server, Settings, ShieldCheck, Sparkles, SquareTerminal } from "lucide-react";
 
 // Sections of a workspace, in sidebar order.
 export const NAV: { to: string; label: string; icon: ReactNode }[] = [
@@ -15,6 +15,7 @@ export const NAV: { to: string; label: string; icon: ReactNode }[] = [
   { to: "logs", label: "Logs", icon: <ScrollText /> },
   { to: "docs", label: "Docs", icon: <FileText /> },
   { to: "skills", label: "Skills", icon: <Sparkles /> },
+  { to: "scripts", label: "Scripts", icon: <FileCode2 /> },
   { to: "vault", label: "Vault", icon: <KeyRound /> },
   { to: "activity", label: "Activity", icon: <Activity /> },
 ];

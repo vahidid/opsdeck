@@ -136,6 +136,63 @@ export type Skill = {
   source?: string;
   license?: string;
 };
+export type ScriptParam = {
+  name: string;
+  description?: string;
+  type?: "" | "string" | "int" | "bool" | "secret";
+  default?: string;
+  required?: boolean;
+};
+export type Script = {
+  name: string;
+  description: string;
+  version: number;
+  file?: string;
+  os?: string[];
+  when?: string[];
+  tags?: string[];
+  sudo?: boolean;
+  risk?: "" | "change" | "destructive";
+  timeoutSec?: number;
+  check?: string;
+  params?: ScriptParam[];
+  approved?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  updated?: string;
+  scope: "user" | "workspace";
+  hash: string;
+  status: "draft" | "approved";
+  overrides?: boolean;
+  body?: string;
+  versions?: number[];
+};
+export type ScriptResult = {
+  host: string;
+  exitCode: number;
+  skipped?: boolean;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  error?: string;
+  log?: string;
+};
+export type ScriptRun = {
+  time: string;
+  script: string;
+  version: number;
+  hash: string;
+  scope: string;
+  host: string;
+  params?: Record<string, string>;
+  exitCode: number;
+  skipped?: boolean;
+  durationMs: number;
+  error?: string;
+  actor: string;
+  session?: string;
+  log?: string;
+};
 export type McpStatus = {
   name: string;
   status: string;

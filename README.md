@@ -39,6 +39,12 @@ plus a complete local workbench that is just as useful without AI.
   incident runbooks, postmortems…, from
   [wshobson/agents](https://github.com/wshobson/agents), MIT) next to your own; browse and
   customize them on the Skills page — see [docs/skills.md](docs/skills.md).
+- **Scripts** — your reviewed scripts (server bootstrap, hardening, installs…) in a
+  personal library available in every workspace, or in a workspace's `scripts/` for the
+  team. Write or upload them yourself, or let the agent draft them for your review. The
+  agent runs them with `run_script` as one unit (e.g. on a server you just added): typed
+  parameters, secrets injected from the vault over stdin, a check that skips hosts where
+  the script was already applied, versions and run history — see [docs/scripts.md](docs/scripts.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -162,5 +168,6 @@ external infrastructure needed.
 - [docs/git.md](docs/git.md) — Git repositories, working copies, merge requests
 - [docs/topology.md](docs/topology.md) — the topology map and the agent's topology tool
 - [docs/skills.md](docs/skills.md) — skills, the built-in library
+- [docs/scripts.md](docs/scripts.md) — scripts: your library and the workspace's, approval, running on hosts
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

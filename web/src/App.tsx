@@ -15,6 +15,7 @@ import { ResourcesPage } from "./pages/Resources";
 import { VPNPage } from "./pages/VPN";
 import { GitPage } from "./pages/Git";
 import { SkillsPage } from "./pages/Skills";
+import { ScriptsPage } from "./pages/Scripts";
 import { TopologyPage } from "./pages/Topology";
 import { TerminalPage } from "./pages/Terminal";
 import { DockerPage } from "./pages/Docker";
@@ -125,6 +126,7 @@ function workspaceRoutes(active: boolean) {
       <Route path="logs" element={<LogsPage />} />
       <Route path="docs" element={<DocsPage />} />
       <Route path="skills" element={<SkillsPage />} />
+      <Route path="scripts" element={<ScriptsPage />} />
       <Route path="vault" element={<VaultPage />} />
       <Route path="activity" element={<ActivityPage />} />
       <Route path="settings" element={<WorkspaceSettingsPage />} />

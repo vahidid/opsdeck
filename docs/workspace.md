@@ -17,6 +17,7 @@ acme/
 ├── docs/                 # documentation and runbooks (Markdown) — yours and the agent's (write_doc)
 ├── topology.yaml         # the infrastructure map (Topology page, topology tool)
 ├── skills/               # reusable procedures the agent can load (name.md or name/SKILL.md + files)
+├── scripts/              # scripts run on hosts as one unit (name/script.yaml + script.sh), see scripts.md
 ├── reports/              # analyses, audits, incident write-ups, plans saved by the agent
 │   └── 2026/10/2026-10-21-0930-disk-and-memory-audit-of-prod.md
 ├── artifacts/            # evidence files (save_artifact): config snapshots, full command output, generated files

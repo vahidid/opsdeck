@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Layers, Plus } from "lucide-react";
 import { AppProvider, WorkspaceProvider, useApp, useWs } from "./context/app";
@@ -20,7 +20,8 @@ import { TopologyPage } from "./pages/Topology";
 import { TerminalPage } from "./pages/Terminal";
 import { DockerPage } from "./pages/docker";
 import { KubernetesPage } from "./pages/kubernetes";
-import { AnsiblePage } from "./pages/ansible";
+// the Ansible editor (CodeMirror, YAML) is loaded when it is opened
+const AnsiblePage = lazy(() => import("./pages/ansible").then((m) => ({ default: m.AnsiblePage })));
 import { LogsPage } from "./pages/Logs";
 import { DocsPage } from "./pages/Docs";
 import { VaultPage } from "./pages/Vault";
@@ -124,7 +125,14 @@ function workspaceRoutes(active: boolean) {
       <Route path="terminal" element={<TerminalPage />} />
       <Route path="docker" element={<DockerPage />} />
       <Route path="kubernetes" element={<KubernetesPage />} />
-      <Route path="ansible" element={<AnsiblePage />} />
+      <Route
+        path="ansible"
+        element={
+          <Suspense fallback={<Loading />}>
+            <AnsiblePage />
+          </Suspense>
+        }
+      />
       <Route path="logs" element={<LogsPage />} />
       <Route path="docs" element={<DocsPage />} />
       <Route path="skills" element={<SkillsPage />} />

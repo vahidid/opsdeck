@@ -221,6 +221,8 @@ wrong one **422** `{code: "ansible_wrong_password"}`. Requests that need a passw
 | POST | `…/p/{project}/vault/{action}` | `view` `{path}` → `{text}`; `save` `{path, text, vaultId}`; `set` `{path, key, value, vaultId}`; `encrypt` `{path, vaultId}`; `decrypt` `{path}`; `rekey` `{path, newPassword, newVaultId}`; `encrypt-string` `{name, value, vaultId}` → `{text}` |
 | GET | `…/p/{project}/inventory?inventory=` | → `{graph, groups, children, hosts, generated}` (`inventory=workspace`: generated from the workspace's hosts) |
 | GET | `…/p/{project}/inventory/host?inventory=&host=` | → `{vars}` (YAML) |
+| GET | `…/p/{project}/modules?refresh=1` | → `[{name, description}]`: the modules ansible-doc knows for the project (cached) |
+| GET | `…/p/{project}/modules/doc?name=` | → `{name, short, description, options: [{name, type, elements, required, default, choices, aliases, description}], freeForm, examples}` |
 | POST | `…/p/{project}/check` | `{kind: syntax\|list-hosts\|list-tasks\|list-tags, playbook, inventory, limit, tags}` → `{ok, output}` |
 | POST | `…/p/{project}/runs` | `{kind: playbook\|adhoc\|galaxy\|lint, playbook, inventory, limit, tags, skipTags, extraVars, check, diff, verbosity, forks, startAt, become, pattern, module, args, requirements, password?, vaultId?}` → the run |
 | GET | `/api/workspaces/{ws}/ansible/runs?project=&limit=` | runs, newest first: `{id, project, options, command, actor, started, ended, status, exitCode, recap, durationMs}` |

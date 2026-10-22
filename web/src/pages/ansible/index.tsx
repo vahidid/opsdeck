@@ -10,7 +10,7 @@ import { Badge, Button, EmptyState, ErrorBox, FormField, IconButton, Input, Load
 import { SecretRefPicker } from "../../components/VaultItemForm";
 import { useAsync, useLocalStorage } from "../../hooks";
 import { slugify } from "../../lib/format";
-import { FilesTab } from "./Files";
+import { EditorTab } from "./Workbench";
 import { HistoryTab } from "./History";
 import { InventoryTab } from "./Inventory";
 import { RunTab } from "./Run";
@@ -169,7 +169,7 @@ function ProjectView({ project: p, tab, set, reload }: { project: AnsibleProject
   );
 
   const tabs: { id: Tab; label: React.ReactNode; count?: number }[] = [
-    { id: "files", label: "Files", count: p.files },
+    { id: "files", label: "Editor", count: p.files },
     { id: "run", label: "Run" },
     { id: "runs", label: "History" },
     { id: "inventory", label: "Inventory" },
@@ -185,7 +185,7 @@ function ProjectView({ project: p, tab, set, reload }: { project: AnsibleProject
         {p.error ? (
           <ErrorBox error={p.error} onRetry={() => void reload()} />
         ) : tab === "files" ? (
-          <FilesTab />
+          <EditorTab />
         ) : tab === "run" ? (
           <RunTab />
         ) : tab === "runs" ? (

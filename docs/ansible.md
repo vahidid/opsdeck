@@ -36,15 +36,55 @@ written by opsdeck itself, so viewing, editing and encrypting work without ansib
 project the files are those of the working copy; commit, push and open a merge request on
 the Repositories page (or let the agent do it).
 
-## Files
+## The editor
 
-The file tree marks what each file is: playbooks (a YAML list of plays), inventories
-(`inventory/`, `inventories/<env>/`, `hosts*`), variables (`group_vars/`, `host_vars/`,
-`vars/`, `defaults/`), roles, templates, `ansible.cfg` and requirements. Vault-encrypted files
-and files with encrypted values carry a lock. Filters (playbooks, inventory, vars, vault),
-search in files, new file (empty, playbook or variables template, optionally encrypted),
-rename and delete. A playbook has a **Run** button.
+**Ansible → Editor** is a complete editor for the project. On the left, the file tree marks
+what each file is: playbooks (a YAML list of plays), inventories (`inventory/`,
+`inventories/<env>/`, `hosts*`), variables (`group_vars/`, `host_vars/`, `vars/`,
+`defaults/`), roles, templates, `ansible.cfg` and requirements; vault files and files with
+encrypted values carry a lock. Filters, search in files, new file (in any folder; empty,
+playbook or variables template, optionally encrypted), rename, delete.
 
+Files open as tabs (unsaved ones are marked; closing asks first). Each file has two views of
+the same text — switch with **Visual / Code**, save with **Save** or Ctrl/⌘-S:
+
+| File | Visual view |
+|---|---|
+| Playbook | each play as a card: hosts, become, facts, strategy, serial, tags (*Settings*); its variables and `vars_files`; roles (with parameters, *open* goes to the role); pre-tasks, tasks, post-tasks and handlers; *Run* and *Check* (syntax) |
+| Task files (`roles/*/tasks`, `handlers`, `tasks/*.yml`) | the list of tasks |
+| Inventory (YAML or INI) | the groups as a tree; per group its hosts, the hosts of its child groups and its variables; per host its groups and variables; add, rename, move and remove hosts and groups |
+| Variables (`group_vars`, `host_vars`, `vars`, `defaults`, decrypted vault files) | one row per variable: text, number, true/false, or a list/map as YAML; values named like credentials are masked until shown; *Add encrypted variable* writes an inline `!vault` value |
+| `requirements.yml` | collections and roles with version and source |
+| Templates (`.j2`), `ansible.cfg`, scripts | the code editor |
+
+**Tasks** are listed with their module, a summary of their arguments, and their
+conditions, loops, `register`, `become`, delegation, notified handlers and tags. Blocks show
+their `block`, `rescue` and `always` lists. Drag a task (or use the arrows) to reorder it;
+duplicate and delete; `include_tasks`, `import_tasks` and roles link to their file. A task
+opens in a form:
+
+- **Module** with completion of every module ansible-doc knows on this computer (collections
+  included) and its documentation; the module's **options** come from ansible-doc too —
+  required ones first, typed inputs (choices, true/false, numbers, lists, YAML for maps),
+  descriptions, and *Add an option*; free-form modules (`command`, `shell`) take a command;
+- `when`, `loop`, `register`, `notify` (or `listen` for handlers), `tags`, `become`,
+  `become_user`, `ignore_errors`, `changed_when`, `failed_when`, `delegate_to`, `run_once`,
+  `no_log`, and any other keyword;
+- or the task's raw **YAML**.
+
+The **code editor** (CodeMirror) highlights YAML, Jinja2, INI, shell, Python and JSON, with
+line numbers, folding, search and replace (Ctrl/⌘-F), bracket matching, YAML checks as you
+type (errors are underlined and counted in the header), and completion (Ctrl-Space) of task
+and play keywords and module names.
+
+Visual edits change only what they touch: comments, ordering and formatting of the rest of
+the file are kept, and strings that YAML 1.1 would read differently (`on`, `yes`, `0644`) are
+quoted, as Ansible reads YAML 1.1. INI inventories are rewritten from their groups and hosts
+when edited visually (their comments are not kept). A file with YAML errors opens in the code
+view until they are fixed.
+
+A vault file opens with **Open decrypted** (the vault password is asked for when needed): it is
+edited in the same views and saved encrypted again with its vault id; *Lock* hides it again.
 ## Ansible Vault
 
 opsdeck implements the vault format itself (`$ANSIBLE_VAULT;1.1;AES256` and `1.2` with a
@@ -85,7 +125,7 @@ used, so a typo is reported at once.
 
 ## Running
 
-The **Run** tab: playbook, inventory, limit, tags and skip tags, extra variables (YAML or
+The **Run** tab (or *Run* on a playbook in the editor): playbook, inventory, limit, tags and skip tags, extra variables (YAML or
 JSON, passed as a file), check (dry run), diff, verbosity, forks, start at task. Also
 **Ad-hoc** (one module on a host pattern, with become), **Galaxy** (`ansible-galaxy install -r`)
 and **Lint** (`ansible-lint`, when installed). *Syntax*, *Hosts*, *Tasks* and *Tags* run the

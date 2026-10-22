@@ -81,6 +81,8 @@ import type {
   AnsibleInventory,
   AnsibleRun,
   AnsibleRunOptions,
+  AnsibleModule,
+  AnsibleModuleDoc,
 } from "./types";
 
 export class ApiError extends Error {
@@ -268,6 +270,8 @@ export const api = {
   ansibleRunCancel: (ws: string, id: string) => post(`${W(ws)}/ansible/runs/${e(id)}/cancel`),
   ansibleRunLogUrl: (ws: string, id: string, since = "") => `${W(ws)}/ansible/runs/${e(id)}/log${qs({ since })}`,
   ansibleRunLogTextUrl: (ws: string, id: string) => `${W(ws)}/ansible/runs/${e(id)}/log.txt`,
+  ansibleModules: (ws: string, p: string, refresh = false) => arr(get<AnsibleModule[]>(`${AP(ws, p)}/modules${qs({ refresh: refresh ? 1 : undefined })}`)),
+  ansibleModuleDoc: (ws: string, p: string, name: string) => get<AnsibleModuleDoc>(`${AP(ws, p)}/modules/doc${qs({ name })}`),
   trustMcp: (ws: string, name: string) => arr(post<McpStatus[]>(`${W(ws)}/mcp/${e(name)}/trust`)),
 
   // topology

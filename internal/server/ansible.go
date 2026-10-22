@@ -44,6 +44,35 @@ func (s *Server) ansibleRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http
 	mux.HandleFunc("GET "+p+"/inventory/host", u(s.ansibleHostVars))
 	mux.HandleFunc("POST "+p+"/check", u(s.ansibleCheck))
 	mux.HandleFunc("POST "+p+"/runs", u(s.ansibleRun))
+	mux.HandleFunc("GET "+p+"/modules", u(s.ansibleModules))
+	mux.HandleFunc("GET "+p+"/modules/doc", u(s.ansibleModuleDoc))
+}
+
+// ansibleModules lists the modules the project can use (for the editor).
+func (s *Server) ansibleModules(w http.ResponseWriter, r *http.Request) {
+	_, p, ok := s.ansibleProject(w, r)
+	if !ok {
+		return
+	}
+	list, err := s.ansible.Modules(r.Context(), p, r.URL.Query().Get("refresh") == "1")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (s *Server) ansibleModuleDoc(w http.ResponseWriter, r *http.Request) {
+	_, p, ok := s.ansibleProject(w, r)
+	if !ok {
+		return
+	}
+	d, err := s.ansible.Doc(r.Context(), p, r.URL.Query().Get("name"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, d)
 }
 
 // userCtx is the context of an action the user takes on the page.

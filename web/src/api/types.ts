@@ -664,3 +664,16 @@ export type AnsibleInventory = {
   generated?: string;
   error?: string;
 };
+
+export type AnsibleModule = { name: string; description: string };
+export type AnsibleModuleOption = {
+  name: string;
+  type?: string;
+  elements?: string;
+  required?: boolean;
+  default?: unknown;
+  choices?: unknown[];
+  aliases?: string[];
+  description?: string;
+};
+export type AnsibleModuleDoc = { name: string; short: string; description?: string; options: AnsibleModuleOption[]; freeForm?: boolean; examples?: string };

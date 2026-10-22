@@ -60,8 +60,11 @@ plus a complete local workbench that is just as useful without AI.
   dry-run diff, live events, Secrets revealed only on request, and Helm releases — see
   [docs/kubernetes.md](docs/kubernetes.md).
 - **Ansible** — projects from a folder (new or existing) or a folder of a workspace Git
-  repository: a file tree that knows playbooks, inventories, variables and roles, an editor,
-  and **Ansible Vault** built in — view, edit, set variables (with generated passwords),
+  repository, with a complete editor: playbooks, task files, inventories (YAML and INI),
+  variables and requirements in visual views (plays, tasks with module options from
+  ansible-doc, blocks, handlers, roles, groups and hosts) and a code editor with highlighting,
+  checks and completion — both on the same text, comments kept. **Ansible Vault** is built
+  in — view, edit, set variables (with generated passwords),
   encrypt, decrypt, rekey, encrypt_string — with the password asked for when needed and kept
   in memory or saved in the vault. Runs (playbook, ad-hoc, galaxy, lint; check and diff, limit,
   tags, extra vars) stream their log live with colours and keep a history with the PLAY RECAP;

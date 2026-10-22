@@ -437,3 +437,34 @@ func pythonFor(t *testing.T) string {
 	}
 	return "python3"
 }
+
+func TestModuleDocs(t *testing.T) {
+	if _, err := exec.LookPath("ansible-doc"); err != nil {
+		t.Skip("ansible-doc not installed")
+	}
+	p := testProject(t)
+	m := New(nil)
+	list, err := m.Modules(t.Context(), p, false)
+	if err != nil || len(list) < 20 {
+		t.Fatalf("%d modules: %v", len(list), err)
+	}
+	d, err := m.Doc(t.Context(), p, "ansible.builtin.copy")
+	if err != nil || d.Short == "" || len(d.Options) < 5 {
+		t.Fatalf("%+v %v", d, err)
+	}
+	var dest *ModuleOption
+	for i := range d.Options {
+		if d.Options[i].Name == "dest" {
+			dest = &d.Options[i]
+		}
+	}
+	if dest == nil || !dest.Required || dest.Type != "path" || !d.Options[0].Required {
+		t.Fatalf("dest %+v; first %+v", dest, d.Options[0])
+	}
+	if sh, _ := m.Doc(t.Context(), p, "ansible.builtin.shell"); !sh.FreeForm {
+		t.Fatal("shell is free-form")
+	}
+	if _, err := m.Doc(t.Context(), p, "x; rm -rf"); err == nil {
+		t.Fatal("bad name accepted")
+	}
+}

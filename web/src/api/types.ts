@@ -316,7 +316,66 @@ export type VolumeEntry = { name: string; type: "file" | "dir" | "link" | "other
 export type DockerNetwork = { id: string; name: string; driver: string; scope: string; internal?: boolean; builtin?: boolean; project?: string; stack?: string; created: string };
 export type DockerEvent = { time: string; type: string; action: string; id: string; name: string; scope?: string; attrs?: Record<string, string> };
 
-export type KubeRow = Record<string, unknown> & { name: string; namespace?: string };
+export type KubeResourceType = {
+  id: string;
+  group: string;
+  version: string;
+  resource: string;
+  kind: string;
+  namespaced: boolean;
+  verbs: string[];
+  shortNames?: string[];
+  category: string;
+};
+export type KubeColumn = { name: string; type: string; format?: string; description?: string; priority: number };
+export type KubeTableRow = {
+  name: string;
+  namespace?: string;
+  uid: string;
+  created: string;
+  labels?: Record<string, string>;
+  owner?: string;
+  deleting?: boolean;
+  cells: unknown[];
+};
+export type KubeTable = { type: KubeResourceType; columns: KubeColumn[]; rows: KubeTableRow[] };
+export type KubeObject = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+export type KubeEvent = { time: string; type: string; reason: string; object: string; namespace?: string; message: string; count: number; source?: string; uid: string };
+export type KubeUsage = { cpu: number; memory: number };
+export type KubeNodeSummary = {
+  name: string;
+  ready: boolean;
+  unschedulable?: boolean;
+  roles: string[];
+  version: string;
+  internalIP?: string;
+  os?: string;
+  runtime?: string;
+  capacity: KubeUsage;
+  used?: KubeUsage;
+  requested: KubeUsage;
+  pods: number;
+  maxPods: number;
+  pressure?: string[];
+  created: string;
+};
+export type KubeProblem = { severity: "error" | "warning"; kind: string; namespace?: string; name: string; reason: string; message?: string };
+export type KubeOverview = {
+  version: string;
+  platform: string;
+  namespace?: string;
+  namespaces: number;
+  nodes: KubeNodeSummary[];
+  pods: { total: number; running: number; pending: number; succeeded: number; failed: number; unknown: number; restarts: number };
+  workloads: { deployments: number; statefulsets: number; daemonsets: number; jobs: number; cronjobs: number; services: number };
+  problems: KubeProblem[];
+  warnings: KubeEvent[];
+  metrics: boolean;
+};
+export type KubeApplyResult = { kind: string; name: string; namespace?: string; action: "created" | "configured" | "unchanged" | "failed"; diff?: string; error?: string; note?: string };
+export type KubeRevision = { revision: number; name: string; created: string; images: string[]; cause?: string; current?: boolean; replicas: number };
+export type HelmRelease = { name: string; namespace: string; revision: number; status: string; chart: string; chartVersion: string; appVersion?: string; updated: string; description?: string };
+export type HelmDetail = HelmRelease & { values: string; manifest: string; notes?: string; history: HelmRelease[] };
 
 export type SessionMode = "plan" | "ask" | "auto";
 export type SessionState = "idle" | "running" | "waiting_approval";

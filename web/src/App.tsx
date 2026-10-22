@@ -19,7 +19,7 @@ import { ScriptsPage } from "./pages/Scripts";
 import { TopologyPage } from "./pages/Topology";
 import { TerminalPage } from "./pages/Terminal";
 import { DockerPage } from "./pages/docker";
-import { KubernetesPage } from "./pages/Kubernetes";
+import { KubernetesPage } from "./pages/kubernetes";
 import { LogsPage } from "./pages/Logs";
 import { DocsPage } from "./pages/Docs";
 import { VaultPage } from "./pages/Vault";

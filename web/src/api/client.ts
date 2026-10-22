@@ -47,7 +47,16 @@ import type {
   ItemInput,
   ItemType,
   KindSchema,
-  KubeRow,
+  KubeResourceType,
+  KubeTable,
+  KubeObject,
+  KubeEvent,
+  KubeUsage,
+  KubeOverview,
+  KubeApplyResult,
+  KubeRevision,
+  HelmRelease,
+  HelmDetail,
   McpStatus,
   ModelInfo,
   NetworkStatus,
@@ -139,6 +148,7 @@ const C = (ws: string, c: string) => `${W(ws)}/clusters/${e(c)}`;
 const S = (ws: string, id: string) => `${W(ws)}/sessions/${e(id)}`;
 const R = (ws: string, repo: string) => `${W(ws)}/repos/${e(repo)}`;
 const DK = (ws: string, host: string) => `${H(ws, host)}/docker`;
+const KO = (ws: string, c: string, type: string, ns: string, name: string) => `${C(ws, c)}/object/${e(type)}/${e(ns || "_")}/${e(name)}`;
 type Out = { output: string };
 
 const arr = <T>(p: Promise<T[] | null>) => p.then((v) => v ?? []);
@@ -361,19 +371,37 @@ export const api = {
   nodes: (ws: string, host: string) => arr(get<SwarmNode[]>(`${DK(ws, host)}/nodes`)),
   nodeAvailability: (ws: string, host: string, id: string, availability: string) => post(`${DK(ws, host)}/nodes/${e(id)}/availability`, { availability }),
 
-  // kubernetes
-  namespaces: (ws: string, c: string) => arr(get<string[]>(`${C(ws, c)}/namespaces`)),
-  kubeList: (ws: string, c: string, type: string, namespace: string) =>
-    arr(get<KubeRow[]>(`${C(ws, c)}/list/${e(type)}${qs({ namespace })}`)),
-  kubeYaml: (ws: string, c: string, type: string, ns: string, name: string) =>
-    get<{ yaml: string }>(`${C(ws, c)}/yaml/${e(type)}/${e(ns || "_")}/${e(name)}`),
-  podLogs: (ws: string, c: string, ns: string, pod: string, container: string, tail: number) =>
-    get<{ lines: string[] }>(`${C(ws, c)}/logs/${e(ns)}/${e(pod)}${qs({ container, tail })}`),
-  restartDeployment: (ws: string, c: string, ns: string, name: string) =>
-    post(`${C(ws, c)}/deployments/${e(ns)}/${e(name)}/restart`),
-  scaleDeployment: (ws: string, c: string, ns: string, name: string, replicas: number) =>
-    post(`${C(ws, c)}/deployments/${e(ns)}/${e(name)}/scale`, { replicas }),
-  deletePod: (ws: string, c: string, ns: string, name: string) => del(`${C(ws, c)}/pods/${e(ns)}/${e(name)}`),
+  // kubernetes (type is a resource id like "deployments.apps"; ns "_" = cluster scoped)
+  kubeOverview: (ws: string, c: string, namespace: string) => get<KubeOverview>(`${C(ws, c)}/overview${qs({ namespace })}`),
+  kubeResources: (ws: string, c: string, refresh = false) => arr(get<KubeResourceType[]>(`${C(ws, c)}/resources${qs({ refresh: refresh ? 1 : undefined })}`)),
+  kubeNamespaces: (ws: string, c: string) => get<{ namespaces: string[] | null; default: string }>(`${C(ws, c)}/namespaces`).then((r) => ({ ...r, namespaces: r.namespaces ?? [] })),
+  kubeList: (ws: string, c: string, type: string, o: { namespace?: string; labelSelector?: string; fieldSelector?: string }) =>
+    get<KubeTable>(`${C(ws, c)}/list/${e(type)}${qs(o)}`).then((t) => ({ ...t, rows: t.rows ?? [], columns: t.columns ?? [] })),
+  kubeObject: (ws: string, c: string, type: string, ns: string, name: string) =>
+    get<{ object: KubeObject; yaml: string; editYaml: string; type: KubeResourceType }>(`${KO(ws, c, type, ns, name)}`),
+  kubeEvents: (ws: string, c: string, type: string, ns: string, name: string) => arr(get<KubeEvent[]>(`${KO(ws, c, type, ns, name)}/events`)),
+  kubePods: (ws: string, c: string, type: string, ns: string, name: string) =>
+    get<KubeTable>(`${KO(ws, c, type, ns, name)}/pods`).then((t) => ({ ...t, rows: t.rows ?? [], columns: t.columns ?? [] })),
+  kubeHistory: (ws: string, c: string, type: string, ns: string, name: string) => arr(get<KubeRevision[]>(`${KO(ws, c, type, ns, name)}/history`)),
+  kubeReveal: (ws: string, c: string, ns: string, name: string) => post<Record<string, string>>(`${KO(ws, c, "secrets", ns, name)}/reveal`),
+  kubeDelete: (ws: string, c: string, type: string, ns: string, name: string, force = false) => del(`${KO(ws, c, type, ns, name)}${qs({ force: force ? 1 : undefined })}`),
+  kubeAction: (ws: string, c: string, type: string, ns: string, name: string, action: string, b: { replicas?: number; container?: string; image?: string; revision?: number } = {}) =>
+    post<{ ok?: boolean; output?: string }>(`${KO(ws, c, type, ns, name)}/${e(action)}`, b),
+  kubeApply: (ws: string, c: string, manifest: string, namespace: string, dryRun: boolean) =>
+    arr(post<KubeApplyResult[]>(`${C(ws, c)}/apply`, { manifest, namespace, dryRun })),
+  kubePodMetrics: (ws: string, c: string, namespace: string) => get<Record<string, KubeUsage>>(`${C(ws, c)}/metrics/pods${qs({ namespace })}`),
+  kubeNodeMetrics: (ws: string, c: string) => get<Record<string, KubeUsage>>(`${C(ws, c)}/metrics/nodes`),
+  helmReleases: (ws: string, c: string, namespace: string) => arr(get<HelmRelease[]>(`${C(ws, c)}/helm${qs({ namespace })}`)),
+  helmRelease: (ws: string, c: string, ns: string, name: string, revision = 0) =>
+    get<HelmDetail>(`${C(ws, c)}/helm/${e(ns)}/${e(name)}${qs({ revision: revision || undefined })}`),
+  kubeForward: (ws: string, c: string, b: { type: string; namespace: string; name: string; port: number }) => post<Forward>(`${C(ws, c)}/forward`, b),
+  kubeLogUrl: (ws: string, c: string, o: { type: string; namespace: string; name: string; container?: string; lines?: number | "all"; since?: string; previous?: boolean; follow?: boolean }) =>
+    `${C(ws, c)}/logs/stream${qs({ ...o, previous: o.previous ? 1 : undefined, follow: o.follow ? 1 : 0 })}`,
+  kubeEventsUrl: (ws: string, c: string, namespace: string) => `${C(ws, c)}/events/stream${qs({ namespace })}`,
+  kubeExecUrl: (ws: string, c: string, ns: string, pod: string, o: { container?: string; cols: number; rows: number; shell?: string }) => {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}${C(ws, c)}/exec/${e(ns)}/${e(pod)}${qs(o)}`;
+  },
 
   // logs
   logStreamUrl: (

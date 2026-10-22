@@ -302,12 +302,16 @@ func (s *Server) dockerExec(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	q := r.URL.Query()
-	s.ptyWS(w, r, ws, h, "docker.exec", h.ID()+"/"+id, func(ctx context.Context, cols, rows int) (*connect.Shell, error) {
+	s.ptyWS(w, r, ws, h, "docker.exec", h.ID()+"/"+id, func(ctx context.Context, cols, rows int) (ptySession, error) {
 		cmd, err := s.docker.ExecCommand(ctx, ws, h, id, q.Get("user"), q.Get("shell"))
 		if err != nil {
 			return nil, err
 		}
-		return s.hub.OpenCommand(ctx, ws, h, cmd, cols, rows)
+		sh, err := s.hub.OpenCommand(ctx, ws, h, cmd, cols, rows)
+		if err != nil {
+			return nil, err
+		}
+		return sshPTY{sh}, nil
 	})
 }
 

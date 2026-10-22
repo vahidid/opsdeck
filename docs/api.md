@@ -287,15 +287,37 @@ See [docker.md](docker.md).
 
 ## Kubernetes
 
-| GET | `/api/workspaces/{ws}/clusters/{c}/namespaces` | → `[string]` |
-| GET | `/api/workspaces/{ws}/clusters/{c}/list/{type}?namespace=` | type ∈ pods, deployments, statefulsets, daemonsets, services, ingresses, nodes, events, configmaps, jobs, cronjobs → `[Row]` |
-| GET | `/api/workspaces/{ws}/clusters/{c}/yaml/{type}/{ns}/{name}` | → `{yaml}` (secrets redacted) |
-| GET | `/api/workspaces/{ws}/clusters/{c}/logs/{ns}/{pod}?container=&tail=` | → `{lines: [string]}` |
-| POST | `/api/workspaces/{ws}/clusters/{c}/deployments/{ns}/{name}/restart` | |
-| POST | `/api/workspaces/{ws}/clusters/{c}/deployments/{ns}/{name}/scale` | `{replicas}` |
-| DELETE | `/api/workspaces/{ws}/clusters/{c}/pods/{ns}/{name}` | |
+All paths start with `/api/workspaces/{ws}/clusters/{c}`. `{type}` is a resource id from
+`/resources` (`pods`, `deployments.apps`, `certificates.cert-manager.io`…), or a plural,
+kind or short name; `{ns}` is `_` for cluster-scoped objects; `namespace=*` (or empty)
+means all namespaces. Changes are audited and keep running when the request is cancelled.
+See [kubernetes.md](kubernetes.md).
 
-`Row = { name, namespace, status, age, ready?, restarts?, node?, image?, replicas?, type?, clusterIP?, ports?, message?, reason?, ... }` (columns vary per type; render all keys).
+| Method | Path | |
+|---|---|---|
+| GET | `/overview?namespace=` | → `{version, platform, namespaces, nodes: [NodeSummary], pods, workloads, problems: [{severity, kind, namespace, name, reason, message}], warnings: [Event], metrics}` |
+| GET | `/resources?refresh=1` | → `[{id, group, version, resource, kind, namespaced, verbs, shortNames, category}]` (discovery, cached 5 minutes) |
+| GET | `/namespaces` | → `{namespaces: [string], default}` |
+| GET | `/list/{type}?namespace=&labelSelector=&fieldSelector=` | → `Table` |
+| GET | `/object/{type}/{ns}/{name}` | → `{object, yaml, editYaml, type}` (Secret values masked; `editYaml` without status and server-set fields) |
+| GET | `/object/{type}/{ns}/{name}/events` | → `[Event]` |
+| GET | `/object/{type}/{ns}/{name}/pods` | → `Table` of the object's pods (workloads, services, nodes) |
+| GET | `/object/{type}/{ns}/{name}/history` | → `[{revision, name, created, images, cause, current, replicas}]` |
+| POST | `/object/secrets/{ns}/{name}/reveal` | → `{key: value}` (audited) |
+| DELETE | `/object/{type}/{ns}/{name}?force=1` | `force`: no grace period |
+| POST | `/object/{type}/{ns}/{name}/{action}` | action ∈ scale `{replicas}`, restart, image `{container, image}`, pause, resume, suspend, unsuspend, trigger (CronJob → Job), undo `{revision}` (0 = previous), cordon, uncordon, drain → `{ok, output?}` |
+| POST | `/apply` | `{manifest, namespace, dryRun}` → `[{kind, name, namespace, action: created\|configured\|unchanged\|failed, diff, error, note}]` (server-side apply; dry runs are not audited) |
+| GET | `/metrics/pods?namespace=` | → `{"ns/pod": Usage, "ns/pod/container": Usage}`; `Usage = {cpu (millicores), memory (bytes)}`; 404 without metrics-server |
+| GET | `/metrics/nodes` | → `{node: Usage}` |
+| GET | `/helm?namespace=` | → `[{name, namespace, revision, status, chart, chartVersion, appVersion, updated, description}]` |
+| GET | `/helm/{ns}/{name}?revision=` | → release + `{values, manifest, notes, history}` |
+| POST | `/forward` | `{type, namespace, name, port}` → `Forward` (pods, services — a ready pod and the target port — and workloads) |
+| GET | `/logs/stream?type=&namespace=&name=&container=&lines=&since=&previous=1&follow=1` | SSE, see below; a workload streams all its pods |
+| GET | `/events/stream?namespace=` | SSE: the last hour, then `{event: Event}` as events are added or updated |
+| GET | `/exec/{ns}/{pod}?container=&shell=auto\|bash\|sh&cols=&rows=` | WebSocket terminal (same protocol as host terminals) |
+
+`Table = {type, columns: [{name, type, format, description, priority}], rows: [{name, namespace, uid, created, labels, owner, deleting, cells}]}` —
+the API server's own columns (`priority > 0` = wide). `Event = {time, type, reason, object: "Kind/name", namespace, message, count, source, uid}`.
 
 ## Logs (SSE)
 
@@ -303,7 +325,8 @@ See [docker.md](docker.md).
 → `text/event-stream`, each event `data: {"line": "..."}`; `event: end` on finish, `event: error` with `{"message"}`.
 Docker sources add `ts` (docker's RFC3339 timestamp), `src` (compose service or swarm
 task) and `stderr`; `since` is a duration (`15m`, `2h`, `1d`) or a timestamp, which is how
-a dropped stream resumes. `source=events` sends `{"event": {time, type, action, id, name, scope, attrs}}`.
+a dropped stream resumes. Kubernetes log streams send the same `{ts, src, line}` (`src` is
+the pod, the container, or `pod/container` when several stream together). `source=events` sends `{"event": {time, type, action, id, name, scope, attrs}}`.
 
 ## Agent
 

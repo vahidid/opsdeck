@@ -52,6 +52,13 @@ plus a complete local workbench that is just as useful without AI.
   clean-up. Logs stream live with ANSI colours, timestamps, per-service colours, stderr,
   level and regex filters, and resume after a dropped connection — see
   [docs/docker.md](docs/docker.md).
+- **Kubernetes** — every resource type the cluster serves (custom resources included) as
+  live tables with the API's own columns and pod/node usage; a cluster overview that lists
+  what is broken right now; object details by kind with logs merged across a workload's
+  pods, `kubectl exec` terminals, port-forwarding, rollout history with rollback, scale /
+  restart / set image / cordon / drain, YAML editing and **Apply** with a server-side
+  dry-run diff, live events, Secrets revealed only on request, and Helm releases — see
+  [docs/kubernetes.md](docs/kubernetes.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -145,8 +152,9 @@ bin/opsdeck --dev-origin http://localhost:5173 # backend for the dev server
 ```
 
 The Go test suite runs real SSH servers (exec, PTY, SFTP, jump hosts), userspace
-WireGuard peers, a stdio MCP server, a fake Kubernetes API and scripted models — no
-external infrastructure needed.
+WireGuard peers, a stdio MCP server and scripted models — no external infrastructure
+needed. The Docker and Kubernetes integration tests also run against a local `dockerd` and
+k3s cluster when one is present (`OPSDECK_TEST_KUBECONFIG`), and are skipped otherwise.
 
 ## Status and known limits
 
@@ -177,6 +185,7 @@ external infrastructure needed.
 - [docs/topology.md](docs/topology.md) — the topology map and the agent's topology tool
 - [docs/skills.md](docs/skills.md) — skills, the built-in library
 - [docs/docker.md](docs/docker.md) — Docker: containers, compose, swarm, volumes, logs
+- [docs/kubernetes.md](docs/kubernetes.md) — Kubernetes: resources, logs, exec, apply with diff, rollouts, Helm
 - [docs/scripts.md](docs/scripts.md) — scripts: your library and the workspace's, approval, running on hosts
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

@@ -27,10 +27,9 @@ function levelOf(plain: string, stderr?: boolean): Level {
 }
 
 const SRC_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#22d3ee", "#f472b6", "#a3e635", "#fb923c", "#818cf8", "#2dd4bf"];
-function srcColor(src: string): string {
-  let h = 0;
-  for (let i = 0; i < src.length; i++) h = (h * 31 + src.charCodeAt(i)) | 0;
-  return SRC_COLORS[Math.abs(h) % SRC_COLORS.length];
+// Sources get colours in order, so a handful of pods or containers never share one.
+function srcColors(sources: string[]): Map<string, string> {
+  return new Map(sources.map((s, i) => [s, SRC_COLORS[i % SRC_COLORS.length]]));
 }
 
 function fmtTs(ts: string): string {
@@ -217,6 +216,7 @@ export function LogViewer({
     for (const l of lines) if (l.src) s.add(l.src);
     return [...s].sort();
   }, [lines]);
+  const colors = useMemo(() => srcColors(sources), [sources]);
   const hasTs = useMemo(() => lines.some((l) => l.ts), [lines]);
   const hasStderr = useMemo(() => lines.some((l) => l.stderr), [lines]);
 
@@ -309,7 +309,7 @@ export function LogViewer({
   } else if (visible.length > 3000) {
     start = visible.length - 3000;
   }
-  const srcWidth = Math.min(22, Math.max(6, ...sources.map((s) => s.length)));
+  const srcWidth = Math.min(32, Math.max(6, ...sources.map((s) => s.length)));
   const tone = state === "streaming" ? "ok" : state === "connecting" || state === "reconnecting" ? "warn" : state === "error" ? "err" : "neutral";
   const showTime = showTs && hasTs;
 
@@ -387,7 +387,7 @@ export function LogViewer({
               title="Click to hide/show, shift-click to show only this one"
               className={cx("inline-flex items-center gap-1.5 rounded px-1.5 h-5 font-mono text-[11px] border border-line whitespace-nowrap", hidden.has(s) ? "opacity-40 line-through" : "hover:bg-panel-3")}
             >
-              <span className="size-2 rounded-full" style={{ background: srcColor(s) }} />
+              <span className="size-2 rounded-full" style={{ background: colors.get(s) }} />
               {s}
             </button>
           ))}
@@ -407,6 +407,7 @@ export function LogViewer({
                   wrap={wrap}
                   showTime={showTime}
                   srcWidth={sources.length > 0 ? srcWidth : 0}
+                  srcColor={l.src ? colors.get(l.src) : undefined}
                   filter={matcher ? filter : ""}
                   re={matcher?.re ?? null}
                   expanded={expanded.has(l.seq)}
@@ -433,6 +434,7 @@ function LogRow({
   wrap,
   showTime,
   srcWidth,
+  srcColor,
   filter,
   re,
   expanded,
@@ -442,6 +444,7 @@ function LogRow({
   wrap: boolean;
   showTime: boolean;
   srcWidth: number;
+  srcColor?: string;
   filter: string;
   re: RegExp | null;
   expanded: boolean;
@@ -470,7 +473,7 @@ function LogRow({
           </span>
         )}
         {srcWidth > 0 && (
-          <span className="shrink-0 truncate" style={{ width: `${srcWidth}ch`, color: l.src ? srcColor(l.src) : undefined }} title={l.src}>
+          <span className="shrink-0 truncate" style={{ width: `${srcWidth}ch`, color: srcColor }} title={l.src}>
             {l.src ?? ""}
           </span>
         )}

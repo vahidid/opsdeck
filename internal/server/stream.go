@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,15 +45,35 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.ptyWS(w, r, ws, h, "host.terminal", h.ID(), func(ctx context.Context, cols, rows int) (*connect.Shell, error) {
-		return s.hub.OpenShell(ctx, ws, h, cols, rows)
+	s.ptyWS(w, r, ws, h, "host.terminal", h.ID(), func(ctx context.Context, cols, rows int) (ptySession, error) {
+		sh, err := s.hub.OpenShell(ctx, ws, h, cols, rows)
+		if err != nil {
+			return nil, err
+		}
+		return sshPTY{sh}, nil
 	})
 }
 
+// ptySession is an interactive terminal: an SSH shell, docker exec,
+// kubectl exec.
+type ptySession interface {
+	io.Reader // output
+	io.Writer // input
+	Resize(cols, rows int) error
+	Wait() error
+	Close() error
+}
+
+type sshPTY struct{ *connect.Shell }
+
+func (p sshPTY) Read(b []byte) (int, error)  { return p.Stdout.Read(b) }
+func (p sshPTY) Write(b []byte) (int, error) { return p.Stdin.Write(b) }
+
 // ptyWS serves an interactive PTY session (a host shell, docker exec…) over
 // a WebSocket: output as {t:"d"}, input and resizes from the browser.
+// h is the host or cluster it runs on (for the "connecting via" notice).
 func (s *Server) ptyWS(w http.ResponseWriter, r *http.Request, ws *workspace.Workspace, h *workspace.Resource, action, target string,
-	open func(ctx context.Context, cols, rows int) (*connect.Shell, error)) {
+	open func(ctx context.Context, cols, rows int) (ptySession, error)) {
 	up := websocket.Upgrader{CheckOrigin: func(req *http.Request) bool {
 		o := req.Header.Get("Origin")
 		return o == "" || s.originOK(o, req.Host)
@@ -81,7 +102,7 @@ func (s *Server) ptyWS(w http.ResponseWriter, r *http.Request, ws *workspace.Wor
 		}
 		send(termMsg{T: "s", Msg: "connecting via " + strings.Join(names, " → ") + " …"})
 	} else {
-		send(termMsg{T: "s", Msg: "connecting to " + h.Str("address") + " …"})
+		send(termMsg{T: "s", Msg: "connecting to " + firstNonEmptyStr(h.Str("address"), h.ID()) + " …"})
 	}
 	octx, ocancel := context.WithTimeout(ctx, 60*time.Second)
 	shell, err := open(octx, cols, rows)
@@ -98,7 +119,7 @@ func (s *Server) ptyWS(w http.ResponseWriter, r *http.Request, ws *workspace.Wor
 		buf := make([]byte, 32*1024)
 		var pending []byte
 		for {
-			n, err := shell.Stdout.Read(buf)
+			n, err := shell.Read(buf)
 			if n > 0 {
 				data := append(pending, buf[:n]...)
 				// Hold back an incomplete trailing UTF-8 sequence.
@@ -135,7 +156,7 @@ func (s *Server) ptyWS(w http.ResponseWriter, r *http.Request, ws *workspace.Wor
 			}
 			switch m.T {
 			case "d":
-				shell.Stdin.Write([]byte(m.D))
+				shell.Write([]byte(m.D))
 			case "r":
 				if m.C > 0 && m.R > 0 {
 					shell.Resize(m.C, m.R)

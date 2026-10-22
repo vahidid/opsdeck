@@ -20,7 +20,6 @@ import (
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/extagent"
-	"opsdeck/internal/kube"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
 	"opsdeck/internal/vault"
@@ -125,13 +124,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	s.dockerRoutes(mux, u)
 
 	// kubernetes
-	mux.HandleFunc("GET /api/workspaces/{ws}/clusters/{c}/namespaces", u(s.kubeNamespaces))
-	mux.HandleFunc("GET /api/workspaces/{ws}/clusters/{c}/list/{type}", u(s.kubeList))
-	mux.HandleFunc("GET /api/workspaces/{ws}/clusters/{c}/yaml/{type}/{ns}/{name}", u(s.kubeYAML))
-	mux.HandleFunc("GET /api/workspaces/{ws}/clusters/{c}/logs/{ns}/{pod}", u(s.kubeLogs))
-	mux.HandleFunc("POST /api/workspaces/{ws}/clusters/{c}/deployments/{ns}/{name}/restart", u(s.kubeRestart))
-	mux.HandleFunc("POST /api/workspaces/{ws}/clusters/{c}/deployments/{ns}/{name}/scale", u(s.kubeScale))
-	mux.HandleFunc("DELETE /api/workspaces/{ws}/clusters/{c}/pods/{ns}/{name}", u(s.kubeDeletePod))
+	s.kubeRoutes(mux, u)
 
 	// logs
 	mux.HandleFunc("GET /api/workspaces/{ws}/logs/stream", u(s.logStream))
@@ -1341,165 +1334,6 @@ func (s *Server) panelOpen(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// kubernetes
-
-func (s *Server) cluster(w http.ResponseWriter, r *http.Request) (*workspace.Workspace, *workspace.Resource, bool) {
-	ws, ok := s.workspace(w, r)
-	if !ok {
-		return nil, nil, false
-	}
-	c := ws.Find("KubernetesCluster", r.PathValue("c"))
-	if c == nil {
-		writeErr(w, 404, "cluster not found")
-		return nil, nil, false
-	}
-	return ws, c, true
-}
-
-func nsParam(ns string) string {
-	if ns == "_" || ns == "*" {
-		return ""
-	}
-	return ns
-}
-
-func (s *Server) kubeNamespaces(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	rows, err := kube.List(r.Context(), cs, "namespaces", "")
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	out := []string{}
-	for _, row := range rows {
-		out = append(out, fmt.Sprint(row["name"]))
-	}
-	writeJSON(w, 200, out)
-}
-
-func (s *Server) kubeList(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	rows, err := kube.List(r.Context(), cs, r.PathValue("type"), nsParam(r.URL.Query().Get("namespace")))
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, rows)
-}
-
-func (s *Server) kubeYAML(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	y, err := kube.YAML(r.Context(), cs, r.PathValue("type"), nsParam(r.PathValue("ns")), r.PathValue("name"))
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]string{"yaml": y})
-}
-
-func (s *Server) kubeLogs(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	tail, _ := strconv.ParseInt(r.URL.Query().Get("tail"), 10, 64)
-	if tail <= 0 {
-		tail = 500
-	}
-	lines := []string{}
-	err = kube.Logs(r.Context(), cs, r.PathValue("ns"), r.PathValue("pod"), r.URL.Query().Get("container"), tail, false, func(l string) { lines = append(lines, l) })
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"lines": lines})
-}
-
-func (s *Server) kubeRestart(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err == nil {
-		err = kube.RestartDeployment(r.Context(), cs, r.PathValue("ns"), r.PathValue("name"))
-	}
-	s.record(r, ws.Name(), "k8s.restart", c.ID()+"/"+r.PathValue("ns")+"/"+r.PathValue("name"), nil, err)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-func (s *Server) kubeScale(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	var in struct{ Replicas int32 }
-	if err := readJSON(r, &in); err != nil {
-		fail(w, err)
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err == nil {
-		err = kube.ScaleDeployment(r.Context(), cs, r.PathValue("ns"), r.PathValue("name"), in.Replicas)
-	}
-	s.record(r, ws.Name(), "k8s.scale", c.ID()+"/"+r.PathValue("ns")+"/"+r.PathValue("name"), map[string]any{"replicas": in.Replicas}, err)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-func (s *Server) kubeDeletePod(w http.ResponseWriter, r *http.Request) {
-	ws, c, ok := s.cluster(w, r)
-	if !ok {
-		return
-	}
-	cs, _, err := s.kube.Client(r.Context(), ws, c)
-	if err == nil {
-		err = kube.DeletePod(r.Context(), cs, r.PathValue("ns"), r.PathValue("name"))
-	}
-	s.record(r, ws.Name(), "k8s.delete_pod", c.ID()+"/"+r.PathValue("ns")+"/"+r.PathValue("name"), nil, err)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
 // ---------------------------------------------------------------------------
 // agent sessions
 

@@ -419,6 +419,8 @@ export type AgentEvent =
       reason: string;
       preview: string;
       grantLabel?: string;
+      /** set when the card asks the user for a password (an Ansible Vault password) */
+      secret?: { label: string; rememberLabel?: string };
     })
   | (EventBase & { type: "approval_resolved"; approvalId: string; decision: string; note?: string })
   | (EventBase & { type: "status"; state: SessionState; usage?: Usage })
@@ -568,4 +570,97 @@ export type TopoCatalog = {
   zoneKinds: { id: string; label: string }[];
   deploymentKinds: { id: string; label: string }[];
   providers?: { id: string; label: string }[];
+};
+
+// ---------------------------------------------------------------------------
+// Ansible
+
+export type AnsibleVersion = { installed: boolean; version?: string; path?: string; python?: string; lint: boolean; error?: string };
+export type AnsibleProject = {
+  name: string;
+  environment?: string;
+  description?: string;
+  source: "folder" | "repo";
+  repo?: string;
+  path?: string;
+  root: string;
+  external: boolean;
+  exists: boolean;
+  via?: string;
+  inventory?: string;
+  inventories: string[];
+  playbooks: string[];
+  vaultFiles: number;
+  inlineVars: number;
+  vaultIds: string[];
+  unlocked: string[];
+  saved: string[];
+  remembered: string[];
+  config: boolean;
+  requirements: string[];
+  files: number;
+  error?: string;
+  ansible: AnsibleVersion;
+};
+export type AnsibleFileType = "playbook" | "inventory" | "vars" | "role" | "template" | "config" | "requirements" | "file";
+export type AnsibleFile = { path: string; size: number; modified: string; type: AnsibleFileType; encrypted?: boolean; vaultId?: string; inline?: number };
+export type AnsibleInline = { key: string; line: number; end: number; vaultId: string };
+export type AnsibleFileContent = {
+  path: string;
+  text: string;
+  size: number;
+  binary?: boolean;
+  truncated?: boolean;
+  encrypted?: boolean;
+  vaultId?: string;
+  inline?: AnsibleInline[];
+};
+export type AnsibleRunKind = "playbook" | "adhoc" | "galaxy" | "lint";
+export type AnsibleRunOptions = {
+  kind: AnsibleRunKind;
+  playbook?: string;
+  inventory?: string;
+  limit?: string;
+  tags?: string;
+  skipTags?: string;
+  extraVars?: string;
+  check?: boolean;
+  diff?: boolean;
+  verbosity?: number;
+  forks?: number;
+  startAt?: string;
+  become?: boolean;
+  pattern?: string;
+  module?: string;
+  args?: string;
+  requirements?: string;
+  force?: boolean;
+};
+export type AnsibleRecap = { host: string; ok: number; changed: number; unreachable: number; failed: number; skipped: number; rescued: number; ignored: number };
+export type AnsibleRunStatus = "running" | "ok" | "failed" | "unreachable" | "canceled" | "error" | "interrupted";
+export type AnsibleRun = {
+  id: string;
+  workspace: string;
+  project: string;
+  options: AnsibleRunOptions;
+  command: string;
+  actor: string;
+  started: string;
+  ended?: string;
+  status: AnsibleRunStatus;
+  exitCode: number;
+  recap?: AnsibleRecap[];
+  error?: string;
+  logLines: number;
+  hosts?: string[];
+  durationMs?: number;
+};
+export type AnsibleInventory = {
+  inventory: string;
+  graph: string;
+  groups: Record<string, string[]>;
+  children: Record<string, string[]>;
+  hosts: string[];
+  generated?: string;
+  error?: string;
 };

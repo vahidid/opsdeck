@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"opsdeck/internal/ansible"
 	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/docker"
@@ -54,7 +55,7 @@ type Session struct {
 	subs     map[chan Event]struct{}
 	cancel   context.CancelFunc
 	runCtx   context.Context // context of the running turn (used by the MCP bridge)
-	pending  map[string]chan approval
+	pending  map[string]*pendingApproval
 	path     string
 	nextID   int
 }
@@ -62,7 +63,17 @@ type Session struct {
 type approval struct {
 	decision string
 	note     string
+	secret   string // what the user typed into a password prompt; never stored
 }
+
+type pendingApproval struct {
+	ch    chan approval
+	check func(secret string) error // set when the card asks for a secret
+}
+
+// ErrSecretRequired is returned when an approval that needs a password is
+// answered without one.
+var ErrSecretRequired = errors.New("enter the password to approve, or deny")
 
 type stored struct {
 	Info     Info          `json:"info"`
@@ -78,6 +89,7 @@ type Deps struct {
 	Docker     *docker.Client
 	Kube       *kube.Manager
 	Git        *gitx.Manager
+	Ansible    *ansible.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
 	Audit      *audit.Log
@@ -101,7 +113,18 @@ type Manager struct {
 }
 
 func NewManager(d Deps) *Manager {
-	return &Manager{deps: d, redactor: NewRedactor(d.Vault.SecretValues), sessions: map[string]*Session{}}
+	known := d.Vault.SecretValues
+	if d.Ansible != nil {
+		// vault passwords entered for Ansible are secrets too
+		known = func() map[string]string {
+			out := d.Vault.SecretValues()
+			for v, label := range d.Ansible.Secrets() {
+				out[v] = label
+			}
+			return out
+		}
+	}
+	return &Manager{deps: d, redactor: NewRedactor(known), sessions: map[string]*Session{}}
 }
 
 func (m *Manager) dir(ws string) string { return filepath.Join(m.deps.StateDir(ws), "sessions") }
@@ -139,7 +162,7 @@ func (m *Manager) Create(w *workspace.Workspace, model, mode string) (*Session, 
 	now := time.Now().UTC()
 	s := &Session{
 		info:    Info{ID: uuid.NewString()[:13], Workspace: w.Name(), Title: "New session", Model: model, Mode: mode, State: "idle", Created: now, Updated: now},
-		granted: map[string]bool{}, subs: map[chan Event]struct{}{}, pending: map[string]chan approval{},
+		granted: map[string]bool{}, subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{},
 	}
 	s.path = filepath.Join(m.dir(w.Name()), s.info.ID+".json")
 	if err := s.save(); err != nil {
@@ -172,7 +195,7 @@ func (m *Manager) Get(ws, id string) (*Session, error) {
 		return nil, err
 	}
 	s := &Session{info: st.Info, messages: st.Messages, events: st.Events, granted: map[string]bool{},
-		subs: map[chan Event]struct{}{}, pending: map[string]chan approval{}, path: path, nextID: len(st.Events)}
+		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, path: path, nextID: len(st.Events)}
 	for _, g := range st.Granted {
 		s.granted[g] = true
 	}
@@ -303,19 +326,38 @@ func (s *Session) Interrupt() {
 	}
 }
 
-// Resolve answers a pending approval.
-func (s *Session) Resolve(approvalID, decision, note string) error {
+// Resolve answers a pending approval. When the card asks for a secret (an
+// Ansible Vault password), approving needs it and it is checked first: a
+// wrong one returns an error and the card stays open.
+func (s *Session) Resolve(approvalID, decision, note, secret string) error {
 	if decision != "approve" && decision != "deny" && decision != "always" {
 		return fmt.Errorf("invalid decision %q", decision)
 	}
 	s.mu.Lock()
-	ch := s.pending[approvalID]
-	delete(s.pending, approvalID)
+	p := s.pending[approvalID]
 	s.mu.Unlock()
-	if ch == nil {
+	if p == nil {
 		return errors.New("no such pending approval")
 	}
-	ch <- approval{decision, note}
+	if decision != "deny" && p.check != nil {
+		if secret == "" {
+			return ErrSecretRequired
+		}
+		if err := p.check(secret); err != nil {
+			return err
+		}
+	}
+	if decision == "deny" {
+		secret = ""
+	}
+	s.mu.Lock()
+	if s.pending[approvalID] != p {
+		s.mu.Unlock()
+		return errors.New("no such pending approval")
+	}
+	delete(s.pending, approvalID)
+	s.mu.Unlock()
+	p.ch <- approval{decision, note, secret}
 	return nil
 }
 

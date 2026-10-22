@@ -867,7 +867,7 @@ function FilesTab({ ws, repo, rev, onChanged }: { ws: string; repo: string; rev:
   );
 }
 
-function CodeView({ text }: { text: string }) {
+export function CodeView({ text }: { text: string }) {
   const lines = text.split("\n");
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
   return (

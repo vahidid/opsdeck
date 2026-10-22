@@ -53,6 +53,9 @@ Built-in tools:
 | `load_skill(name, file?)` — a workspace or built-in skill, and its supporting files | read |
 | `script` — saved scripts: list, read, save ([scripts.md](scripts.md)) | read / change (saved as a draft for review) |
 | `run_script(script, target, params)` — run a saved script on hosts as one unit; secrets injected from the vault | change for approved scripts; destructive for drafts (refused on protected environments) |
+| `ansible` — Ansible projects: projects, files, read, search, inventory, syntax, list_hosts/tasks/tags, runs, log / write, edit, delete ([ansible.md](ansible.md)) | read / change (one approval per project; a repository project shares the repository's) |
+| `ansible_run` — ansible-playbook, ad-hoc modules, galaxy, lint on this computer, with the log on the Ansible page; `inventory=workspace` reaches the workspace's hosts through their VPNs and jump hosts | change; check runs and read-only ad-hoc modules are reads that ask once; protected environments always ask |
+| `ansible_vault` — view, edit, set (generate), encrypt, decrypt, encrypt_string | view always asks (decrypted content reaches the model); changes like files; decrypt is destructive. A missing vault password is typed into the approval card |
 | `mcp__<server>__<tool>` — workspace MCP servers | read if the tool is annotated read-only, else change |
 
 ### 2. No undo
@@ -78,6 +81,14 @@ Code has git; production does not. So safety comes before execution, not after:
   values, private keys, tokens and password patterns are masked.
 - Policy can force a local model for a workspace (`model.allowed: [ollama/*]`) so nothing
   leaves the machine.
+
+### Passwords on the approval card
+Some actions need a secret only the user has — an Ansible Vault password. The tool marks
+its call with a password prompt: the approval card then has a password field (in every mode,
+also Auto), opsdeck checks the password before the card closes, and hands it to that one
+call — or keeps it in memory until opsdeck locks when the user picks "for session". The
+password never enters the transcript, the audit journal or the model's context; the audit
+records that one was entered. See [ansible.md](ansible.md#agent-tools).
 
 ### 4. Everything is journaled
 Separate from the chat transcript, an **audit journal** records every executed action:

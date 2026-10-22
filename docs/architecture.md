@@ -91,6 +91,7 @@ internal/topology    the topology map: model, catalog of component and connectio
 internal/skills      built-in skill library (embedded)
 internal/docker      docker CLI over SSH
 internal/kube        Kubernetes client (kubeconfig from the vault, dialed through via)
+internal/ansible     Ansible projects: files, Ansible Vault (native), runs of ansible-playbook with live logs, generated workspace inventory
 internal/llm         model gateway: Anthropic SDK + OpenAI-compatible streaming
 internal/mcpx        workspace MCP servers (stdio) exposed as agent tools
 internal/agent       agent loop, tools, risk classifier, permissions, redaction, sessions
@@ -109,6 +110,7 @@ tools/demo           local SSH servers + scripted model for trying the UI
 | VPNs: WireGuard, Tailscale/Headscale, NetBird, OpenVPN, OpenConnect (AnyConnect, ocserv, FortiGate, GlobalProtect, Pulse, F5), openfortivpn, SOCKS5 — userspace and system modes | done |
 | Git repositories: working copies, GitLab/GitHub merge requests, docs from repositories, agent tools | done |
 | Docker (CLI over SSH), Kubernetes (client-go) | done |
+| Ansible: projects from folders or repositories, Ansible Vault, runs with live logs, agent tools with the password on the approval card | done |
 | Logs streaming (journald, files, containers, pod logs) | done |
 | Agent: loop, tools, modes, approvals, redaction, sessions, compaction, memory, skills | done |
 | MCP client (workspace servers) | done |

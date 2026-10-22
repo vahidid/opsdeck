@@ -18,6 +18,7 @@ acme/
 ├── topology.yaml         # the infrastructure map (Topology page, topology tool)
 ├── skills/               # reusable procedures the agent can load (name.md or name/SKILL.md + files)
 ├── scripts/              # scripts run on hosts as one unit (name/script.yaml + script.sh), see scripts.md
+├── ansible/              # Ansible projects kept in the workspace (ansible/<name>/), see ansible.md
 ├── reports/              # analyses, audits, incident write-ups, plans saved by the agent
 │   └── 2026/10/2026-10-21-0930-disk-and-memory-audit-of-prod.md
 ├── artifacts/            # evidence files (save_artifact): config snapshots, full command output, generated files
@@ -29,6 +30,7 @@ acme/
 ├── .gitignore            # ignores .opsdeck/ and repos/
 └── .opsdeck/             # local-only, not shared: agent sessions (transcripts), pinned host keys
     ├── sessions/
+    ├── ansible/          # Ansible run history and logs
     └── known_hosts
 ```
 

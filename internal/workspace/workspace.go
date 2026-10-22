@@ -123,6 +123,20 @@ func (r *Resource) CleanSpec() {
 // CheckNoLiteralSecrets rejects spec values that look like secrets: those
 // belong in the vault, referenced as vault://.
 func (r *Resource) CheckNoLiteralSecrets() error {
+	if schema, ok := KindByName(r.Kind); ok {
+		for _, f := range schema.Fields {
+			if v := r.Str(f.Key); f.Type == "secretRef" && v != "" && !strings.HasPrefix(v, "vault://") {
+				return fmt.Errorf("spec.%s must be a vault:// reference; store the secret in the vault", f.Key)
+			}
+		}
+	}
+	if r.Kind == "AnsibleProject" {
+		for _, e := range r.List("vaultPasswords") {
+			if _, ref, ok := strings.Cut(e, "="); !ok || !strings.HasPrefix(strings.TrimSpace(ref), "vault://") {
+				return errors.New("spec.vaultPasswords entries are <vault id>=vault://<scope>/<item>; store the passwords in the vault")
+			}
+		}
+	}
 	for k, v := range r.Spec {
 		val, ok := v.(string)
 		if !ok || strings.HasPrefix(val, "vault://") {
@@ -605,6 +619,8 @@ func defaultFile(kind string) string {
 		return "resources/hosts.yaml"
 	case "KubernetesCluster":
 		return "resources/clusters.yaml"
+	case "AnsibleProject":
+		return "resources/ansible.yaml"
 	default:
 		return "resources/services.yaml"
 	}

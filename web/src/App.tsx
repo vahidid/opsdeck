@@ -20,6 +20,7 @@ import { TopologyPage } from "./pages/Topology";
 import { TerminalPage } from "./pages/Terminal";
 import { DockerPage } from "./pages/docker";
 import { KubernetesPage } from "./pages/kubernetes";
+import { AnsiblePage } from "./pages/ansible";
 import { LogsPage } from "./pages/Logs";
 import { DocsPage } from "./pages/Docs";
 import { VaultPage } from "./pages/Vault";
@@ -123,6 +124,7 @@ function workspaceRoutes(active: boolean) {
       <Route path="terminal" element={<TerminalPage />} />
       <Route path="docker" element={<DockerPage />} />
       <Route path="kubernetes" element={<KubernetesPage />} />
+      <Route path="ansible" element={<AnsiblePage />} />
       <Route path="logs" element={<LogsPage />} />
       <Route path="docs" element={<DocsPage />} />
       <Route path="skills" element={<SkillsPage />} />

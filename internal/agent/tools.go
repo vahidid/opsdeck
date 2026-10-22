@@ -20,6 +20,7 @@ import (
 
 	"github.com/pmezard/go-difflib/difflib"
 
+	"opsdeck/internal/ansible"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
@@ -38,6 +39,7 @@ type Env struct {
 	Docker     *docker.Client
 	Kube       *kube.Manager
 	Git        *gitx.Manager
+	Ansible    *ansible.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
 	MemoryPath string
@@ -67,7 +69,24 @@ type Call struct {
 	Grant        string
 	GrantLabel   string
 	parentGrants []string // grants that also cover this call (a parent folder)
-	Run          func(ctx context.Context) (string, error)
+	// Secret, when set, makes the approval card ask the user for a password
+	// the call needs (an Ansible Vault password). It always asks, also in
+	// Auto mode and for granted calls.
+	Secret *SecretPrompt
+	Run    func(ctx context.Context) (string, error)
+}
+
+// SecretPrompt is a password the user types into the approval card. It is
+// checked before the card closes and handed to Use only: it never enters
+// the transcript, the audit journal or the model's context.
+type SecretPrompt struct {
+	Label         string // e.g. "Ansible Vault password of infra (vault id prod)"
+	Reason        string // why the card asks, shown as its reason
+	RememberLabel string // what "always" also does with the password
+	Check         func(secret string) error
+	// Use receives the password before Run; remember is true when the user
+	// chose to keep it for the session ("always").
+	Use func(secret string, remember bool)
 }
 
 // Tool is an agent tool.
@@ -232,6 +251,7 @@ func Tools() []Tool {
 		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(), toolTopology(),
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 		toolScript(), toolRunScript(),
+		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 	}
 }
 

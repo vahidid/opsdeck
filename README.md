@@ -59,6 +59,15 @@ plus a complete local workbench that is just as useful without AI.
   restart / set image / cordon / drain, YAML editing and **Apply** with a server-side
   dry-run diff, live events, Secrets revealed only on request, and Helm releases — see
   [docs/kubernetes.md](docs/kubernetes.md).
+- **Ansible** — projects from a folder (new or existing) or a folder of a workspace Git
+  repository: a file tree that knows playbooks, inventories, variables and roles, an editor,
+  and **Ansible Vault** built in — view, edit, set variables (with generated passwords),
+  encrypt, decrypt, rekey, encrypt_string — with the password asked for when needed and kept
+  in memory or saved in the vault. Runs (playbook, ad-hoc, galaxy, lint; check and diff, limit,
+  tags, extra vars) stream their log live with colours and keep a history with the PLAY RECAP;
+  an inventory generated from the workspace's hosts reaches them through their VPNs and jump
+  hosts. The agent's `ansible`, `ansible_run` and `ansible_vault` tools do the same, and ask
+  for a vault password right on the approval card — see [docs/ansible.md](docs/ansible.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -68,7 +77,8 @@ plus a complete local workbench that is just as useful without AI.
 - **Agent** — chat with any model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…)
   that works through infra tools: `exec` (single host or groups), `read_file`/`edit_file`
   with diffs and backups, `docker`, `kubernetes`, `net_check`, Git (`repo`, `repo_files`,
-  `repo_write`, `merge_request`, `git_sync`), docs, skills,
+  `repo_write`, `merge_request`, `git_sync`), Ansible (`ansible`, `ansible_run`,
+  `ansible_vault`), docs, skills,
   memory, and any MCP server you attach to the workspace.
 - **Local agents** — besides model APIs, the agent can be a CLI you already use with
   your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** (Google
@@ -154,7 +164,8 @@ bin/opsdeck --dev-origin http://localhost:5173 # backend for the dev server
 The Go test suite runs real SSH servers (exec, PTY, SFTP, jump hosts), userspace
 WireGuard peers, a stdio MCP server and scripted models — no external infrastructure
 needed. The Docker and Kubernetes integration tests also run against a local `dockerd` and
-k3s cluster when one is present (`OPSDECK_TEST_KUBECONFIG`), and are skipped otherwise.
+k3s cluster when one is present (`OPSDECK_TEST_KUBECONFIG`), and the Ansible tests against an
+installed `ansible-core`; they are skipped otherwise.
 
 ## Status and known limits
 
@@ -167,6 +178,9 @@ k3s cluster when one is present (`OPSDECK_TEST_KUBECONFIG`), and are skipped oth
   SSH user is not in the `docker` group); Compose needs the `docker compose` plugin (v2).
 - PuTTY `.ppk` keys must be converted to OpenSSH format first.
 - Kubeconfigs that use `exec` auth plugins run those plugins on this machine.
+- Ansible needs `ansible-core` (and `ssh`) on this computer; Windows needs WSL. Hosts of the
+  generated workspace inventory must log in with an SSH key (password logins would need
+  `sshpass`).
 - MCP servers from a workspace only start after you save them in Workspace settings on
   this machine (protects you from commands in a cloned workspace).
 - The agent's access to this computer (Settings → This computer) is on by default: it can
@@ -187,5 +201,6 @@ k3s cluster when one is present (`OPSDECK_TEST_KUBECONFIG`), and are skipped oth
 - [docs/docker.md](docs/docker.md) — Docker: containers, compose, swarm, volumes, logs
 - [docs/kubernetes.md](docs/kubernetes.md) — Kubernetes: resources, logs, exec, apply with diff, rollouts, Helm
 - [docs/scripts.md](docs/scripts.md) — scripts: your library and the workspace's, approval, running on hosts
+- [docs/ansible.md](docs/ansible.md) — Ansible: projects, Ansible Vault, runs and logs, the agent's tools and password prompt
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

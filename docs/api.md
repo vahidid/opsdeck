@@ -202,6 +202,33 @@ Documentation repositories appear in `GET /api/workspaces/{ws}/docs` as
 | POST | `/api/workspaces/{ws}/scripts/{scope}/{name}/run` | `{target, params, force, hash}` → `{script, results: [{host, exitCode, skipped, stdout, stderr, durationMs, error, log}]}` |
 | GET | `/api/workspaces/{ws}/script-runs?script=&host=&limit=` | run history, newest first |
 
+## Ansible
+
+A vault password that is not at hand answers **409** `{code: "ansible_password", vaultId}`; a
+wrong one **422** `{code: "ansible_wrong_password"}`. Requests that need a password accept
+`password` (+ `vaultId`) to use it once; `unlock` keeps it in memory. See [ansible.md](ansible.md).
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/workspaces/{ws}/ansible` | → projects: `{name, source, repo, path, root, inventories, playbooks, vaultIds, unlocked, remembered, saved, ansible: {installed, version}…}` |
+| POST | `/api/workspaces/{ws}/ansible/projects` | `{name, source: folder\|repo, repo, path, inventory, environment, description, via, scaffold}` — add a project (scaffold: create a starter layout) |
+| GET | `/api/workspaces/{ws}/ansible/p/{project}` | → the project |
+| GET | `…/p/{project}/files` | → `{files: [{path, size, modified, type, encrypted, vaultId, inline}], truncated}` |
+| GET / PUT / DELETE | `…/p/{project}/file?path=` | read (vault files as their encrypted text) / `{path, content, create}` write (refused over a vault file) / delete |
+| POST | `…/p/{project}/rename` | `{from, to}` |
+| GET | `…/p/{project}/search?q=&regex=1` | → `[{path, line, text}]` (vault files are skipped) |
+| POST / DELETE | `…/p/{project}/unlock` | `{vaultId, password, save, agentUse}` — check and keep a password (save: also as a vault item referenced by the project) / `?vaultId=` forget |
+| POST | `…/p/{project}/vault/{action}` | `view` `{path}` → `{text}`; `save` `{path, text, vaultId}`; `set` `{path, key, value, vaultId}`; `encrypt` `{path, vaultId}`; `decrypt` `{path}`; `rekey` `{path, newPassword, newVaultId}`; `encrypt-string` `{name, value, vaultId}` → `{text}` |
+| GET | `…/p/{project}/inventory?inventory=` | → `{graph, groups, children, hosts, generated}` (`inventory=workspace`: generated from the workspace's hosts) |
+| GET | `…/p/{project}/inventory/host?inventory=&host=` | → `{vars}` (YAML) |
+| POST | `…/p/{project}/check` | `{kind: syntax\|list-hosts\|list-tasks\|list-tags, playbook, inventory, limit, tags}` → `{ok, output}` |
+| POST | `…/p/{project}/runs` | `{kind: playbook\|adhoc\|galaxy\|lint, playbook, inventory, limit, tags, skipTags, extraVars, check, diff, verbosity, forks, startAt, become, pattern, module, args, requirements, password?, vaultId?}` → the run |
+| GET | `/api/workspaces/{ws}/ansible/runs?project=&limit=` | runs, newest first: `{id, project, options, command, actor, started, ended, status, exitCode, recap, durationMs}` |
+| GET | `/api/workspaces/{ws}/ansible/runs/{id}` | → the run |
+| GET | `/api/workspaces/{ws}/ansible/runs/{id}/log?since=` | SSE: `{line, ts}` per line (live runs; `since` resumes), then `event: status` (the run) and `event: end` |
+| GET | `/api/workspaces/{ws}/ansible/runs/{id}/log.txt` | the full log as text |
+| POST | `/api/workspaces/{ws}/ansible/runs/{id}/cancel` | stop the run |
+
 ## Hosts
 
 | Method | Path | |
@@ -342,7 +369,7 @@ call (e.g. every read in a folder).
 | DELETE | `/api/workspaces/{ws}/sessions/{id}` | |
 | POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text}` → 202 |
 | POST | `/api/workspaces/{ws}/sessions/{id}/interrupt` | |
-| POST | `/api/workspaces/{ws}/sessions/{id}/approvals/{approvalId}` | `{decision: "approve"\|"deny"\|"always", note?}` |
+| POST | `/api/workspaces/{ws}/sessions/{id}/approvals/{approvalId}` | `{decision: "approve"\|"deny"\|"always", note?, secret?}` — `secret` answers a card that asks for a password (`approval_request.secret`); a missing or wrong one is 422 `bad_secret` and the card stays open |
 | GET | `/api/workspaces/{ws}/sessions/{id}/stream` | SSE: every new `Event` as `data: <json>` |
 
 ```ts

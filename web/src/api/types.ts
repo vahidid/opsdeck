@@ -255,9 +255,66 @@ export type Forward = {
   created: string;
 };
 
-export type Container = { id: string; name: string; image: string; state: string; status: string; ports: string; created: string };
-export type DockerImage = { id: string; repository: string; tag: string; size: string | number; created: string };
-export type DockerStat = { id: string; name: string; cpu: string; mem: string; memPct: string; net: string; block: string };
+export type Container = {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  health?: string;
+  ports: string;
+  created: string;
+  command?: string;
+  mounts?: string;
+  networks?: string;
+  project?: string;
+  service?: string;
+  stack?: string;
+};
+export type DockerImage = { id: string; repository: string; tag: string; size: string | number; created: string; containers?: string };
+export type DockerStat = { id: string; name: string; cpu: string; mem: string; memPct: string; net: string; block: string; pids?: string };
+export type SwarmInfo = { state: string; manager: boolean; nodeId?: string; nodeAddr?: string; nodes: number; managers: number; error?: string };
+export type DockerInfo = {
+  serverVersion: string;
+  os: string;
+  arch: string;
+  cpus: number;
+  memTotal: number;
+  containers: number;
+  running: number;
+  paused: number;
+  stopped: number;
+  images: number;
+  storageDriver: string;
+  rootDir: string;
+  swarm: SwarmInfo;
+  compose?: string;
+  sudo: boolean;
+  warnings?: string[];
+};
+export type DockerUsage = { type: string; total: string; active: string; size: string; reclaimable: string };
+export type DockerProcess = { pid: string; user: string; cpu: string; mem: string; started: string; time: string; command: string };
+export type ComposeProject = { name: string; status: string; configFiles: string[]; workingDir: string };
+export type ComposeContainer = { id: string; name: string; service: string; image: string; state: string; status: string; health?: string; exitCode: number; ports?: string };
+export type ComposeFile = { path: string; kind: "compose" | "env"; exists: boolean };
+export type SwarmService = { id: string; name: string; mode: string; replicas: string; running: number; desired: number; image: string; ports?: string; stack?: string };
+export type SwarmTask = { id: string; name: string; image: string; node: string; desiredState: string; currentState: string; error?: string; ports?: string };
+export type SwarmStack = { name: string; services: number };
+export type SwarmNode = { id: string; hostname: string; status: string; availability: string; managerStatus?: string; engineVersion?: string; self?: boolean };
+export type DockerVolume = {
+  name: string;
+  driver: string;
+  scope: string;
+  mountpoint: string;
+  labels?: Record<string, string>;
+  project?: string;
+  stack?: string;
+  containers: string[];
+  anonymous?: boolean;
+};
+export type VolumeEntry = { name: string; type: "file" | "dir" | "link" | "other"; size: number; modified: string; mode: string; owner: string };
+export type DockerNetwork = { id: string; name: string; driver: string; scope: string; internal?: boolean; builtin?: boolean; project?: string; stack?: string; created: string };
+export type DockerEvent = { time: string; type: string; action: string; id: string; name: string; scope?: string; attrs?: Record<string, string> };
 
 export type KubeRow = Record<string, unknown> & { name: string; namespace?: string };
 

@@ -42,7 +42,7 @@ Built-in tools:
 | `read_file`, `list_dir` (SFTP) | read |
 | `write_file`, `edit_file` — diff preview, atomic write, automatic backup | change |
 | `net_check` — tcp / http (status, TLS expiry) / dns / ping, from here or from a host | read |
-| `docker` — ps, images, stats, inspect, logs / start, stop, restart / rm | read / change / destructive |
+| `docker` — containers (ps, inspect, logs, top, stats / start, stop, restart, pause, kill / rm), compose (ls, ps, logs, files / up, pull, restart, validated file writes / down), swarm (services, tasks, logs / scale, redeploy, rollback, image / rm; stacks, nodes), volumes (files / write / delete, rm), images, networks, df, prune — see [docker.md](docker.md) | read / change / destructive |
 | `kubernetes` — get, yaml, logs, rollout_status / restart, scale / delete_pod | read / change / destructive |
 | `repo` — Git working copies: list, status, log, diff, show, branches, clone, fetch, pull / checkout, commit, pull --rebase / push / discard, force push | read / change (one approval per repository per session) / change, protected for default and protected branches / destructive |
 | `repo_files` — list, read, search a repository (working copy or any ref) | read |

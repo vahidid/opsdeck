@@ -158,8 +158,33 @@ func exitStatus(ch ssh.Channel, err error) {
 	ch.Close()
 }
 
+func (s *Server) runPTY(ch ssh.Channel, reqs <-chan *ssh.Request, cmd *exec.Cmd, winW, winH uint32) {
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(winW), Rows: uint16(winH)})
+	if err != nil {
+		exitStatus(ch, err)
+		return
+	}
+	go func() { io.Copy(f, ch) }()
+	go func() {
+		for r := range reqs {
+			if r.Type == "window-change" {
+				var p struct{ W, H, PW, PH uint32 }
+				ssh.Unmarshal(r.Payload, &p)
+				pty.Setsize(f, &pty.Winsize{Cols: uint16(p.W), Rows: uint16(p.H)})
+			}
+			if r.WantReply {
+				r.Reply(false, nil)
+			}
+		}
+	}()
+	io.Copy(ch, f)
+	exitStatus(ch, cmd.Wait())
+	f.Close()
+}
+
 func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 	var winW, winH uint32 = 80, 24
+	wantPTY := false
 	env := os.Environ()
 	for req := range reqs {
 		switch req.Type {
@@ -175,7 +200,7 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 				Modes        string
 			}
 			ssh.Unmarshal(req.Payload, &p)
-			winW, winH = p.W, p.H
+			winW, winH, wantPTY = p.W, p.H, true
 			env = append(env, "TERM="+p.Term)
 			req.Reply(true, nil)
 		case "window-change":
@@ -186,6 +211,10 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			req.Reply(true, nil)
 			cmd := exec.Command("/bin/sh", "-c", p.Cmd)
 			cmd.Env, cmd.Dir = env, s.Dir
+			if wantPTY { // like OpenSSH: a command with a pty-req runs on a terminal
+				s.runPTY(ch, reqs, cmd, winW, winH)
+				return
+			}
 			cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
 			stdin, _ := cmd.StdinPipe()
 			go func() { io.Copy(stdin, ch); stdin.Close() }()
@@ -214,27 +243,7 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 				cmd = exec.Command("/bin/sh")
 			}
 			cmd.Env, cmd.Dir = env, s.Dir
-			f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(winW), Rows: uint16(winH)})
-			if err != nil {
-				exitStatus(ch, err)
-				return
-			}
-			go func() { io.Copy(f, ch) }()
-			go func() {
-				for r := range reqs {
-					if r.Type == "window-change" {
-						var p struct{ W, H, PW, PH uint32 }
-						ssh.Unmarshal(r.Payload, &p)
-						pty.Setsize(f, &pty.Winsize{Cols: uint16(p.W), Rows: uint16(p.H)})
-					}
-					if r.WantReply {
-						r.Reply(false, nil)
-					}
-				}
-			}()
-			io.Copy(ch, f)
-			exitStatus(ch, cmd.Wait())
-			f.Close()
+			s.runPTY(ch, reqs, cmd, winW, winH)
 			return
 		case "subsystem":
 			var p struct{ Name string }

@@ -235,11 +235,55 @@ type HostStats = { hostname; os; kernel; uptimeSec: number; load: number[]; cpus
 
 ## Docker (on a Host, over SSH)
 
-| GET | `/api/workspaces/{ws}/hosts/{host}/docker/containers?all=1` | → `[{id, name, image, state, status, ports, created}]` |
-| GET | `/api/workspaces/{ws}/hosts/{host}/docker/images` | → `[{id, repository, tag, size, created}]` |
-| GET | `/api/workspaces/{ws}/hosts/{host}/docker/stats` | → `[{id, name, cpu, mem, memPct, net, block}]` |
-| GET | `/api/workspaces/{ws}/hosts/{host}/docker/containers/{id}/inspect` | → raw JSON |
-| POST | `/api/workspaces/{ws}/hosts/{host}/docker/containers/{id}/{start\|stop\|restart\|rm}` | |
+All paths start with `/api/workspaces/{ws}/hosts/{host}/docker`. Changes are audited and
+keep running when the request is cancelled; long ones return `{output}` (docker's output).
+See [docker.md](docker.md).
+
+| Method | Path | |
+|---|---|---|
+| GET | `/info` | engine version, OS, CPUs, memory, counts, storage, `swarm`, `compose` version, `sudo`, warnings |
+| GET | `/df` | `docker system df` rows |
+| POST | `/prune` | `{kind}`: containers, images, images-unused, build-cache, networks, volumes, system |
+| GET | `/inspect/{kind}/{id}` | raw JSON; kind ∈ container, image, volume, network, service, node |
+| GET | `/containers?all=1` | → `[{id, name, image, state, status, health, ports, created, command, mounts, networks, project, service, stack}]` |
+| GET | `/containers/{id}/inspect` | raw JSON |
+| GET | `/containers/{id}/top` | → `[{pid, user, cpu, mem, started, time, command}]` |
+| GET | `/containers/{id}/exec?cols=&rows=&user=&shell=` | WebSocket, same protocol as the host terminal |
+| POST | `/containers/{id}/{start\|stop\|restart\|kill\|pause\|unpause\|rm}` | |
+| GET | `/stats?ids=` | → `[{id, name, cpu, mem, memPct, net, block, pids}]` |
+| GET | `/images` | → `[{id, repository, tag, size, created}]` |
+| POST | `/images/pull` | `{ref}` |
+| DELETE | `/images?ref=&force=1` | |
+| GET | `/networks` | → `[{id, name, driver, scope, internal, builtin, project, stack, created}]` |
+| DELETE | `/networks/{id}` | |
+| GET | `/volumes` | → `[{name, driver, scope, mountpoint, labels, project, stack, containers, anonymous}]` |
+| POST | `/volumes` | `{name}` |
+| DELETE | `/volumes/{name}` | |
+| GET | `/volumes/{name}/size` | → `{bytes}` |
+| GET | `/volumes/{name}/files?path=` | → `{access: direct\|sudo\|container, entries: [{name, type, size, modified, mode, owner}]}` |
+| GET | `/volumes/{name}/file?path=` | → `{content, binary, truncated, size}` (first 1 MB) |
+| GET | `/volumes/{name}/file?path=&download=1` | the file, streamed |
+| PUT | `/volumes/{name}/file` | `{path, content}` |
+| POST | `/volumes/{name}/upload?path=` | multipart files, streamed into the folder |
+| POST | `/volumes/{name}/mkdir` | `{path, name}` |
+| DELETE | `/volumes/{name}/file?path=` | file or folder (recursive) |
+| GET | `/compose` | → `[{name, status, configFiles, workingDir}]` |
+| POST | `/compose` | `{name, dir, content, start}`: new project (validated) |
+| GET | `/compose/{project}` | → `[{id, name, service, image, state, status, health, exitCode, ports}]` |
+| GET | `/compose/{project}/files` | → `[{path, kind: compose\|env, exists}]` |
+| GET | `/compose/{project}/file?path=` | → `{path, content}` |
+| PUT | `/compose/{project}/file` | `{path, content, deploy}`: validated with `docker compose config`, backup kept |
+| POST | `/compose/{project}/{action}` | `{services?}`; action ∈ up, recreate, pull, restart, stop, start, down, down-volumes |
+| GET | `/swarm` | → `{state, manager, nodeId, nodeAddr, nodes, managers, error}` |
+| GET | `/services` | → `[{id, name, mode, replicas, running, desired, image, ports, stack}]` |
+| GET | `/services/{name}/tasks` | → `[{id, name, image, node, desiredState, currentState, error, ports}]` |
+| POST | `/services/{name}/{scale\|redeploy\|rollback\|image\|rm}` | `{arg}`: replicas or image |
+| GET | `/stacks` | → `[{name, services}]` |
+| GET | `/stacks/{name}/tasks` | tasks of the stack |
+| POST | `/stacks` | `{name, file? \| content?, prune}` |
+| DELETE | `/stacks/{name}` | |
+| GET | `/nodes` | → `[{id, hostname, status, availability, managerStatus, engineVersion, self}]` |
+| POST | `/nodes/{id}/availability` | `{availability: active\|pause\|drain}` |
 
 ## Kubernetes
 
@@ -255,8 +299,11 @@ type HostStats = { hostname; os; kernel; uptimeSec: number; load: number[]; cpus
 
 ## Logs (SSE)
 
-`GET /api/workspaces/{ws}/logs/stream?host=&source=journal|file|docker&unit=&path=&container=&lines=200&follow=1`
+`GET /api/workspaces/{ws}/logs/stream?host=&source=journal|file|docker|compose|service|events&unit=&path=&container=&project=&service=&lines=200|all&since=&follow=1`
 → `text/event-stream`, each event `data: {"line": "..."}`; `event: end` on finish, `event: error` with `{"message"}`.
+Docker sources add `ts` (docker's RFC3339 timestamp), `src` (compose service or swarm
+task) and `stderr`; `since` is a duration (`15m`, `2h`, `1d`) or a timestamp, which is how
+a dropped stream resumes. `source=events` sends `{"event": {time, type, action, id, name, scope, attrs}}`.
 
 ## Agent
 

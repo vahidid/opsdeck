@@ -137,6 +137,7 @@ func TestEndToEnd(t *testing.T) {
 	bin := t.TempDir()
 	os.WriteFile(filepath.Join(bin, "docker"), []byte(`#!/bin/sh
 case "$1" in
+  version) echo 27.0.0;;
   ps) echo '{"ID":"0123456789abcdef","Names":"web","Image":"nginx:1.27","State":"running","Status":"Up 2 hours","Ports":"0.0.0.0:80->80/tcp","CreatedAt":"2026-10-01"}';;
   images) echo '{"ID":"sha256:abc","Repository":"nginx","Tag":"1.27","Size":"187MB","CreatedSince":"2 weeks ago"}';;
   stats) echo '{"ID":"0123456789ab","Name":"web","CPUPerc":"0.50%","MemUsage":"20MiB / 1GiB","MemPerc":"2%","NetIO":"1kB / 2kB","BlockIO":"0B / 0B"}';;

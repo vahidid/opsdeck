@@ -508,9 +508,9 @@ export function Th({ children, className }: { children?: ReactNode; className?: 
     </th>
   );
 }
-export function Td({ children, className, mono, title }: { children?: ReactNode; className?: string; mono?: boolean; title?: string }) {
+export function Td({ children, className, mono, title, colSpan }: { children?: ReactNode; className?: string; mono?: boolean; title?: string; colSpan?: number }) {
   return (
-    <td title={title} className={cx("px-3 h-9 border-b border-line/70 align-middle", mono && "font-mono text-[11.5px]", className)}>
+    <td title={title} colSpan={colSpan} className={cx("px-3 h-9 border-b border-line/70 align-middle", mono && "font-mono text-[11.5px]", className)}>
       {children}
     </td>
   );

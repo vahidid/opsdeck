@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -152,6 +153,110 @@ func (h *Hub) ExecStream(ctx context.Context, w *workspace.Workspace, host *work
 	return nil
 }
 
+// ExecStreams is ExecStream with stdout and stderr kept apart: onLine gets
+// stderr=true for lines the command wrote to standard error.
+func (h *Hub) ExecStreams(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(stderr bool, line string)) error {
+	client, err := h.SSH(ctx, w, host)
+	if err != nil {
+		return err
+	}
+	sess, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close()
+	or, ow := io.Pipe()
+	er, ew := io.Pipe()
+	sess.Stdout, sess.Stderr = ow, ew
+	if err := sess.Start(cmd); err != nil {
+		return err
+	}
+	go func() {
+		err := sess.Wait()
+		ow.CloseWithError(err)
+		ew.CloseWithError(err)
+	}()
+	go func() {
+		<-ctx.Done()
+		sess.Signal(ssh.SIGTERM)
+		sess.Close()
+		ow.Close()
+		ew.Close()
+	}()
+	var mu sync.Mutex
+	scan := func(r io.Reader, stderr bool, done chan<- error) {
+		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			mu.Lock()
+			onLine(stderr, sc.Text())
+			mu.Unlock()
+		}
+		done <- sc.Err()
+	}
+	d1, d2 := make(chan error, 1), make(chan error, 1)
+	go scan(er, true, d2)
+	scan(or, false, d1)
+	errs := []error{<-d1, <-d2}
+	if ctx.Err() != nil {
+		return nil
+	}
+	var exitErr *ssh.ExitError
+	for _, err := range errs {
+		if err != nil && !errors.As(err, &exitErr) && !errors.Is(err, io.EOF) {
+			return err
+		}
+	}
+	return nil
+}
+
+// ExecIO runs a command with stdin and stdout streamed (for uploads and
+// downloads of any size); stderr is collected up to maxStderr bytes.
+func (h *Hub) ExecIO(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, stdin io.Reader, stdout io.Writer, maxStderr int) (exitCode int, stderr string, err error) {
+	client, err := h.SSH(ctx, w, host)
+	if err != nil {
+		return -1, "", err
+	}
+	sess, err := client.NewSession()
+	if err != nil {
+		return -1, "", err
+	}
+	defer sess.Close()
+	errBuf := &limitedBuffer{max: maxStderr}
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	sess.Stdout, sess.Stderr = stdout, errBuf
+	if stdin != nil {
+		sess.Stdin = stdin
+	}
+	if err := sess.Start(cmd); err != nil {
+		return -1, "", err
+	}
+	done := make(chan error, 1)
+	go func() { done <- sess.Wait() }()
+	var waitErr error
+	select {
+	case waitErr = <-done:
+	case <-ctx.Done():
+		sess.Signal(ssh.SIGKILL)
+		sess.Close()
+		<-done
+		return -1, errBuf.buf.String(), fmt.Errorf("command interrupted: %w", ctx.Err())
+	}
+	var exitErr *ssh.ExitError
+	var missing *ssh.ExitMissingError
+	switch {
+	case waitErr == nil:
+		return 0, errBuf.buf.String(), nil
+	case errors.As(waitErr, &exitErr):
+		return exitErr.ExitStatus(), errBuf.buf.String(), nil
+	case errors.As(waitErr, &missing):
+		return -1, errBuf.buf.String(), nil
+	}
+	return -1, errBuf.buf.String(), waitErr
+}
+
 // Shell is an interactive PTY session.
 type Shell struct {
 	sess   *ssh.Session
@@ -165,6 +270,18 @@ func (s *Shell) Close() error                { return s.sess.Close() }
 
 // OpenShell starts a login shell with a PTY.
 func (h *Hub) OpenShell(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cols, rows int) (*Shell, error) {
+	return h.openPTY(ctx, w, host, "", cols, rows)
+}
+
+// OpenCommand runs a command with a PTY (e.g. docker exec -it into a container).
+func (h *Hub) OpenCommand(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, cols, rows int) (*Shell, error) {
+	if cmd == "" {
+		return nil, errors.New("empty command")
+	}
+	return h.openPTY(ctx, w, host, cmd, cols, rows)
+}
+
+func (h *Hub) openPTY(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, cols, rows int) (*Shell, error) {
 	client, err := h.SSH(ctx, w, host)
 	if err != nil {
 		return nil, err
@@ -191,7 +308,11 @@ func (h *Hub) OpenShell(ctx context.Context, w *workspace.Workspace, host *works
 	}
 	pr, pw := io.Pipe()
 	sess.Stdout, sess.Stderr = pw, pw
-	if err := sess.Shell(); err != nil {
+	start := sess.Shell
+	if cmd != "" {
+		start = func() error { return sess.Start(cmd) }
+	}
+	if err := start(); err != nil {
 		sess.Close()
 		return nil, err
 	}

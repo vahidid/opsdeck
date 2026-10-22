@@ -45,6 +45,13 @@ plus a complete local workbench that is just as useful without AI.
   agent runs them with `run_script` as one unit (e.g. on a server you just added): typed
   parameters, secrets injected from the vault over stdin, a check that skips hosts where
   the script was already applied, versions and run history — see [docs/scripts.md](docs/scripts.md).
+- **Docker** — containers (live usage, details, `docker exec` terminal, processes),
+  Compose projects (up/pull/restart/down, edit compose files and `.env` with validation),
+  Swarm services, stacks and nodes (scale, redeploy, image updates, rollbacks), volumes
+  with a file browser (upload, download, edit), images, networks, live engine events and
+  clean-up. Logs stream live with ANSI colours, timestamps, per-service colours, stderr,
+  level and regex filters, and resume after a dropped connection — see
+  [docs/docker.md](docs/docker.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -148,7 +155,8 @@ external infrastructure needed.
   WireGuard are built in. OpenVPN and openfortivpn only run in system mode.
 - Git repositories need `git` installed (and `ssh` for SSH URLs). Repository hooks don't
   run in opsdeck's working copies.
-- Docker is driven through the `docker` CLI on the host over SSH (retries with `sudo -n`).
+- Docker is driven through the `docker` CLI on the host over SSH (with `sudo -n` when the
+  SSH user is not in the `docker` group); Compose needs the `docker compose` plugin (v2).
 - PuTTY `.ppk` keys must be converted to OpenSSH format first.
 - Kubeconfigs that use `exec` auth plugins run those plugins on this machine.
 - MCP servers from a workspace only start after you save them in Workspace settings on
@@ -168,6 +176,7 @@ external infrastructure needed.
 - [docs/git.md](docs/git.md) — Git repositories, working copies, merge requests
 - [docs/topology.md](docs/topology.md) — the topology map and the agent's topology tool
 - [docs/skills.md](docs/skills.md) — skills, the built-in library
+- [docs/docker.md](docs/docker.md) — Docker: containers, compose, swarm, volumes, logs
 - [docs/scripts.md](docs/scripts.md) — scripts: your library and the workspace's, approval, running on hosts
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

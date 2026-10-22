@@ -25,6 +25,20 @@ import type {
   DocInfo,
   DockerImage,
   DockerStat,
+  DockerInfo,
+  DockerUsage,
+  DockerProcess,
+  ComposeProject,
+  ComposeContainer,
+  ComposeFile,
+  SwarmInfo,
+  SwarmService,
+  SwarmTask,
+  SwarmStack,
+  SwarmNode,
+  DockerVolume,
+  VolumeEntry,
+  DockerNetwork,
   ExecResult,
   FileContent,
   Forward,
@@ -124,6 +138,7 @@ const H = (ws: string, host: string) => `${W(ws)}/hosts/${e(host)}`;
 const C = (ws: string, c: string) => `${W(ws)}/clusters/${e(c)}`;
 const S = (ws: string, id: string) => `${W(ws)}/sessions/${e(id)}`;
 const R = (ws: string, repo: string) => `${W(ws)}/repos/${e(repo)}`;
+const DK = (ws: string, host: string) => `${H(ws, host)}/docker`;
 type Out = { output: string };
 
 const arr = <T>(p: Promise<T[] | null>) => p.then((v) => v ?? []);
@@ -279,13 +294,72 @@ export const api = {
   openPanel: (ws: string, name: string) => post<{ url: string }>(`${W(ws)}/panels/${e(name)}/open`),
 
   // docker
+  dockerInfo: (ws: string, host: string) => get<DockerInfo>(`${DK(ws, host)}/info`),
+  dockerDf: (ws: string, host: string) => arr(get<DockerUsage[]>(`${DK(ws, host)}/df`)),
+  dockerPrune: (ws: string, host: string, kind: string) => post<Out>(`${DK(ws, host)}/prune`, { kind }),
+  dockerInspect: (ws: string, host: string, kind: string, id: string) => get<unknown>(`${DK(ws, host)}/inspect/${e(kind)}/${e(id)}`),
   containers: (ws: string, host: string, all = true) =>
-    arr(get<Container[]>(`${H(ws, host)}/docker/containers${qs({ all: all ? 1 : undefined })}`)),
-  images: (ws: string, host: string) => arr(get<DockerImage[]>(`${H(ws, host)}/docker/images`)),
-  dockerStats: (ws: string, host: string) => arr(get<DockerStat[]>(`${H(ws, host)}/docker/stats`)),
-  inspect: (ws: string, host: string, id: string) => get<unknown>(`${H(ws, host)}/docker/containers/${e(id)}/inspect`),
-  containerAction: (ws: string, host: string, id: string, action: "start" | "stop" | "restart" | "rm") =>
-    post(`${H(ws, host)}/docker/containers/${e(id)}/${action}`),
+    arr(get<Container[]>(`${DK(ws, host)}/containers${qs({ all: all ? 1 : undefined })}`)),
+  images: (ws: string, host: string) => arr(get<DockerImage[]>(`${DK(ws, host)}/images`)),
+  imagePull: (ws: string, host: string, ref: string) => post<Out>(`${DK(ws, host)}/images/pull`, { ref }),
+  imageRemove: (ws: string, host: string, ref: string, force = false) => del(`${DK(ws, host)}/images${qs({ ref, force: force ? 1 : undefined })}`),
+  dockerStats: (ws: string, host: string, ids: string[] = []) => arr(get<DockerStat[]>(`${DK(ws, host)}/stats${qs({ ids: ids.join(",") })}`)),
+  inspect: (ws: string, host: string, id: string) => get<unknown>(`${DK(ws, host)}/containers/${e(id)}/inspect`),
+  containerTop: (ws: string, host: string, id: string) => arr(get<DockerProcess[]>(`${DK(ws, host)}/containers/${e(id)}/top`)),
+  containerAction: (ws: string, host: string, id: string, action: string) => post(`${DK(ws, host)}/containers/${e(id)}/${e(action)}`),
+  dockerExecUrl: (ws: string, host: string, id: string, o: { cols: number; rows: number; user?: string; shell?: string }) => {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}${DK(ws, host)}/containers/${e(id)}/exec${qs(o)}`;
+  },
+  dockerNetworks: (ws: string, host: string) => arr(get<DockerNetwork[]>(`${DK(ws, host)}/networks`)),
+  dockerNetworkRemove: (ws: string, host: string, id: string) => del(`${DK(ws, host)}/networks/${e(id)}`),
+  volumes: (ws: string, host: string) => arr(get<DockerVolume[]>(`${DK(ws, host)}/volumes`)),
+  volumeCreate: (ws: string, host: string, name: string) => post(`${DK(ws, host)}/volumes`, { name }),
+  volumeRemove: (ws: string, host: string, name: string) => del(`${DK(ws, host)}/volumes/${e(name)}`),
+  volumeSize: (ws: string, host: string, name: string) => get<{ bytes: number }>(`${DK(ws, host)}/volumes/${e(name)}/size`),
+  volumeFiles: (ws: string, host: string, name: string, path: string) =>
+    get<{ access: string; entries: VolumeEntry[] | null }>(`${DK(ws, host)}/volumes/${e(name)}/files${qs({ path })}`).then((r) => ({ ...r, entries: r.entries ?? [] })),
+  volumeFile: (ws: string, host: string, name: string, path: string) =>
+    get<{ path: string; content: string; binary: boolean; truncated: boolean; size: number }>(`${DK(ws, host)}/volumes/${e(name)}/file${qs({ path })}`),
+  volumeDownloadUrl: (ws: string, host: string, name: string, path: string) => `${DK(ws, host)}/volumes/${e(name)}/file${qs({ path, download: 1 })}`,
+  volumeSaveFile: (ws: string, host: string, name: string, path: string, content: string) => put(`${DK(ws, host)}/volumes/${e(name)}/file`, { path, content }),
+  volumeMkdir: (ws: string, host: string, name: string, path: string, dir: string) => post(`${DK(ws, host)}/volumes/${e(name)}/mkdir`, { path, name: dir }),
+  volumeDelete: (ws: string, host: string, name: string, path: string) => del(`${DK(ws, host)}/volumes/${e(name)}/file${qs({ path })}`),
+  volumeUpload: async (ws: string, host: string, name: string, path: string, files: File[]) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("file", f, f.name);
+    const res = await fetch(`${DK(ws, host)}/volumes/${e(name)}/upload${qs({ path })}`, { method: "POST", body: fd, credentials: "same-origin" });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        msg = ((await res.json()) as { error?: string }).error || msg;
+      } catch {
+        /* keep status */
+      }
+      throw new ApiError(res.status, msg);
+    }
+    return (await res.json()) as { saved: string[] };
+  },
+  composeProjects: (ws: string, host: string) => arr(get<ComposeProject[]>(`${DK(ws, host)}/compose`)),
+  composeCreate: (ws: string, host: string, b: { name: string; dir: string; content: string; start: boolean }) => post<Out>(`${DK(ws, host)}/compose`, b),
+  composePs: (ws: string, host: string, project: string) => arr(get<ComposeContainer[]>(`${DK(ws, host)}/compose/${e(project)}`)),
+  composeFiles: (ws: string, host: string, project: string) => arr(get<ComposeFile[]>(`${DK(ws, host)}/compose/${e(project)}/files`)),
+  composeFile: (ws: string, host: string, project: string, path: string) =>
+    get<{ path: string; content: string }>(`${DK(ws, host)}/compose/${e(project)}/file${qs({ path })}`),
+  composeSaveFile: (ws: string, host: string, project: string, path: string, content: string, deploy: boolean) =>
+    put<Out>(`${DK(ws, host)}/compose/${e(project)}/file`, { path, content, deploy }),
+  composeAction: (ws: string, host: string, project: string, action: string, services: string[] = []) =>
+    post<Out>(`${DK(ws, host)}/compose/${e(project)}/${e(action)}`, { services }),
+  swarm: (ws: string, host: string) => get<SwarmInfo>(`${DK(ws, host)}/swarm`),
+  services: (ws: string, host: string) => arr(get<SwarmService[]>(`${DK(ws, host)}/services`)),
+  serviceTasks: (ws: string, host: string, name: string) => arr(get<SwarmTask[]>(`${DK(ws, host)}/services/${e(name)}/tasks`)),
+  serviceAction: (ws: string, host: string, name: string, action: string, arg = "") => post<Out>(`${DK(ws, host)}/services/${e(name)}/${e(action)}`, { arg }),
+  stacks: (ws: string, host: string) => arr(get<SwarmStack[]>(`${DK(ws, host)}/stacks`)),
+  stackTasks: (ws: string, host: string, name: string) => arr(get<SwarmTask[]>(`${DK(ws, host)}/stacks/${e(name)}/tasks`)),
+  stackDeploy: (ws: string, host: string, b: { name: string; file?: string; content?: string; prune?: boolean }) => post<Out>(`${DK(ws, host)}/stacks`, b),
+  stackRemove: (ws: string, host: string, name: string) => del<Out>(`${DK(ws, host)}/stacks/${e(name)}`),
+  nodes: (ws: string, host: string) => arr(get<SwarmNode[]>(`${DK(ws, host)}/nodes`)),
+  nodeAvailability: (ws: string, host: string, id: string, availability: string) => post(`${DK(ws, host)}/nodes/${e(id)}/availability`, { availability }),
 
   // kubernetes
   namespaces: (ws: string, c: string) => arr(get<string[]>(`${C(ws, c)}/namespaces`)),
@@ -304,7 +378,18 @@ export const api = {
   // logs
   logStreamUrl: (
     ws: string,
-    o: { host: string; source: string; unit?: string; path?: string; container?: string; lines?: number; follow?: boolean },
+    o: {
+      host: string;
+      source: string;
+      unit?: string;
+      path?: string;
+      container?: string;
+      project?: string;
+      service?: string;
+      lines?: number | "all";
+      since?: string;
+      follow?: boolean;
+    },
   ) =>
     `${W(ws)}/logs/stream${qs({
       host: o.host,
@@ -312,7 +397,10 @@ export const api = {
       unit: o.unit,
       path: o.path,
       container: o.container,
+      project: o.project,
+      service: o.service,
       lines: o.lines,
+      since: o.since,
       follow: o.follow ? 1 : 0,
     })}`,
 

@@ -86,12 +86,15 @@ body {
   background: color-mix(in srgb, var(--c-accent) 35%, transparent);
 }
 
-input,
-textarea,
-select,
-button {
-  font: inherit;
-  color: inherit;
+/* in the base layer, so utilities such as font-mono still apply */
+@layer base {
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 .prose-ops {

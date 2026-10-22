@@ -32,7 +32,7 @@ type Ctx = {
 };
 const TCtx = createContext<Ctx | null>(null);
 
-function termTheme() {
+export function termTheme() {
   const css = getComputedStyle(document.documentElement);
   const v = (n: string, f: string) => css.getPropertyValue(n).trim() || f;
   const light = document.documentElement.classList.contains("light");

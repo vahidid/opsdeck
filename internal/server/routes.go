@@ -122,11 +122,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{ws}/panels/{name}/open", u(s.panelOpen))
 
 	// docker
-	mux.HandleFunc("GET /api/workspaces/{ws}/hosts/{host}/docker/containers", u(s.dockerContainers))
-	mux.HandleFunc("GET /api/workspaces/{ws}/hosts/{host}/docker/images", u(s.dockerImages))
-	mux.HandleFunc("GET /api/workspaces/{ws}/hosts/{host}/docker/stats", u(s.dockerStats))
-	mux.HandleFunc("GET /api/workspaces/{ws}/hosts/{host}/docker/containers/{id}/inspect", u(s.dockerInspect))
-	mux.HandleFunc("POST /api/workspaces/{ws}/hosts/{host}/docker/containers/{id}/{action}", u(s.dockerAction))
+	s.dockerRoutes(mux, u)
 
 	// kubernetes
 	mux.HandleFunc("GET /api/workspaces/{ws}/clusters/{c}/namespaces", u(s.kubeNamespaces))
@@ -1342,77 +1338,6 @@ func (s *Server) panelOpen(w http.ResponseWriter, r *http.Request) {
 	local.Host = "127.0.0.1:" + strconv.Itoa(fw.LocalPort)
 	s.record(r, ws.Name(), "panel.open", p.ID(), nil, nil)
 	writeJSON(w, 200, map[string]string{"url": local.String()})
-}
-
-// ---------------------------------------------------------------------------
-// docker
-
-func (s *Server) dockerContainers(w http.ResponseWriter, r *http.Request) {
-	ws, h, ok := s.hostRes(w, r)
-	if !ok {
-		return
-	}
-	list, err := s.docker.Containers(r.Context(), ws, h, r.URL.Query().Get("all") == "1")
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, list)
-}
-
-func (s *Server) dockerImages(w http.ResponseWriter, r *http.Request) {
-	ws, h, ok := s.hostRes(w, r)
-	if !ok {
-		return
-	}
-	list, err := s.docker.Images(r.Context(), ws, h)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, list)
-}
-
-func (s *Server) dockerStats(w http.ResponseWriter, r *http.Request) {
-	ws, h, ok := s.hostRes(w, r)
-	if !ok {
-		return
-	}
-	list, err := s.docker.Stats(r.Context(), ws, h)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, list)
-}
-
-func (s *Server) dockerInspect(w http.ResponseWriter, r *http.Request) {
-	ws, h, ok := s.hostRes(w, r)
-	if !ok {
-		return
-	}
-	raw, err := s.docker.Inspect(r.Context(), ws, h, r.PathValue("id"))
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(raw)
-}
-
-func (s *Server) dockerAction(w http.ResponseWriter, r *http.Request) {
-	ws, h, ok := s.hostRes(w, r)
-	if !ok {
-		return
-	}
-	id, action := r.PathValue("id"), r.PathValue("action")
-	err := s.docker.Action(r.Context(), ws, h, id, action)
-	s.record(r, ws.Name(), "docker."+action, h.ID()+"/"+id, nil, err)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 // ---------------------------------------------------------------------------

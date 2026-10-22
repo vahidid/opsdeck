@@ -14,7 +14,9 @@ import (
 	"github.com/gorilla/websocket"
 
 	"opsdeck/internal/audit"
+	"opsdeck/internal/connect"
 	"opsdeck/internal/docker"
+	"opsdeck/internal/workspace"
 )
 
 func auditEntry(action, target string, detail map[string]any) audit.Entry {
@@ -42,6 +44,15 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.ptyWS(w, r, ws, h, "host.terminal", h.ID(), func(ctx context.Context, cols, rows int) (*connect.Shell, error) {
+		return s.hub.OpenShell(ctx, ws, h, cols, rows)
+	})
+}
+
+// ptyWS serves an interactive PTY session (a host shell, docker exec…) over
+// a WebSocket: output as {t:"d"}, input and resizes from the browser.
+func (s *Server) ptyWS(w http.ResponseWriter, r *http.Request, ws *workspace.Workspace, h *workspace.Resource, action, target string,
+	open func(ctx context.Context, cols, rows int) (*connect.Shell, error)) {
 	up := websocket.Upgrader{CheckOrigin: func(req *http.Request) bool {
 		o := req.Header.Get("Origin")
 		return o == "" || s.originOK(o, req.Host)
@@ -73,9 +84,9 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 		send(termMsg{T: "s", Msg: "connecting to " + h.Str("address") + " …"})
 	}
 	octx, ocancel := context.WithTimeout(ctx, 60*time.Second)
-	shell, err := s.hub.OpenShell(octx, ws, h, cols, rows)
+	shell, err := open(octx, cols, rows)
 	ocancel()
-	s.record(r, ws.Name(), "host.terminal", h.ID(), nil, err)
+	s.record(r, ws.Name(), action, target, nil, err)
 	if err != nil {
 		send(termMsg{T: "e", Msg: err.Error()})
 		return
@@ -158,6 +169,7 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 	}
 	follow := q.Get("follow") == "1" || q.Get("follow") == "true"
 	var cmd string
+	var dockerSrc *docker.LogSource
 	switch q.Get("source") {
 	case "journal", "":
 		cmd = fmt.Sprintf("journalctl --no-pager -o short-iso -n %d", lines)
@@ -178,19 +190,29 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 			cmd += " -F"
 		}
 		cmd += " -- " + shq(p)
-	case "docker":
-		c, err := s.docker.LogsCommand(ws, h, q.Get("container"), lines, follow)
+	case "docker", "compose", "service", "events":
+		src := docker.LogSource{Kind: q.Get("source"), Target: q.Get("container"), Service: q.Get("service"), Tail: lines, Since: q.Get("since"), Follow: follow}
+		switch src.Kind {
+		case "docker":
+			src.Kind = "container"
+		case "compose":
+			src.Target = q.Get("project")
+		case "service":
+			src.Target = q.Get("service")
+			src.Service = ""
+		}
+		if q.Get("lines") == "all" {
+			src.Tail = -1
+		}
+		c, err := s.docker.LogsCommand(r.Context(), ws, h, src)
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		if !docker.ValidID(q.Get("container")) {
-			writeErr(w, 400, "invalid container")
-			return
-		}
+		dockerSrc = &src
 		cmd = c
 	default:
-		writeErr(w, 400, "source must be journal, file or docker")
+		writeErr(w, 400, "source must be journal, file, docker, compose, service or events")
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -228,15 +250,32 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	err := s.hub.ExecStream(ctx, ws, h, cmd, func(line string) {
-		write("", map[string]string{"line": line})
-	})
+	var err error
+	switch {
+	case dockerSrc != nil && dockerSrc.Kind == "events":
+		err = s.hub.ExecStream(ctx, ws, h, cmd, func(line string) {
+			if e, ok := docker.ParseEvent(line); ok {
+				write("", map[string]any{"event": e})
+			}
+		})
+	case dockerSrc != nil:
+		kind := dockerSrc.Kind
+		err = s.hub.ExecStreams(ctx, ws, h, cmd, func(stderr bool, line string) {
+			write("", docker.ParseLogLine(kind, line, stderr))
+		})
+	default:
+		err = s.hub.ExecStream(ctx, ws, h, cmd, func(line string) {
+			write("", map[string]string{"line": line})
+		})
+	}
 	close(done)
 	if ctx.Err() != nil {
 		return
 	}
 	if err != nil {
-		write("error", map[string]string{"message": err.Error()})
+		// a live docker stream that broke (SSH or VPN dropped) can resume
+		// from its last line; the viewer reconnects with since=<last ts>
+		write("error", map[string]any{"message": err.Error(), "retry": dockerSrc != nil && follow})
 		return
 	}
 	write("end", map[string]bool{"ok": true})

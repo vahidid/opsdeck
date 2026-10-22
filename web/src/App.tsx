@@ -18,7 +18,7 @@ import { SkillsPage } from "./pages/Skills";
 import { ScriptsPage } from "./pages/Scripts";
 import { TopologyPage } from "./pages/Topology";
 import { TerminalPage } from "./pages/Terminal";
-import { DockerPage } from "./pages/Docker";
+import { DockerPage } from "./pages/docker";
 import { KubernetesPage } from "./pages/Kubernetes";
 import { LogsPage } from "./pages/Logs";
 import { DocsPage } from "./pages/Docs";

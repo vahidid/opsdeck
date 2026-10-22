@@ -54,7 +54,7 @@ func (m *Manager) Send(ws, id, text string) error {
 }
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
-	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Git: m.deps.Git, Vault: m.deps.Vault, MCP: m.deps.MCP,
+	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, Git: m.deps.Git, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
 		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local()}
 }
 
@@ -75,8 +75,8 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 			s.cancel()
 			s.cancel = nil
 		}
-		for id, ch := range s.pending {
-			close(ch)
+		for id, p := range s.pending {
+			close(p.ch)
 			delete(s.pending, id)
 		}
 		s.mu.Unlock()
@@ -267,6 +267,10 @@ func (m *Manager) runTool(ctx context.Context, s *Session, env *Env, w *workspac
 	}
 	s.mu.Unlock()
 	d := Decide(mode, w, c.Name, call, granted, m.deps.Vault)
+	if call.Secret != nil && d.Effect == "allow" {
+		// the tool needs a password only the user can give
+		d = Decision{"ask", firstNonEmpty(call.Secret.Reason, "needs a password from you")}
+	}
 	actor := "agent:" + s.info.ID
 	auditBase := audit.Entry{Workspace: w.Name(), Actor: actor, Action: "tool." + c.Name, Target: call.Target,
 		Detail: map[string]any{"risk": call.Risk, "match": m.redactor.Redact(call.Match), "session": s.info.ID}}
@@ -284,13 +288,22 @@ func (m *Manager) runTool(ctx context.Context, s *Session, env *Env, w *workspac
 	case "ask":
 		approvalID := uuid.NewString()[:8]
 		ch := make(chan approval, 1)
+		pa := &pendingApproval{ch: ch}
+		req := map[string]any{"approvalId": approvalID, "callId": c.ID, "tool": c.Name, "input": inputView,
+			"risk": call.Risk, "target": call.Target, "environment": call.Environment, "reason": d.Reason,
+			"reasons": call.Reasons, "preview": m.redactor.Redact(call.Preview), "grantLabel": call.GrantLabel}
+		if call.Secret != nil {
+			pa.check = call.Secret.Check
+			if pa.check == nil {
+				pa.check = func(string) error { return nil }
+			}
+			req["secret"] = map[string]any{"label": call.Secret.Label, "rememberLabel": call.Secret.RememberLabel}
+		}
 		s.mu.Lock()
-		s.pending[approvalID] = ch
+		s.pending[approvalID] = pa
 		s.mu.Unlock()
 		s.setState("waiting_approval")
-		s.emit("approval_request", map[string]any{"approvalId": approvalID, "callId": c.ID, "tool": c.Name, "input": inputView,
-			"risk": call.Risk, "target": call.Target, "environment": call.Environment, "reason": d.Reason,
-			"reasons": call.Reasons, "preview": m.redactor.Redact(call.Preview), "grantLabel": call.GrantLabel}, true)
+		s.emit("approval_request", req, true)
 		s.save()
 		var a approval
 		var answered bool
@@ -327,6 +340,13 @@ func (m *Manager) runTool(ctx context.Context, s *Session, env *Env, w *workspac
 			s.mu.Lock()
 			s.granted[grantKey(c.Name, call)] = true
 			s.mu.Unlock()
+		}
+		if call.Secret != nil && call.Secret.Use != nil && a.secret != "" {
+			call.Secret.Use(a.secret, a.decision == "always")
+			e := auditBase
+			e.Action, e.Result = "secret.entered", "ok"
+			e.Detail = map[string]any{"for": c.Name, "label": call.Secret.Label, "remembered": a.decision == "always", "session": s.info.ID}
+			m.deps.Audit.Record(e)
 		}
 		approvedBy = "user"
 	}

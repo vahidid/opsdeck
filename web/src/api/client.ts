@@ -75,15 +75,24 @@ import type {
   Workspace,
   WorkspaceSummary,
   InstalledAgent,
+  AnsibleProject,
+  AnsibleFile,
+  AnsibleFileContent,
+  AnsibleInventory,
+  AnsibleRun,
+  AnsibleRunOptions,
 } from "./types";
 
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(status: number, message: string, code = "") {
+  /** the error response's other fields (e.g. vaultId) */
+  data: Record<string, unknown>;
+  constructor(status: number, message: string, code = "", data: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -125,7 +134,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const code = obj.code || "";
     if (res.status === 401) emit("unauthorized");
     if (res.status === 423) emit(code === "vault_uninitialized" ? "uninitialized" : "locked");
-    throw new ApiError(res.status, msg, code);
+    throw new ApiError(res.status, msg, code, obj as Record<string, unknown>);
   }
   return data as T;
 }
@@ -147,6 +156,7 @@ const H = (ws: string, host: string) => `${W(ws)}/hosts/${e(host)}`;
 const C = (ws: string, c: string) => `${W(ws)}/clusters/${e(c)}`;
 const S = (ws: string, id: string) => `${W(ws)}/sessions/${e(id)}`;
 const R = (ws: string, repo: string) => `${W(ws)}/repos/${e(repo)}`;
+const AP = (ws: string, p: string) => `${W(ws)}/ansible/p/${e(p)}`;
 const DK = (ws: string, host: string) => `${H(ws, host)}/docker`;
 const KO = (ws: string, c: string, type: string, ns: string, name: string) => `${C(ws, c)}/object/${e(type)}/${e(ns || "_")}/${e(name)}`;
 type Out = { output: string };
@@ -226,6 +236,38 @@ export const api = {
     post<{ script: string; results: ScriptResult[] }>(`${W(ws)}/scripts/${e(scope)}/${e(name)}/run`, b),
   scriptRuns: (ws: string, script = "", host = "") => arr(get<ScriptRun[]>(`${W(ws)}/script-runs${qs({ script, host })}`)),
   mcp: (ws: string) => arr(get<McpStatus[]>(`${W(ws)}/mcp`)),
+
+  // ansible
+  ansibleProjects: (ws: string) => arr(get<AnsibleProject[]>(`${W(ws)}/ansible`)),
+  ansibleProject: (ws: string, p: string) => get<AnsibleProject>(AP(ws, p)),
+  ansibleCreate: (ws: string, b: { name: string; source: string; repo?: string; path?: string; inventory?: string; environment?: string; description?: string; via?: string; scaffold?: boolean }) =>
+    post<AnsibleProject>(`${W(ws)}/ansible/projects`, b),
+  ansibleFiles: (ws: string, p: string) => get<{ files: AnsibleFile[]; truncated: boolean }>(`${AP(ws, p)}/files`),
+  ansibleFile: (ws: string, p: string, path: string) => get<AnsibleFileContent>(`${AP(ws, p)}/file${qs({ path })}`),
+  ansibleWrite: (ws: string, p: string, path: string, content: string, create = false) => put(`${AP(ws, p)}/file`, { path, content, create }),
+  ansibleDelete: (ws: string, p: string, path: string) => del(`${AP(ws, p)}/file${qs({ path })}`),
+  ansibleRename: (ws: string, p: string, from: string, to: string) => post(`${AP(ws, p)}/rename`, { from, to }),
+  ansibleSearch: (ws: string, p: string, q: string, regex = false) =>
+    arr(get<{ path: string; line: number; text: string }[]>(`${AP(ws, p)}/search${qs({ q, regex: regex ? 1 : undefined })}`)),
+  ansibleUnlock: (ws: string, p: string, b: { vaultId: string; password: string; save?: boolean; agentUse?: boolean }) =>
+    post<{ ok: boolean; checked: boolean; saved: string }>(`${AP(ws, p)}/unlock`, b),
+  ansibleLock: (ws: string, p: string, vaultId = "") => del(`${AP(ws, p)}/unlock${qs({ vaultId })}`),
+  ansibleVault: <T = { ok: boolean }>(
+    ws: string,
+    p: string,
+    action: "view" | "save" | "set" | "encrypt" | "decrypt" | "rekey" | "encrypt-string",
+    b: { path?: string; text?: string; key?: string; value?: string; name?: string; vaultId?: string; password?: string; newPassword?: string; newVaultId?: string },
+  ) => post<T>(`${AP(ws, p)}/vault/${action}`, b),
+  ansibleInventory: (ws: string, p: string, inventory: string) => get<AnsibleInventory>(`${AP(ws, p)}/inventory${qs({ inventory })}`),
+  ansibleHostVars: (ws: string, p: string, inventory: string, host: string) => get<{ vars: string }>(`${AP(ws, p)}/inventory/host${qs({ inventory, host })}`),
+  ansibleCheck: (ws: string, p: string, b: { kind: string; playbook: string; inventory?: string; limit?: string; tags?: string }) =>
+    post<{ ok: boolean; output: string; error?: string }>(`${AP(ws, p)}/check`, b),
+  ansibleRun: (ws: string, p: string, o: AnsibleRunOptions & { password?: string; vaultId?: string }) => post<AnsibleRun>(`${AP(ws, p)}/runs`, o),
+  ansibleRuns: (ws: string, project = "", limit = 100) => arr(get<AnsibleRun[]>(`${W(ws)}/ansible/runs${qs({ project, limit })}`)),
+  ansibleRunInfo: (ws: string, id: string) => get<AnsibleRun>(`${W(ws)}/ansible/runs/${e(id)}`),
+  ansibleRunCancel: (ws: string, id: string) => post(`${W(ws)}/ansible/runs/${e(id)}/cancel`),
+  ansibleRunLogUrl: (ws: string, id: string, since = "") => `${W(ws)}/ansible/runs/${e(id)}/log${qs({ since })}`,
+  ansibleRunLogTextUrl: (ws: string, id: string) => `${W(ws)}/ansible/runs/${e(id)}/log.txt`,
   trustMcp: (ws: string, name: string) => arr(post<McpStatus[]>(`${W(ws)}/mcp/${e(name)}/trust`)),
 
   // topology
@@ -442,8 +484,8 @@ export const api = {
   deleteSession: (ws: string, id: string) => del(S(ws, id)),
   sendMessage: (ws: string, id: string, text: string) => post(`${S(ws, id)}/messages`, { text }),
   interrupt: (ws: string, id: string) => post(`${S(ws, id)}/interrupt`),
-  approve: (ws: string, id: string, approvalId: string, decision: "approve" | "deny" | "always", note?: string) =>
-    post(`${S(ws, id)}/approvals/${e(approvalId)}`, { decision, note }),
+  approve: (ws: string, id: string, approvalId: string, decision: "approve" | "deny" | "always", note?: string, secret?: string) =>
+    post(`${S(ws, id)}/approvals/${e(approvalId)}`, { decision, note, secret }),
   sessionStreamUrl: (ws: string, id: string) => `${S(ws, id)}/stream`,
 
   // audit

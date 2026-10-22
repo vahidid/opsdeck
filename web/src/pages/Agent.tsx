@@ -12,6 +12,7 @@ import {
   Eye,
   FileText,
   Hand,
+  KeyRound,
   Loader2,
   MessageSquarePlus,
   MoreHorizontal,
@@ -27,7 +28,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { api, errMsg } from "../api/client";
+import { ApiError, api, errMsg } from "../api/client";
 import type { AgentEvent, ModelInfo, SessionInfo, SessionMode, SessionState } from "../api/types";
 import { useWs } from "../context/app";
 import { useOpenInTab, useTabTitle, useTabs } from "../context/tabs";
@@ -850,7 +851,7 @@ function inputSummary(tool: string, input: unknown): string {
   const o = input as Record<string, unknown>;
   const cmd = inputCommand(input);
   if (cmd) return cmd;
-  for (const k of ["path", "action", "query", "url", "name", "resource", "target"]) {
+  for (const k of ["path", "playbook", "action", "query", "url", "name", "resource", "target", "module"]) {
     if (typeof o[k] === "string" && o[k]) return `${k === "action" ? "" : k + ": "}${String(o[k])}`;
   }
   void tool;
@@ -914,10 +915,25 @@ function ToolCard({ item, ws, sid }: { item: Extract<Timeline, { kind: "tool" }>
             input !== undefined && <CodeBlock maxHeight={240}>{JSON.stringify(input, null, 2)}</CodeBlock>
           )}
           {approval && <ApprovalBox ws={ws} sid={sid} approval={approval} resolved={resolved} />}
+          {tool === "ansible_run" && !pending && !denied && <AnsibleRunLink ws={ws} output={result?.output} />}
           {result && <ToolOutput output={result.output} isError={result.isError} />}
         </div>
       )}
     </div>
+  );
+}
+
+// AnsibleRunLink opens the run's live log on the Ansible page.
+function AnsibleRunLink({ ws, output }: { ws: string; output?: string }) {
+  const id = output?.match(/^run (\S+):/m)?.[1];
+  return (
+    <Link
+      to={`/w/${encodeURIComponent(ws)}/ansible?tab=runs${id ? `&run=${encodeURIComponent(id)}` : ""}`}
+      className="inline-flex items-center gap-1.5 text-xs text-accent hover:underline"
+    >
+      <SquareArrowOutUpRight className="size-3.5" />
+      {id ? "Full log on the Ansible page" : "Follow the live log on the Ansible page"}
+    </Link>
   );
 }
 
@@ -980,15 +996,25 @@ function ApprovalBox({
   const [denyOpen, setDenyOpen] = useState(false);
   const [note, setNote] = useState("");
   const [local, setLocal] = useState<string | null>(null);
+  const [secret, setSecret] = useState("");
+  const [secretErr, setSecretErr] = useState("");
   const decision = resolved?.decision ?? local;
+  const asks = approval.secret;
 
   async function decide(d: "approve" | "deny" | "always") {
+    if (asks && d !== "deny" && !secret) {
+      setSecretErr("Enter the password, or deny.");
+      return;
+    }
     setBusy(d);
+    setSecretErr("");
     try {
-      await api.approve(ws, sid, approval.approvalId, d, d === "deny" ? note || undefined : undefined);
+      await api.approve(ws, sid, approval.approvalId, d, d === "deny" ? note || undefined : undefined, asks && d !== "deny" ? secret : undefined);
       setLocal(d);
+      setSecret("");
     } catch (e) {
-      toast.error("Decision failed", errMsg(e));
+      if (asks && e instanceof ApiError && e.code === "bad_secret") setSecretErr(e.message);
+      else toast.error("Decision failed", errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -998,10 +1024,10 @@ function ApprovalBox({
   return (
     <div className={cx("rounded-md border p-3", destructive ? "border-err/40 bg-err/5" : "border-warn/40 bg-warn/5")}>
       <div className="flex items-start gap-2">
-        <ShieldAlert className={cx("size-4 shrink-0 mt-0.5", destructive ? "text-err" : "text-warn")} />
+        {asks ? <KeyRound className="size-4 shrink-0 mt-0.5 text-warn" /> : <ShieldAlert className={cx("size-4 shrink-0 mt-0.5", destructive ? "text-err" : "text-warn")} />}
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-medium">
-            {decision ? "Approval" : "The agent wants to run this"}
+            {decision ? "Approval" : asks ? "The agent needs a password for this" : "The agent wants to run this"}
             {approval.target && (
               <>
                 {" "}
@@ -1033,16 +1059,40 @@ function ApprovalBox({
             </>
           ) : (
             <>
-              <Check className="size-3.5 text-ok" /> <span className="text-ok">{decision === "always" ? "Approved (always in this session)" : "Approved"}</span>
+              <Check className="size-3.5 text-ok" />{" "}
+              <span className="text-ok">
+                {decision === "always" ? (asks ? "Approved for this session, password kept until opsdeck locks" : "Approved (always in this session)") : "Approved"}
+              </span>
             </>
           )}
           {resolved?.note && <span className="text-muted">— {resolved.note}</span>}
         </div>
       ) : (
         <div className="mt-3 space-y-2">
+          {asks && (
+            <div>
+              <label className="text-xs text-muted">{asks.label}</label>
+              <Input
+                type="password"
+                autoFocus
+                autoComplete="off"
+                className="mt-1"
+                value={secret}
+                onChange={(e) => {
+                  setSecret(e.target.value);
+                  setSecretErr("");
+                }}
+                placeholder="Password"
+                onKeyDown={(e) => e.key === "Enter" && void decide("approve")}
+              />
+              <div className={cx("text-[11px] mt-1", secretErr ? "text-err" : "text-faint")}>
+                {secretErr || "opsdeck uses it for this action only; the agent never sees it."}
+              </div>
+            </div>
+          )}
           {denyOpen && (
             <Input dir="auto"
-              autoFocus
+              autoFocus={!asks}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Optional: tell the agent why / what to do instead"
@@ -1051,11 +1101,17 @@ function ApprovalBox({
           )}
           <div className="flex items-center gap-2">
             <Button variant="primary" size="sm" icon={<Check className="size-3.5" />} loading={busy === "approve"} disabled={!!busy} onClick={() => void decide("approve")}>
-              Approve
+              {asks ? "Unlock once" : "Approve"}
             </Button>
             {!destructive && (
-              <Button size="sm" loading={busy === "always"} disabled={!!busy} onClick={() => void decide("always")} title={approval.grantLabel || "Don't ask again for this tool and target in this session"}>
-                Always allow in session
+              <Button
+                size="sm"
+                loading={busy === "always"}
+                disabled={!!busy}
+                onClick={() => void decide("always")}
+                title={[approval.grantLabel || "Don't ask again for this tool and target in this session", asks?.rememberLabel].filter(Boolean).join(" ")}
+              >
+                {asks ? "Unlock for session" : "Always allow in session"}
               </Button>
             )}
             <div className="flex-1" />

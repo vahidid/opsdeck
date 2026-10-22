@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"opsdeck/internal/agent"
+	"opsdeck/internal/ansible"
 	"opsdeck/internal/audit"
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
@@ -48,6 +49,7 @@ type Server struct {
 	docker   *docker.Client
 	kube     *kube.Manager
 	git      *gitx.Manager
+	ansible  *ansible.Manager
 	mcp      *mcpx.Manager
 	agents   *agent.Manager
 	forwards *connect.Forwards
@@ -98,11 +100,20 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.git.Identity = func() (string, string) { g := s.cfg.Settings().Git; return g.Name, g.Email }
 	s.git.Connections = s.cfg.GitConnections
 	s.git.Vault = v
+	s.ansible = ansible.New(s.hub)
+	s.ansible.Touch = v.Touch
+	s.ansible.Redact = agent.NewRedactor(func() map[string]string {
+		out := v.SecretValues()
+		for k, label := range s.ansible.Secrets() {
+			out[k] = label
+		}
+		return out
+	}).Redact
 	s.mcp = mcpx.New(v)
 	s.mcp.Trusted = func(ws string, c workspace.MCPServer) bool { return cfg.MCPTrusted(mcpx.Hash(ws, c)) }
 	s.forwards = connect.NewForwards()
 	s.agents = agent.NewManager(agent.Deps{
-		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, Git: s.git, Vault: v, MCP: s.mcp, Audit: al,
+		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, Git: s.git, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
 		Router:   s.router,
 		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {
@@ -125,6 +136,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		// Locking ends all live access: agents, MCP servers, terminals and
 		// SSH connections, networks and port forwards.
 		s.agents.InterruptAll()
+		s.ansible.ForgetAll()
 		s.mcp.CloseAll()
 		s.forwards.StopWorkspace("")
 		s.hub.CloseAll()

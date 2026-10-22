@@ -18,6 +18,7 @@ import {
   StickyNote,
   Ticket,
   Waypoints,
+  Workflow,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -37,6 +38,7 @@ const byIcon: Record<string, (c: string) => ReactNode> = {
   kubernetes: (c) => <Boxes className={c} />,
   database: (c) => <Database className={c} />,
   cloud: (c) => <Cloud className={c} />,
+  workflow: (c) => <Workflow className={c} />,
 };
 
 const byKind: Record<string, string> = {
@@ -52,6 +54,7 @@ const byKind: Record<string, string> = {
   Panel: "panel",
   GitRemote: "git",
   KubernetesCluster: "boxes",
+  AnsibleProject: "workflow",
 };
 
 export function KindIcon({ kind, icon, className = "size-3.5" }: { kind: string; icon?: string; className?: string }) {

@@ -12,14 +12,26 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"opsdeck/internal/gitx"
 )
 
 // TestMain lets the test binary act as a fake Claude Code CLI
 // (OPSDECK_FAKE_CLAUDE=1): it reads the MCP config opsdeck passes, calls
 // opsdeck tools through the bridge and prints stream-json like `claude -p`.
+//
+// It also acts as `opsdeck socks-connect` (ssh's ProxyCommand through a VPN
+// or jump host, used by git and ansible).
 func TestMain(m *testing.M) {
 	if os.Getenv("OPSDECK_FAKE_CLAUDE") == "1" {
 		os.Exit(fakeClaude())
+	}
+	if len(os.Args) > 1 && os.Args[1] == "socks-connect" {
+		if err := gitx.SocksConnect(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }

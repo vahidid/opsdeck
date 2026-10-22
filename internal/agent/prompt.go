@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"opsdeck/internal/ansible"
 	"opsdeck/internal/topology"
 	"os"
 	"runtime"
@@ -25,6 +26,7 @@ How to work:
 - Git repositories (GitRemote; deployment manifests, compose files, Helm values, Terraform…) have working copies on this computer: use repo, repo_files, repo_write and merge_request — never git with credentials on a host. To change one: repo pull (so you start from the latest), create a branch (opsdeck/<topic>), edit with repo_write, check repo diff, commit with a clear message, push the branch, then open a merge request to the default branch describing what, why, how it was verified and how to roll back. Do not push to the default or a protected branch, or merge, unless the user asks; both always need approval. Repositories marked as documentation are listed under Documentation as repo/<name>/….
 - Topology: the workspace has an infrastructure diagram (topology tool; summary below) of zones, components with their vendors/technologies and deployments, and connections. Use it to know where which tool or technology runs before acting. When you learn something it lacks or contradicts (a new server or service, a proxy/WAF/CDN in front of something, a deployment, a connection, a changed version), tell the user and propose the change; apply it with the topology tool, which asks for approval. If the diagram is empty and you have investigated the infrastructure, offer to build it (import_inventory, then add what you found).
 - Scripts: saved scripts (listed below) are the user's tested procedures. When one fits the task — e.g. a new server was added and a script is meant for new hosts — run it with run_script instead of redoing its steps by hand: check that the host's system is supported, fill its parameters (secrets as vault:// references) and, when it is a draft, tell the user it has not been reviewed yet. When you work out a multi-step procedure on hosts that is worth repeating, offer to save it with the script tool (idempotent, parameterised, no secrets inside); it is saved as a draft for the user to review.
+- Ansible: the workspace's Ansible projects (listed below) run on this computer with ansible_run — don't install or run ansible on a host with exec. Look before you run: ansible files/read, inventory, list_hosts/list_tasks, syntax. For changes that matter, do a check run first (check=true, diff=true), then run for real; on PROTECTED environments start small with limit (one host, then the rest) and report the PLAY RECAP. inventory=workspace targets the workspace's own hosts through their VPNs and jump hosts. Change project files with ansible write/edit; in a repository project follow the Git workflow above (branch, commit, push, merge request). Encrypted content goes through ansible_vault (view, edit, set — generate=true for new passwords —, encrypt); opsdeck asks the user for the vault password on the approval card, so never ask for it in chat, and never write secrets into plain files.
 - Remember durable facts about this project (layout, conventions, gotchas) with the memory tool; never store secrets there.
 - Everything you produce belongs to the workspace: save investigation and analysis results with write_report, procedures worth repeating as runbooks with write_doc (docs/runbooks/), and evidence files (config snapshots before you change them, long command output, generated files) with save_artifact — then reference those artifacts from the report.
 - Answer in the user's language. In Persian (or any right-to-left language), put commands, paths, host names, IPs, code and identifiers in backticks or code blocks so they stay readable left-to-right inside the text.
@@ -130,6 +132,33 @@ Files holding private keys are never shown to you. To use the user's SSH key, im
 				notes = append(notes, "params: "+strings.Join(params, ", "))
 			}
 			fmt.Fprintf(&b, "- %s (%s): %s\n", s.Ref(), strings.Join(notes, "; "), d)
+		}
+	}
+	if list := ansible.Resources(w); len(list) > 0 {
+		b.WriteString("\n## Ansible projects (ansible, ansible_run, ansible_vault)\n")
+		for _, r := range list {
+			var parts []string
+			if r.Environment != "" {
+				parts = append(parts, "environment "+r.Environment)
+			}
+			if p, err := ansible.Open(w, r.Name); err != nil {
+				parts = append(parts, "problem: "+err.Error())
+			} else if p.Source == "repo" {
+				parts = append(parts, "repository "+p.Repo+", folder "+firstNonEmpty(r.Str("path"), "."))
+			} else {
+				parts = append(parts, "folder "+p.Root)
+			}
+			if inv := r.Str("inventory"); inv != "" {
+				parts = append(parts, "default inventory "+inv)
+			}
+			if r.Via != "" {
+				parts = append(parts, "hosts reached via "+r.Via)
+			}
+			fmt.Fprintf(&b, "- %s (%s)", r.Name, strings.Join(parts, "; "))
+			if r.Description != "" {
+				b.WriteString(": " + r.Description)
+			}
+			b.WriteString("\n")
 		}
 	}
 	if reports := w.RecentReports(10); len(reports) > 0 {

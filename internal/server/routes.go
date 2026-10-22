@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"opsdeck/internal/agent"
+	"opsdeck/internal/ansible"
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/extagent"
@@ -145,6 +146,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	s.connectorRoutes(mux, u)
 	s.topologyRoutes(mux, u)
 	s.scriptRoutes(mux, u)
+	s.ansibleRoutes(mux, u)
 
 	// audit
 	mux.HandleFunc("GET /api/audit", u(s.auditList))
@@ -1445,12 +1447,16 @@ func (s *Server) sessApproval(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct{ Decision, Note string }
+	var in struct{ Decision, Note, Secret string }
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
 		return
 	}
-	if err := sess.Resolve(r.PathValue("aid"), in.Decision, in.Note); err != nil {
+	if err := sess.Resolve(r.PathValue("aid"), in.Decision, in.Note, in.Secret); err != nil {
+		if errors.Is(err, agent.ErrSecretRequired) || errors.Is(err, ansible.ErrWrongPassword) {
+			writeJSON(w, http.StatusUnprocessableEntity, apiError{Error: err.Error(), Code: "bad_secret"})
+			return
+		}
 		fail(w, err)
 		return
 	}

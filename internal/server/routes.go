@@ -150,6 +150,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	// git repositories
 	s.gitRoutes(mux, u)
+	s.connectorRoutes(mux, u)
 
 	// audit
 	mux.HandleFunc("GET /api/audit", u(s.auditList))

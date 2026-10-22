@@ -69,7 +69,8 @@ type RepoSummary struct {
 	Environment string       `json:"environment,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Docs        bool         `json:"docs"`
-	Auth        string       `json:"auth"` // token | deployKey | none
+	Auth        string       `json:"auth"` // token | deployKey | connector | none
+	Connection  string       `json:"connection,omitempty"`
 	Error       string       `json:"error,omitempty"`
 	Status      *gitx.Status `json:"status,omitempty"`
 	Last        *gitx.Commit `json:"last,omitempty"`
@@ -101,6 +102,15 @@ func (s *Server) reposList(w http.ResponseWriter, r *http.Request) {
 		}
 		if repo.Remote.Scheme != "file" {
 			sum.Web = repo.Remote.Web()
+		}
+		if repo.Conn != nil && sum.Auth == "none" {
+			sum.Auth = "connector"
+		}
+		if repo.Conn != nil {
+			sum.Connection = repo.Conn.ID
+			if sum.Provider == "auto" {
+				sum.Provider = repo.Conn.Provider
+			}
 		}
 		if repo.Cloned() {
 			if st, err := repo.Status(r.Context()); err == nil {

@@ -12,7 +12,8 @@ type FieldSchema struct {
 	RefKinds    []string `json:"refKinds,omitempty"`
 	ItemTypes   []string `json:"itemTypes,omitempty"`
 	Default     string   `json:"default,omitempty"`
-	ShowIf      string   `json:"showIf,omitempty"` // only shown when this (bool) field is on
+	ShowIf      string   `json:"showIf,omitempty"`   // only shown when this (bool) field is on
+	Advanced    bool     `json:"advanced,omitempty"` // folded under "Advanced" in forms
 }
 
 // KindSchema describes a resource kind.
@@ -105,20 +106,22 @@ var Kinds = []KindSchema{
 		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}},
 	}},
 	{Kind: "GitRemote", Label: "Git repository", Category: "service", Icon: "git-branch", CanVia: true, Fields: []FieldSchema{
+		{Key: "connection", Label: "Connector", Type: "gitConnection",
+			Help: "The GitHub or GitLab account (Connectors) used for this repository. Empty: the connector whose server matches the URL, if any"},
 		{Key: "url", Label: "URL", Type: "string", Required: true, Placeholder: "https://gitlab.example.com/group/project"},
-		{Key: "branch", Label: "Default branch", Type: "string", Placeholder: "main"},
-		{Key: "provider", Label: "Hosting", Type: "select", Options: []string{"auto", "gitlab", "github"}, Default: "auto",
-			Help: "GitLab (gitlab.com or self-hosted) or GitHub (github.com or Enterprise Server). auto: github.com, hosts named gitlab, else asks the server"},
-		{Key: "token", Label: "Access token", Type: "secretRef", ItemTypes: []string{"token", "login"},
-			Help: "Used for HTTPS clone/pull/push and for merge requests. GitLab: project/personal token with api + write_repository. GitHub: fine-grained token with Contents and Pull requests read/write"},
-		{Key: "deployKey", Label: "Deploy key", Type: "secretRef", ItemTypes: []string{"ssh-key"}, Help: "For ssh:// or git@host: URLs (merge requests still need a token)"},
-		{Key: "apiUrl", Label: "API URL", Type: "string", Placeholder: "https://gitlab.example.com/api/v4", Help: "Only when the API is not at the usual place"},
-		{Key: "caCert", Label: "CA certificate (PEM)", Type: "text", Help: "For servers with a private CA"},
-		{Key: "protectedBranches", Label: "Protected branches", Type: "list", Placeholder: "main, release/*",
-			Help: "Pushing here always needs approval, like the default branch and branches protected on the server"},
+		{Key: "branch", Label: "Branch", Type: "string", Placeholder: "default branch"},
 		{Key: "docs", Label: "Use as documentation", Type: "bool", Help: "The agent and the Docs page read this repository's Markdown files"},
 		{Key: "docsPaths", Label: "Documentation paths", Type: "list", Placeholder: "README.md, docs/", ShowIf: "docs",
 			Help: "Files or folders with Markdown documentation (default: README.md and docs/)"},
+		{Key: "protectedBranches", Label: "Protected branches", Type: "list", Placeholder: "main, release/*", Advanced: true,
+			Help: "Pushing here always needs approval, like the default branch and branches protected on the server"},
+		{Key: "token", Label: "Access token", Type: "secretRef", ItemTypes: []string{"token", "login"}, Advanced: true,
+			Help: "Only without a connector, or to use a different token (e.g. a project deploy token). GitLab: api + write_repository; GitHub: Contents and Pull requests read/write"},
+		{Key: "deployKey", Label: "Deploy key", Type: "secretRef", ItemTypes: []string{"ssh-key"}, Advanced: true, Help: "For ssh:// or git@host: URLs"},
+		{Key: "provider", Label: "Hosting", Type: "select", Options: []string{"auto", "gitlab", "github"}, Default: "auto", Advanced: true,
+			Help: "auto: from the connector, github.com, hosts named gitlab, else asks the server"},
+		{Key: "apiUrl", Label: "API URL", Type: "string", Placeholder: "https://gitlab.example.com/api/v4", Advanced: true, Help: "Only when the API is not at the usual place"},
+		{Key: "caCert", Label: "CA certificate (PEM)", Type: "text", Advanced: true, Help: "For a server with a private CA (the connector's is used otherwise)"},
 	}},
 	{Kind: "Database", Label: "Database", Category: "service", Icon: "database", CanVia: true, Fields: []FieldSchema{
 		{Key: "engine", Label: "Engine", Type: "select", Options: []string{"postgres", "mysql", "mariadb", "mongodb", "redis", "elasticsearch", "other"}},

@@ -6,6 +6,7 @@ import {
   FolderInput,
   Lock,
   Moon,
+  Plug,
   Plus,
   Search,
   Settings,
@@ -120,6 +121,18 @@ export function Shell({ children }: { children: ReactNode }) {
               Workspace settings
             </NavLink>
           )}
+          <NavLink
+            to="/connectors"
+            className={({ isActive }) =>
+              cx(
+                "flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] [&_svg]:size-4",
+                isActive ? "bg-panel-3 text-fg" : "text-muted hover:text-fg hover:bg-panel-2",
+              )
+            }
+          >
+            <Plug />
+            Connectors
+          </NavLink>
           <NavLink
             to="/settings"
             className={({ isActive }) =>

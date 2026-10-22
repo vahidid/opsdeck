@@ -18,9 +18,10 @@ plus a complete local workbench that is just as useful without AI.
   with connect/disconnect, login links, logs and live status. **Single sign-on** (SAML via
   Entra ID, Okta, …) for AnyConnect, GlobalProtect and FortiGate without copying cookies:
   opsdeck shows the login and takes the session itself — see [docs/vpn.md](docs/vpn.md).
-- **Git repositories** — connect the repositories that hold your deployment files
-  (self-hosted GitLab, gitlab.com, GitHub, GitHub Enterprise) to a workspace with a vault
-  token or deploy key, also behind a VPN. Working copies live in the workspace; a
+- **Git repositories** — connect your GitHub / GitLab account once under **Connectors**
+  (github.com, GitHub Enterprise, gitlab.com, self-hosted GitLab; your `gh`/`glab` login,
+  browser sign-in or a token from a pre-filled page), then add the repositories that hold
+  your deployment files to a workspace by picking them from a list — also behind a VPN. Working copies live in the workspace; a
   Repositories page with files, editor, changes, history, branches, pull/push and merge
   requests (create, comment, merge, CI status). The agent works the same way: branch →
   edit → commit → push → merge request, with approvals on push and merge. Repositories can

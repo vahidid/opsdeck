@@ -34,6 +34,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
+	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/vpn"
@@ -49,10 +50,14 @@ type Manager struct {
 	// Identity returns the configured commit author; empty values fall back
 	// to the token owner on the hosting service.
 	Identity func() (name, email string)
+	// Connections returns the connected GitHub/GitLab accounts; Vault
+	// renews their OAuth tokens.
+	Connections func() []config.GitConnection
+	Vault       *vault.Vault
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
-	ops   map[string]string // ws/repo -> operation in progress
+	ops   map[string]string    // ws/repo -> operation in progress
 	kinds map[string][2]string // origin|setting -> kind, api base
 	users map[string]*User     // ws/repo -> token owner
 }
@@ -96,6 +101,7 @@ type Repo struct {
 	R      *workspace.Resource
 	Dir    string
 	Remote Remote
+	Conn   *config.GitConnection // connector serving it, if any
 }
 
 // Open returns the repository named name (a GitRemote resource).
@@ -108,7 +114,11 @@ func (m *Manager) Open(w *workspace.Workspace, name string) (*Repo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Repo{m: m, W: w, R: r, Dir: w.RepoDir(r.Name), Remote: rem}, nil
+	conn, err := m.connection(r, rem)
+	if err != nil {
+		return nil, err
+	}
+	return &Repo{m: m, W: w, R: r, Dir: w.RepoDir(r.Name), Remote: rem, Conn: conn}, nil
 }
 
 // Credentials lists the vault references a repository uses (its token or
@@ -118,6 +128,13 @@ func (m *Manager) Credentials(w *workspace.Workspace, r *workspace.Resource) []s
 	for _, f := range []string{"token", "deployKey"} {
 		if ref := r.Str(f); ref != "" {
 			refs = append(refs, ref)
+		}
+	}
+	if r.Str("token") == "" {
+		if rem, err := ParseRemote(r.Str("url")); err == nil {
+			if c, _ := m.connection(r, rem); c != nil {
+				refs = append(refs, c.Credential)
+			}
 		}
 	}
 	return refs
@@ -158,18 +175,55 @@ func AuthHeader(it vault.Item, field string) string {
 	return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+secret))
 }
 
-// token returns the repository's access token ("" when none is set).
+// HasToken tells whether the repository has an access token (its own or
+// its connector's).
+func (r *Repo) HasToken() bool { return r.R.Str("token") != "" || r.Conn != nil }
+
+// providerKind is the hosting software as far as known without asking.
+func (r *Repo) providerKind() string {
+	if p := r.R.Str("provider"); p != "" && p != "auto" {
+		return p
+	}
+	if r.Conn != nil {
+		return r.Conn.Provider
+	}
+	if strings.EqualFold(r.Remote.Host, "github.com") {
+		return "github"
+	}
+	return ""
+}
+
+// token returns the repository's access token: its own, else its
+// connector's ("" when it has none).
 func (r *Repo) token(ctx context.Context) (user, secret string, err error) {
 	ref := r.R.Str("token")
 	if ref == "" {
-		return "", "", nil
+		if r.Conn == nil {
+			return "", "", nil
+		}
+		secret, err := r.m.ConnSecret(ctx, *r.Conn, r.W)
+		return basicUser(r.Conn.Provider), secret, err
 	}
 	it, field, err := r.m.Hub.Credential(ctx, r.W, ref)
 	if err != nil {
 		return "", "", err
 	}
 	user, secret = Secret(it, field)
+	if it.Type != "login" && r.providerKind() == "github" {
+		user = basicUser("github")
+	}
 	return user, secret, nil
+}
+
+// caCert is the PEM of the server's private CA, if any.
+func (r *Repo) caCert() string {
+	if ca := strings.TrimSpace(r.R.Str("caCert")); ca != "" {
+		return ca
+	}
+	if r.Conn != nil {
+		return strings.TrimSpace(r.Conn.CACert)
+	}
+	return ""
 }
 
 // ----------------------------------------------------------------------------
@@ -301,7 +355,7 @@ func (r *Repo) netEnv(ctx context.Context) (*env, error) {
 			e.cfg = append(e.cfg, [2]string{"http." + origin + ".extraHeader",
 				"Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+secret))})
 		}
-		if ca := strings.TrimSpace(r.R.Str("caCert")); ca != "" {
+		if ca := r.caCert(); ca != "" {
 			p := filepath.Join(tmp, "ca.pem")
 			if err := os.WriteFile(p, []byte(ca+"\n"), 0o600); err != nil {
 				return nil, err
@@ -534,7 +588,7 @@ func (r *Repo) httpClient(ctx context.Context) (*http.Client, error) {
 	} else {
 		tr.Proxy = http.ProxyFromEnvironment
 	}
-	if ca := strings.TrimSpace(r.R.Str("caCert")); ca != "" {
+	if ca := r.caCert(); ca != "" {
 		pool, err := x509.SystemCertPool()
 		if err != nil || pool == nil {
 			pool = x509.NewCertPool()
@@ -565,6 +619,12 @@ func (r *Repo) Provider(ctx context.Context) (Provider, error) {
 		setting = ""
 	}
 	kind, base := setting, strings.TrimSuffix(r.R.Str("apiUrl"), "/")
+	if c := r.Conn; c != nil && (kind == "" || kind == c.Provider) {
+		kind = c.Provider
+		if base == "" {
+			base = APIBase(*c)
+		}
+	}
 	if base == "" || kind == "" {
 		ck := r.Remote.Origin() + "|" + setting
 		r.m.mu.Lock()

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Activity,
   BarChart3,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   FolderOpen,
   MoreHorizontal,
@@ -18,6 +20,7 @@ import type { KindField, KindSchema, PathHop, Resource } from "../api/types";
 import { NETWORK_KINDS } from "../api/types";
 import { hostAddress, useApp, useWs } from "../context/app";
 import { useTerminals } from "../context/terminals";
+import { useAsync } from "../hooks";
 import { KindIcon } from "../components/icons";
 import {
   Badge,
@@ -375,6 +378,10 @@ export function ResourceDrawer({
   const [err, setErr] = useState("");
   const [path, setPath] = useState<PathHop[] | null>(null);
   const [docs, setDocs] = useState<string[]>([]);
+  const shown = schema.fields.filter((f) => !f.showIf || r.spec[f.showIf] === true || r.spec[f.showIf] === "true");
+  const advancedSet = shown.filter((f) => f.advanced && r.spec[f.key] !== undefined && r.spec[f.key] !== "" && r.spec[f.key] !== f.default).length;
+  const [advanced, setAdvanced] = useState<boolean | null>(null);
+  const advancedOpen = advanced ?? advancedSet > 0;
 
   useEffect(() => {
     api
@@ -489,11 +496,32 @@ export function ResourceDrawer({
           </FormField>
         )}
         <div className="border-t border-line pt-3.5 space-y-3.5">
-          {schema.fields
-            .filter((f) => !f.showIf || r.spec[f.showIf] === true || r.spec[f.showIf] === "true")
+          {shown
+            .filter((f) => !f.advanced)
             .map((f) => (
               <SpecField key={f.key} f={f} value={r.spec[f.key]} onChange={(v) => setSpec(f.key, v)} ws={ws} resources={resources} />
             ))}
+          {shown.some((f) => f.advanced) && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setAdvanced((v) => !v)}
+                className="flex items-center gap-1 text-xs text-muted hover:text-fg"
+              >
+                {advancedOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} Advanced
+                {!advancedOpen && advancedSet > 0 && <span className="text-faint">({advancedSet} set)</span>}
+              </button>
+              {advancedOpen && (
+                <div className="mt-3 space-y-3.5">
+                  {shown
+                    .filter((f) => f.advanced)
+                    .map((f) => (
+                      <SpecField key={f.key} f={f} value={r.spec[f.key]} onChange={(v) => setSpec(f.key, v)} ws={ws} resources={resources} />
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="border-t border-line pt-3.5 space-y-3.5">
           <FormField label="Description">
@@ -581,6 +609,8 @@ function SpecField({
           <SecretRefPicker value={str(value)} onChange={onChange} ws={ws} itemTypes={f.itemTypes} />
         </div>
       );
+    case "gitConnection":
+      return <ConnectionField label={label} help={f.help} value={str(value)} onChange={onChange} />;
     case "resourceRef": {
       const list = resources.filter((r) => !f.refKinds?.length || f.refKinds.includes(r.kind));
       return (
@@ -633,4 +663,31 @@ function SpecField({
         </FormField>
       );
   }
+}
+
+function ConnectionField({ label, help, value, onChange }: { label: string; help?: string; value: string; onChange: (v: unknown) => void }) {
+  const conns = useAsync(() => api.gitConnections(), []);
+  return (
+    <FormField
+      label={label}
+      help={
+        <>
+          {help}{" "}
+          <Link to="/connectors" className="text-accent hover:underline">
+            Manage connectors
+          </Link>
+        </>
+      }
+    >
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Automatic (by server)</option>
+        {(conns.data ?? []).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.provider === "github" ? "GitHub" : "GitLab"} · {c.host} · {c.login}
+          </option>
+        ))}
+        {value && conns.data && !conns.data.some((c) => c.id === value) && <option value={value}>{value} (not set up here)</option>}
+      </Select>
+    </FormField>
+  );
 }

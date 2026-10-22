@@ -23,6 +23,7 @@ import { VaultPage } from "./pages/Vault";
 import { AgentPage } from "./pages/Agent";
 import { ActivityPage } from "./pages/Activity";
 import { AppSettingsPage } from "./pages/Settings";
+import { ConnectorsPage } from "./pages/Connectors";
 import { WorkspaceSettingsPage } from "./pages/WorkspaceSettings";
 
 export function App() {
@@ -39,6 +40,7 @@ export function App() {
                     <Routes>
                       <Route path="/" element={<Home />} />
                       <Route path="/settings" element={<AppSettingsPage />} />
+                      <Route path="/connectors" element={<ConnectorsPage />} />
                       <Route path="/w/:ws/*" element={<WorkspaceRoutes />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

@@ -100,7 +100,7 @@ export type Resource = {
 export type KindField = {
   key: string;
   label: string;
-  type: "string" | "number" | "bool" | "text" | "secretRef" | "list" | "select" | "resourceRef";
+  type: "string" | "number" | "bool" | "text" | "secretRef" | "list" | "select" | "resourceRef" | "gitConnection";
   required?: boolean;
   placeholder?: string;
   help?: string;
@@ -109,6 +109,7 @@ export type KindField = {
   itemTypes?: string[];
   default?: string;
   showIf?: string;
+  advanced?: boolean;
 };
 export type KindSchema = {
   kind: string;
@@ -278,7 +279,8 @@ export type RepoSummary = {
   environment?: string;
   description?: string;
   docs: boolean;
-  auth: "token" | "deployKey" | "none";
+  auth: "token" | "deployKey" | "connector" | "none";
+  connection?: string;
   error?: string;
   status?: RepoStatus;
   last?: RepoCommit;
@@ -299,5 +301,46 @@ export type MergeRequest = {
   mergeable?: string;
   checks?: "success" | "pending" | "failed" | "";
   created: string;
+  updated: string;
+};
+
+// Git connectors: GitHub / GitLab accounts connected on this computer.
+export type GitConnection = {
+  id: string;
+  provider: "github" | "gitlab";
+  url: string;
+  host: string;
+  apiUrl: string;
+  caCert: string;
+  credential: string;
+  method: "token" | "oauth" | "gh" | "glab";
+  oauthClientId: string;
+  login: string;
+  name: string;
+  created: string;
+  tokenPage: string;
+};
+export type ConnInput = { provider: "github" | "gitlab"; url: string; apiUrl?: string; caCert?: string; method?: "token" | "cli"; token?: string; clientId?: string };
+export type ConnOptions = {
+  url: string;
+  host: string;
+  tokenPage: string;
+  clientId: string;
+  oauthAppPage: string;
+  cli: { tool: string; ready: boolean; reason?: string };
+};
+export type OAuthStart = { flow: string; userCode: string; verificationUri: string; verificationUriComplete?: string; expiresIn: number };
+export type OAuthStatus = { status: "pending" | "done" | "error"; error: string; connection?: GitConnection };
+export type RemoteRepo = {
+  fullName: string;
+  name: string;
+  description: string;
+  httpUrl: string;
+  sshUrl: string;
+  webUrl: string;
+  defaultBranch: string;
+  private: boolean;
+  archived: boolean;
+  canPush: boolean;
   updated: string;
 };

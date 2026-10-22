@@ -30,26 +30,23 @@ import {
   X,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { MergeRequest, RepoBranch, RepoChange, RepoStatus, RepoSummary, Resource } from "../api/types";
+import type { MergeRequest, RemoteRepo, RepoBranch, RepoChange, RepoStatus, RepoSummary, Resource } from "../api/types";
+import { NETWORK_KINDS } from "../api/types";
 import { useApp, useWs } from "../context/app";
 import { useTabTitle } from "../context/tabs";
-import { Badge, Button, EmptyState, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, SearchInput, Segmented, Tabs, Textarea, Toggle, cx } from "../components/ui";
+import { Badge, Button, EmptyState, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, SearchInput, Segmented, Select, Tabs, Textarea, Toggle, cx } from "../components/ui";
+import { GitHubMark, GitLabMark, ProviderMark } from "../components/brand";
+import { ConnectModal } from "./Connectors";
 import type { Tone } from "../components/ui";
 import { MenuItem, Modal, Popover, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
 import { useAsync, useInterval } from "../hooks";
-import { timeAgo } from "../lib/format";
+import { slugify, timeAgo } from "../lib/format";
 import { ResourceDrawer } from "./Resources";
 
 type Preset = { id: string; label: string; spec: Record<string, unknown>; hint: string };
 
-export const GIT_PRESETS: Preset[] = [
-  { id: "gitlab", label: "GitLab (self-hosted)", spec: { provider: "gitlab" }, hint: "your own GitLab server" },
-  { id: "gitlab-com", label: "GitLab.com", spec: { provider: "gitlab", url: "https://gitlab.com/" }, hint: "" },
-  { id: "github", label: "GitHub", spec: { provider: "github", url: "https://github.com/" }, hint: "" },
-  { id: "ghes", label: "GitHub Enterprise Server", spec: { provider: "github" }, hint: "self-hosted GitHub" },
-  { id: "other", label: "Other Git server", spec: { provider: "auto" }, hint: "pull & push only" },
-];
+export const GIT_PRESETS: Preset[] = [{ id: "url", label: "By URL", spec: {}, hint: "" }];
 
 const PROVIDER_LABEL: Record<string, string> = { gitlab: "GitLab", github: "GitHub", auto: "Git" };
 
@@ -75,7 +72,7 @@ function RepoList() {
   const confirm = useConfirm();
   const repos = useAsync(() => api.repos(ws), [ws, resources.length]);
   useInterval(() => void repos.reload(), 15000);
-  const [menu, setMenu] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [edit, setEdit] = useState<{ resource: Resource | null; preset?: Preset } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const schema = kindMap["GitRemote"];
@@ -130,25 +127,13 @@ function RepoList() {
 
   const list = repos.data ?? [];
   const newMenu = (
-    <div className="relative">
-      <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setMenu((v) => !v)}>
-        Connect repository
+    <div className="flex items-center gap-2">
+      <Link to="/connectors" className="text-xs text-muted hover:text-fg inline-flex items-center gap-1">
+        <Plug className="size-3.5" /> Connectors
+      </Link>
+      <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
+        Add repository
       </Button>
-      <Popover open={menu} onClose={() => setMenu(false)} className="right-0 mt-1 w-72">
-        {GIT_PRESETS.map((p) => (
-          <MenuItem
-            key={p.id}
-            icon={<GitBranch />}
-            hint={p.hint}
-            onClick={() => {
-              setMenu(false);
-              setEdit({ resource: null, preset: p });
-            }}
-          >
-            {p.label}
-          </MenuItem>
-        ))}
-      </Popover>
     </div>
   );
 
@@ -163,20 +148,16 @@ function RepoList() {
       <div className="px-5 pb-8 space-y-3 max-w-5xl">
         {repos.error && <ErrorBox error={repos.error} onRetry={() => void repos.reload()} />}
         {repos.data && list.length === 0 && (
-          <EmptyState icon={<GitBranch />} title="No repositories yet">
-            Connect the repositories that hold your deployment files (Kubernetes manifests, compose files, Helm values, Terraform…).
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-left">
-              {GIT_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setEdit({ resource: null, preset: p })}
-                  className="rounded-md border border-line bg-panel-2 hover:border-line-strong px-3 py-2"
-                >
-                  <div className="text-[13px] font-medium">{p.label}</div>
-                  <div className="text-[11px] text-faint">{p.hint || "token or deploy key"}</div>
-                </button>
-              ))}
-            </div>
+          <EmptyState
+            icon={<GitBranch />}
+            title="No repositories yet"
+            action={
+              <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
+                Add repository
+              </Button>
+            }
+          >
+            Add the repositories that hold your deployment files (Kubernetes manifests, compose files, Helm values, Terraform…) from your GitHub or GitLab account.
           </EmptyState>
         )}
         {list.map((r) => {
@@ -191,7 +172,10 @@ function RepoList() {
                     <Link to={encodeURIComponent(r.name)} className="text-[14px] font-semibold hover:text-accent truncate">
                       {r.name}
                     </Link>
-                    <Badge tone="neutral">{providerOf(r)}</Badge>
+                    <Badge tone="neutral">
+                      {(r.provider === "github" || r.provider === "gitlab") && <ProviderMark provider={r.provider} className="size-3" />}
+                      {providerOf(r)}
+                    </Badge>
                     {r.environment && <Badge tone="info">{r.environment}</Badge>}
                     {r.docs && (
                       <Badge tone="accent">
@@ -199,7 +183,11 @@ function RepoList() {
                       </Badge>
                     )}
                     {r.via && <Badge tone="neutral">via {r.via}</Badge>}
-                    {r.auth === "none" && <Badge tone="warn">no credential</Badge>}
+                    {r.auth === "none" && (
+                      <Badge tone="warn" title="No connector for this server and no token: public repositories only">
+                        no account
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-[11.5px] text-faint font-mono truncate flex items-center gap-1">
                     {r.web ? (
@@ -261,12 +249,26 @@ function RepoList() {
           );
         })}
       </div>
+      {adding && (
+        <AddRepoModal
+          onClose={() => setAdding(false)}
+          onManual={() => {
+            setAdding(false);
+            setEdit({ resource: null, preset: GIT_PRESETS[GIT_PRESETS.length - 1] });
+          }}
+          onAdded={async () => {
+            setAdding(false);
+            await reloadResources();
+            await repos.reload();
+          }}
+        />
+      )}
       {edit && schema && (
         <ResourceDrawer
           schema={schema}
           resource={edit.resource}
           initial={edit.preset ? { spec: edit.preset.spec } : undefined}
-          title={edit.preset ? `Connect ${edit.preset.label} repository` : undefined}
+          title={edit.preset ? "Add a repository by URL" : undefined}
           onClose={() => setEdit(null)}
           onSaved={async () => {
             setEdit(null);
@@ -1394,6 +1396,231 @@ function NewMRModal({ ws, repo, source, target, onClose, onCreated }: { ws: stri
           <Toggle checked={draft} onChange={setDraft} label={<span className="text-xs">Draft</span>} />
           <Toggle checked={rm} onChange={setRm} label={<span className="text-xs">Delete the branch after merging (GitLab)</span>} />
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Adding a repository: pick it from a connected account.
+
+function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onAdded: () => void; onManual: () => void }) {
+  const { name: ws, workspace, resources } = useWs();
+  const toast = useToast();
+  const conns = useAsync(() => api.gitConnections(), []);
+  const [connId, setConnId] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [via, setVia] = useState("");
+  const [q, setQ] = useState("");
+  const [dq, setDq] = useState("");
+  const [pick, setPick] = useState<RemoteRepo | null>(null);
+  const [name, setName] = useState("");
+  const [env, setEnv] = useState("");
+  const [docs, setDocs] = useState(false);
+  const [clone, setClone] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!connId && conns.data?.length) setConnId(conns.data[0].id);
+  }, [conns.data, connId]);
+  useEffect(() => {
+    const t = setTimeout(() => setDq(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  const list = useAsync(() => (connId ? api.gitAccountRepos(ws, connId, dq, via) : Promise.resolve([])), [ws, connId, dq, via]);
+  const existing = resources.filter((r) => r.kind === "GitRemote");
+  const added = (r: RemoteRepo) => existing.some((x) => [r.httpUrl, r.sshUrl, r.webUrl].includes(String(x.spec.url ?? "").replace(/\/$/, "")));
+  const hops = resources.filter((r) => NETWORK_KINDS.includes(r.kind) || r.kind === "Host");
+  const conn = conns.data?.find((c) => c.id === connId);
+
+  function choose(r: RemoteRepo) {
+    setPick(r);
+    let n = slugify(r.name) || "repo";
+    const taken = new Set(existing.map((x) => x.name));
+    for (let i = 2; taken.has(n); i++) n = `${slugify(r.name)}-${i}`;
+    setName(n);
+    setDocs(/doc|wiki|runbook|handbook/i.test(r.fullName));
+  }
+
+  async function add() {
+    if (!pick || !conn) return;
+    setBusy(true);
+    try {
+      const spec: Record<string, unknown> = { connection: conn.id, url: pick.httpUrl };
+      if (docs) spec.docs = true;
+      await api.createResource(ws, { kind: "GitRemote", name, environment: env || undefined, via: via || undefined, description: pick.description || undefined, spec } as Resource);
+      if (clone) {
+        try {
+          await api.repoClone(ws, name);
+        } catch (e) {
+          toast.error(`Added ${name}, but cloning failed`, errMsg(e));
+          onAdded();
+          return;
+        }
+      }
+      toast.success(`Added ${name}`, clone ? `cloned into repos/${name}` : pick.fullName);
+      onAdded();
+    } catch (e) {
+      toast.error("Could not add the repository", errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (conns.data && conns.data.length === 0) {
+    return connecting ? (
+      <ConnectModal
+        onClose={() => setConnecting(false)}
+        onConnected={(c) => {
+          setConnecting(false);
+          setConnId(c.id);
+          void conns.reload();
+        }}
+      />
+    ) : (
+      <Modal open onClose={onClose} title="Add a repository" icon={<GitBranch />} width={520}>
+        <div className="text-center py-4 space-y-3">
+          <div className="flex justify-center gap-3 text-muted">
+            <GitHubMark className="size-7" />
+            <GitLabMark className="size-7" />
+          </div>
+          <div className="text-[13px]">Connect your GitHub or GitLab account first: you then pick repositories from a list.</div>
+          <Button variant="primary" icon={<Plug className="size-4" />} onClick={() => setConnecting(true)}>
+            Connect an account
+          </Button>
+          <div>
+            <button className="text-xs text-muted hover:text-fg underline" onClick={onManual}>
+              or add one by URL
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+  if (connecting) {
+    return (
+      <ConnectModal
+        onClose={() => setConnecting(false)}
+        onConnected={(c) => {
+          setConnecting(false);
+          setConnId(c.id);
+          void conns.reload();
+        }}
+      />
+    );
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add a repository"
+      icon={<GitBranch />}
+      width={680}
+      footer={
+        <>
+          <button className="me-auto text-xs text-muted hover:text-fg underline" onClick={onManual}>
+            Add by URL instead
+          </button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!pick || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name)} loading={busy} onClick={() => void add()}>
+            {clone ? "Add and clone" : "Add"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-end gap-2">
+          <FormField label="Account">
+            <Select
+              value={connId}
+              onChange={(e) => {
+                if (e.target.value === "__new") setConnecting(true);
+                else {
+                  setConnId(e.target.value);
+                  setPick(null);
+                }
+              }}
+            >
+              {(conns.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.provider === "github" ? "GitHub" : "GitLab"} · {c.host} · {c.login}
+                </option>
+              ))}
+              <option value="__new">+ Connect another account…</option>
+            </Select>
+          </FormField>
+          {hops.length > 0 && (
+            <FormField label="Reach the server through">
+              <Select value={via} onChange={(e) => setVia(e.target.value)}>
+                <option value="">direct</option>
+                {hops.map((h) => {
+                  const ref = `${h.kind === "Host" ? "host" : "network"}/${h.name}`;
+                  return (
+                    <option key={ref} value={ref}>
+                      {ref}
+                    </option>
+                  );
+                })}
+              </Select>
+            </FormField>
+          )}
+        </div>
+        <SearchInput value={q} onChange={setQ} placeholder="Search your repositories…" autoFocus />
+        <div className="rounded-md border border-line max-h-72 overflow-y-auto">
+          {list.loading && !list.data && <Loading />}
+          {list.error && <div className="p-3 text-xs text-err whitespace-pre-wrap">{list.error}</div>}
+          {list.data?.length === 0 && <div className="p-4 text-xs text-faint text-center">No repositories{dq ? ` matching “${dq}”` : ""}.</div>}
+          {(list.data ?? []).map((r) => {
+            const isAdded = added(r);
+            return (
+              <button
+                key={r.fullName}
+                disabled={isAdded}
+                onClick={() => choose(r)}
+                className={cx(
+                  "w-full flex items-center gap-3 px-3 py-2 text-left border-b border-line last:border-0",
+                  pick?.fullName === r.fullName ? "bg-accent/10" : "hover:bg-panel-2",
+                  isAdded && "opacity-50",
+                )}
+              >
+                <ProviderMark provider={conn?.provider ?? "gitlab"} className="size-4 text-muted shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-mono text-[12.5px] truncate">{r.fullName}</span>
+                  <span className="block text-[11px] text-faint truncate">{r.description || "—"}</span>
+                </span>
+                {r.private && <Badge tone="neutral">private</Badge>}
+                {!r.canPush && <Badge tone="warn">read-only</Badge>}
+                {isAdded ? <Badge tone="ok">added</Badge> : <span className="text-[11px] text-faint whitespace-nowrap">{timeAgo(r.updated)}</span>}
+              </button>
+            );
+          })}
+        </div>
+        {pick && (
+          <div className="rounded-md border border-line bg-panel-2 p-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Name in this workspace" help={<span className="font-mono">repos/{name}</span>}>
+                <Input mono value={name} onChange={(e) => setName(e.target.value)} />
+              </FormField>
+              <FormField label="Environment" help="Protected environments make every push ask.">
+                <Select value={env} onChange={(e) => setEnv(e.target.value)}>
+                  <option value="">—</option>
+                  {(workspace?.environments ?? []).map((e) => (
+                    <option key={e.name} value={e.name}>
+                      {e.name}
+                      {e.protected ? " (protected)" : ""}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+            <div className="flex items-center gap-5">
+              <Toggle checked={docs} onChange={setDocs} label={<span className="text-xs">Use as documentation</span>} />
+              <Toggle checked={clone} onChange={setClone} label={<span className="text-xs">Clone now</span>} />
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

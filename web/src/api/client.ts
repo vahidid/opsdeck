@@ -2,6 +2,12 @@ import type {
   LogLine,
   VpnDrivers,
   MergeRequest,
+  GitConnection,
+  ConnInput,
+  ConnOptions,
+  OAuthStart,
+  OAuthStatus,
+  RemoteRepo,
   RepoBranch,
   RepoCheck,
   RepoCommit,
@@ -179,6 +185,17 @@ export const api = {
   skills: (ws: string) => arr(get<Skill[]>(`${W(ws)}/skills`)),
   mcp: (ws: string) => arr(get<McpStatus[]>(`${W(ws)}/mcp`)),
   trustMcp: (ws: string, name: string) => arr(post<McpStatus[]>(`${W(ws)}/mcp/${e(name)}/trust`)),
+
+  // git connectors
+  gitConnections: () => arr(get<GitConnection[]>("/api/git/connections")),
+  gitConnOptions: (c: ConnInput) => post<ConnOptions>("/api/git/connections/options", c),
+  gitConnect: (c: ConnInput) => post<GitConnection>("/api/git/connections", c),
+  gitConnTest: (id: string) => post<{ ok: boolean; login?: string; name?: string; error?: string }>(`/api/git/connections/${e(id)}/test`),
+  gitDisconnect: (id: string) => del(`/api/git/connections/${e(id)}`),
+  gitOAuthStart: (c: ConnInput) => post<OAuthStart>("/api/git/oauth", c),
+  gitOAuthStatus: (flow: string) => get<OAuthStatus>(`/api/git/oauth/${e(flow)}`),
+  gitOAuthCancel: (flow: string) => del(`/api/git/oauth/${e(flow)}`),
+  gitAccountRepos: (ws: string, id: string, q = "", via = "") => arr(get<RemoteRepo[]>(`${W(ws)}/git/connections/${e(id)}/repos${qs({ q, via })}`)),
 
   // git repositories
   repos: (ws: string) => arr(get<RepoSummary[]>(`${W(ws)}/repos`)),

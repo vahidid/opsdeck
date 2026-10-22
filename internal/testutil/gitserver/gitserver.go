@@ -78,6 +78,12 @@ type Server struct {
 	mu    sync.Mutex
 	MRs   []map[string]any
 	Notes []string
+
+	// OAuth device sign-in (GitLab application "app1"): polls before the
+	// user approves, refreshes seen.
+	Polls, Refreshes int
+	// TokenTTL is the lifetime (seconds) of OAuth access tokens.
+	TokenTTL int
 }
 
 // New makes a root with acme/deploy.git.
@@ -92,6 +98,10 @@ func (g *Server) Handler(t testing.TB) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/v4/") {
 			g.api(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/oauth/") {
+			g.oauth(w, r)
 			return
 		}
 		if _, pass, ok := r.BasicAuth(); !ok || pass != Token {
@@ -132,6 +142,30 @@ func (g *Server) api(w http.ResponseWriter, r *http.Request) {
 	switch rest, isMR := strings.CutPrefix(path, proj+"/merge_requests/"); {
 	case path == "/api/v4/user":
 		fmt.Fprint(w, `{"username":"deploy-bot","name":"Deploy Bot","email":"bot@example.com"}`)
+	case path == "/api/v4/projects":
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		base := scheme + "://" + r.Host
+		list := []map[string]any{
+			{"path_with_namespace": "acme/deploy", "name": "deploy", "description": "Kubernetes manifests", "http_url_to_repo": base + "/acme/deploy.git",
+				"ssh_url_to_repo": "git@" + r.Host + ":acme/deploy.git", "web_url": base + "/acme/deploy", "default_branch": "main", "visibility": "private",
+				"last_activity_at": "2026-10-22T09:00:00Z", "permissions": map[string]any{"project_access": map[string]any{"access_level": 40}}},
+			{"path_with_namespace": "acme/website", "name": "website", "description": "Marketing site", "http_url_to_repo": base + "/acme/website.git",
+				"web_url": base + "/acme/website", "default_branch": "main", "visibility": "internal", "last_activity_at": "2026-10-01T09:00:00Z",
+				"permissions": map[string]any{"project_access": map[string]any{"access_level": 20}}},
+		}
+		if q := r.URL.Query().Get("search"); q != "" {
+			out := []map[string]any{}
+			for _, p := range list {
+				if strings.Contains(p["path_with_namespace"].(string), q) {
+					out = append(out, p)
+				}
+			}
+			list = out
+		}
+		json.NewEncoder(w).Encode(list)
 	case path == proj:
 		fmt.Fprint(w, `{"default_branch":"main","web_url":"https://gitlab.example/acme/deploy","permissions":{"project_access":{"access_level":40}}}`)
 	case path == proj+"/repository/branches/main":
@@ -190,4 +224,53 @@ func (g *Server) merge(src, dst string) {
 	run("clone", "-q", "-b", dst, g.Bare, ".")
 	run("merge", "-q", "--no-ff", "-m", "Merge branch '"+src+"'", "origin/"+src)
 	run("push", "-q", "origin", dst)
+}
+
+func (g *Server) oauth(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	w.Header().Set("Content-Type", "application/json")
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if r.PostForm.Get("client_id") != "app1" {
+		w.WriteHeader(401)
+		fmt.Fprint(w, `{"error":"invalid_client","error_description":"unknown application"}`)
+		return
+	}
+	ttl := g.TokenTTL
+	if ttl == 0 {
+		ttl = 7200
+	}
+	switch r.URL.Path {
+	case "/oauth/authorize_device":
+		if !strings.Contains(r.PostForm.Get("scope"), "api") {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"invalid_scope"}`)
+			return
+		}
+		fmt.Fprint(w, `{"device_code":"dc-1","user_code":"WDJB-MJHT","verification_uri":"https://`+r.Host+`/oauth/device","verification_uri_complete":"https://`+r.Host+`/oauth/device?user_code=WDJB-MJHT","expires_in":300,"interval":1}`)
+	case "/oauth/token":
+		switch r.PostForm.Get("grant_type") {
+		case "urn:ietf:params:oauth:grant-type:device_code":
+			g.Polls++
+			if g.Polls < 2 {
+				w.WriteHeader(400)
+				fmt.Fprint(w, `{"error":"authorization_pending"}`)
+				return
+			}
+			fmt.Fprintf(w, `{"access_token":%q,"refresh_token":"refresh-1","expires_in":%d,"token_type":"Bearer"}`, Token, ttl)
+		case "refresh_token":
+			if !strings.HasPrefix(r.PostForm.Get("refresh_token"), "refresh-") {
+				w.WriteHeader(400)
+				fmt.Fprint(w, `{"error":"invalid_grant"}`)
+				return
+			}
+			g.Refreshes++
+			fmt.Fprintf(w, `{"access_token":%q,"refresh_token":"refresh-%d","expires_in":7200}`, Token, g.Refreshes+1)
+		default:
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"unsupported_grant_type"}`)
+		}
+	default:
+		http.NotFound(w, r)
+	}
 }

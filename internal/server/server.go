@@ -96,6 +96,8 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.kube = kube.New(s.hub, v)
 	s.git = gitx.New(s.hub)
 	s.git.Identity = func() (string, string) { g := s.cfg.Settings().Git; return g.Name, g.Email }
+	s.git.Connections = s.cfg.GitConnections
+	s.git.Vault = v
 	s.mcp = mcpx.New(v)
 	s.mcp.Trusted = func(ws string, c workspace.MCPServer) bool { return cfg.MCPTrusted(mcpx.Hash(ws, c)) }
 	s.forwards = connect.NewForwards()

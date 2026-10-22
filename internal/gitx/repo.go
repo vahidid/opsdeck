@@ -785,7 +785,7 @@ func (r *Repo) identity(ctx context.Context, o CommitOptions) (string, string) {
 }
 
 func (r *Repo) tokenUser(ctx context.Context) *User {
-	if r.R.Str("token") == "" {
+	if !r.HasToken() {
 		return nil
 	}
 	r.m.mu.Lock()
@@ -1010,7 +1010,7 @@ func (r *Repo) ProtectedBranch(ctx context.Context, branch string) (bool, string
 			return true, "listed as protected on the repository"
 		}
 	}
-	if r.R.Str("token") != "" && r.Remote.Scheme != "file" {
+	if r.HasToken() && r.Remote.Scheme != "file" {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		if p, err := r.Provider(ctx); err == nil {

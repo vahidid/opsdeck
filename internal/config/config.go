@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -70,6 +71,26 @@ type file struct {
 	// TrustedMCP holds hashes of MCP server definitions the user approved
 	// on this machine; others (e.g. from a cloned workspace) never start.
 	TrustedMCP []string `yaml:"trustedMcp,omitempty"`
+	// GitConnections are the GitHub/GitLab accounts connected on this
+	// machine (connectors); their tokens live in the vault.
+	GitConnections []GitConnection `yaml:"gitConnections,omitempty"`
+}
+
+// GitConnection is a connected GitHub or GitLab account.
+type GitConnection struct {
+	ID       string `yaml:"id" json:"id"`
+	Provider string `yaml:"provider" json:"provider"` // github | gitlab
+	URL      string `yaml:"url" json:"url"`           // web root: https://github.com, https://gitlab.example.com
+	APIURL   string `yaml:"apiUrl,omitempty" json:"apiUrl"`
+	CACert   string `yaml:"caCert,omitempty" json:"caCert"`
+	// Credential is the vault item with the token (vault://global/…).
+	Credential string `yaml:"credential" json:"credential"`
+	Method     string `yaml:"method" json:"method"` // token | oauth | gh | glab
+	// OAuthClientID is the OAuth application used to sign in (refreshes).
+	OAuthClientID string    `yaml:"oauthClientId,omitempty" json:"oauthClientId"`
+	Login         string    `yaml:"login,omitempty" json:"login"`
+	Name          string    `yaml:"name,omitempty" json:"name"`
+	Created       time.Time `yaml:"created" json:"created"`
 }
 
 // Store is safe for concurrent use.
@@ -137,6 +158,39 @@ func (s *Store) SetExternalWorkspaces(paths []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.f.ExternalWorkspaces = paths
+	return s.save()
+}
+
+func (s *Store) GitConnections() []GitConnection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]GitConnection{}, s.f.GitConnections...)
+}
+
+// PutGitConnection adds c or replaces the connection with its ID.
+func (s *Store) PutGitConnection(c GitConnection) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, x := range s.f.GitConnections {
+		if x.ID == c.ID {
+			s.f.GitConnections[i] = c
+			return s.save()
+		}
+	}
+	s.f.GitConnections = append(s.f.GitConnections, c)
+	return s.save()
+}
+
+func (s *Store) DeleteGitConnection(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.f.GitConnections[:0]
+	for _, x := range s.f.GitConnections {
+		if x.ID != id {
+			out = append(out, x)
+		}
+	}
+	s.f.GitConnections = out
 	return s.save()
 }
 

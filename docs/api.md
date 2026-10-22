@@ -152,6 +152,19 @@ as `git.*`.
 | GET | `/{repo}/mrs/{id}` | one merge request (GitLab iid / GitHub PR number) |
 | POST | `/{repo}/mrs/{id}/comment`, `/{repo}/mrs/{id}/merge` | `{body}` / `{method: merge\|squash\|rebase, removeSource}` |
 
+### Connectors
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/git/connections` | → `[{id, provider, url, host, apiUrl, caCert, credential, method: token\|oauth\|gh\|glab, oauthClientId, login, name, created, tokenPage}]` |
+| POST | `/api/git/connections/options` | `{provider, url}` → `{url, host, tokenPage, clientId, oauthAppPage, cli: {tool, ready, reason}}` |
+| POST | `/api/git/connections` | `{provider: github\|gitlab, url, apiUrl?, caCert?, method: token\|cli, token?}` → connector (token checked against the account; same server = replaced) |
+| POST | `/api/git/connections/{id}/test` | → `{ok, login, name, error}` |
+| DELETE | `/api/git/connections/{id}` | also deletes its vault item |
+| POST | `/api/git/oauth` | `{provider, url, caCert?, clientId}` → `{flow, userCode, verificationUri, verificationUriComplete, expiresIn}`; opsdeck polls the provider |
+| GET / DELETE | `/api/git/oauth/{flow}` | → `{status: pending\|done\|error, error, connection}` / cancel |
+| GET | `/api/workspaces/{ws}/git/connections/{id}/repos?q=&via=` | → `[{fullName, name, description, httpUrl, sshUrl, webUrl, defaultBranch, private, archived, canPush, updated}]` (through a workspace network with `via`) |
+
 Documentation repositories appear in `GET /api/workspaces/{ws}/docs` as
 `repo/<name>/<path>` (read-only).
 

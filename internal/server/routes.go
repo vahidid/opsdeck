@@ -88,6 +88,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/memory", u(s.memoryGet))
 	mux.HandleFunc("PUT /api/workspaces/{ws}/memory", u(s.memoryPut))
 	mux.HandleFunc("GET /api/workspaces/{ws}/skills", u(s.skillsList))
+	mux.HandleFunc("POST /api/workspaces/{ws}/skills/{name}/copy", u(s.skillCopy))
+	mux.HandleFunc("GET /api/skills/library", u(s.skillLibrary))
+	mux.HandleFunc("GET /api/skills/library/{name}", u(s.skillLibraryFile))
 	mux.HandleFunc("GET /api/workspaces/{ws}/mcp", u(s.mcpStatus))
 	mux.HandleFunc("POST /api/workspaces/{ws}/mcp/{name}/trust", u(s.mcpTrust))
 
@@ -151,6 +154,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// git repositories
 	s.gitRoutes(mux, u)
 	s.connectorRoutes(mux, u)
+	s.topologyRoutes(mux, u)
 
 	// audit
 	mux.HandleFunc("GET /api/audit", u(s.auditList))
@@ -1000,7 +1004,7 @@ func (s *Server) skillsList(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, 200, ws.Skills())
+	writeJSON(w, 200, agent.AllSkills(ws))
 }
 
 func (s *Server) mcpStatus(w http.ResponseWriter, r *http.Request) {

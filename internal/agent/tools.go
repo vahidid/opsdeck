@@ -26,6 +26,7 @@ import (
 	"opsdeck/internal/kube"
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
+	"opsdeck/internal/skills"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/workspace"
 )
@@ -226,7 +227,7 @@ func Tools() []Tool {
 		toolInventory(), toolReadDoc(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
 		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
-		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(),
+		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(), toolTopology(),
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 	}
 }
@@ -369,22 +370,63 @@ func toolReadDoc() Tool {
 	}
 }
 
+// AllSkills is the workspace's skills plus the built-in library (a
+// workspace skill with the same name wins).
+func AllSkills(w *workspace.Workspace) []skills.Skill {
+	out := w.Skills()
+	if w.Settings.NoBuiltinSkills {
+		return out
+	}
+	own := map[string]bool{}
+	for _, s := range out {
+		own[s.Name] = true
+	}
+	for _, s := range skills.Library() {
+		if !own[s.Name] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func toolLoadSkill() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "load_skill", Description: "Load the full instructions of a workspace skill (a packaged procedure listed in the system prompt) before following it.",
-			Schema: obj(map[string]any{"name": str("Skill name")}, "name")},
+		Def: llm.Tool{Name: "load_skill", Description: "Load a skill (a packaged procedure listed in the system prompt: the workspace's own or opsdeck's built-in library) before following it. Skills may reference supporting files (references/…, assets/… templates, scripts/…): load them with file.",
+			Schema: obj(map[string]any{"name": str("Skill name"), "file": str("Optional supporting file of the skill, e.g. references/details.md")}, "name")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
-			var in struct{ Name string }
+			var in struct{ Name, File string }
 			if err := decode(input, &in); err != nil {
 				return nil, err
 			}
 			return &Call{Risk: RiskRead, Target: "skill/" + in.Name, Run: func(ctx context.Context) (string, error) {
-				for _, s := range env.WS.Skills() {
-					if s.Name == in.Name {
-						return env.WS.ReadDoc(s.Path)
+				var names []string
+				for _, s := range AllSkills(env.WS) {
+					names = append(names, s.Name)
+					if s.Name != in.Name {
+						continue
 					}
+					var body string
+					var err error
+					switch {
+					case s.Builtin:
+						body, err = skills.Read(s.Name, in.File)
+					case in.File != "" && in.File != "SKILL.md":
+						body, err = env.WS.SkillFile(s, in.File)
+					default:
+						body, err = env.WS.ReadDoc(s.Path)
+					}
+					if err != nil {
+						return "", err
+					}
+					if in.File == "" && len(s.Files) > 0 {
+						body += "\n\n---\nSupporting files of this skill (load with load_skill name=" + s.Name + " file=<path>): " + strings.Join(s.Files, ", ")
+					}
+					if in.File == "" && s.Builtin {
+						body += "\n\n(opsdeck note: built-in skill from " + s.Source + ", " + s.License + ". Adapt it to this workspace: run commands with exec on its hosts or local_exec on this computer, change Git repositories with repo/repo_write, and keep the workspace's approval and environment rules.)"
+					}
+					return truncate(body, 60000), nil
 				}
-				return "", fmt.Errorf("skill %q not found", in.Name)
+				return "", fmt.Errorf("skill %q not found; available: %s", in.Name, strings.Join(names, ", "))
 			}}, nil
 		},
 	}

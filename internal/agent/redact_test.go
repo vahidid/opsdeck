@@ -37,3 +37,13 @@ func TestTruncateKeepsCharacters(t *testing.T) {
 		t.Fatal("truncate split a character")
 	}
 }
+
+func TestTopoLoosen(t *testing.T) {
+	var l struct {
+		Port  string   `json:"port"`
+		Ports []string `json:"ports"`
+	}
+	if err := mergeJSON(&l, []byte(`{"port": 443, "ports": [8080, "9090"]}`)); err != nil || l.Port != "443" || len(l.Ports) != 2 || l.Ports[0] != "8080" {
+		t.Fatalf("%+v %v", l, err)
+	}
+}

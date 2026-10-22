@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"opsdeck/internal/topology"
 	"os"
 	"runtime"
 	"strings"
@@ -22,6 +23,7 @@ How to work:
 - When a step fails, read the error and diagnose before retrying. Don't repeat the same failing command.
 - Networks: resources with "via network/<name>" bring that VPN up automatically when used. If the documentation, a resource description or the memory says something is only reachable over a VPN that is not modeled as via — or a connection times out and a VPN of this workspace could route there — connect it with the vpn tool first, then retry. Check vpn log when a VPN fails. If a VPN waits for a login, give the user the link. Prefer userspace VPNs; system-mode VPNs change this computer's routes and need approval.
 - Git repositories (GitRemote; deployment manifests, compose files, Helm values, Terraform…) have working copies on this computer: use repo, repo_files, repo_write and merge_request — never git with credentials on a host. To change one: repo pull (so you start from the latest), create a branch (opsdeck/<topic>), edit with repo_write, check repo diff, commit with a clear message, push the branch, then open a merge request to the default branch describing what, why, how it was verified and how to roll back. Do not push to the default or a protected branch, or merge, unless the user asks; both always need approval. Repositories marked as documentation are listed under Documentation as repo/<name>/….
+- Topology: the workspace has an infrastructure diagram (topology tool; summary below) of zones, components with their vendors/technologies and deployments, and connections. Use it to know where which tool or technology runs before acting. When you learn something it lacks or contradicts (a new server or service, a proxy/WAF/CDN in front of something, a deployment, a connection, a changed version), tell the user and propose the change; apply it with the topology tool, which asks for approval. If the diagram is empty and you have investigated the infrastructure, offer to build it (import_inventory, then add what you found).
 - Remember durable facts about this project (layout, conventions, gotchas) with the memory tool; never store secrets there.
 - Everything you produce belongs to the workspace: save investigation and analysis results with write_report, procedures worth repeating as runbooks with write_doc (docs/runbooks/), and evidence files (config snapshots before you change them, long command output, generated files) with save_artifact — then reference those artifacts from the report.
 - Answer in the user's language. In Persian (or any right-to-left language), put commands, paths, host names, IPs, code and identifiers in backticks or code blocks so they stay readable left-to-right inside the text.
@@ -72,6 +74,11 @@ Files holding private keys are never shown to you. To use the user's SSH key, im
 	b.WriteString("\n## Inventory\n")
 	b.WriteString(truncate(renderInventory(env, "", "", ""), 30000))
 
+	if t, _, err := topology.Load(w); err == nil {
+		b.WriteString("\n## Topology (topology tool)\n")
+		b.WriteString(truncate(topology.Render(t, w.Resources), 15000) + "\n")
+	}
+
 	if guide, err := w.ReadDoc("OPSDECK.md"); err == nil && strings.TrimSpace(guide) != "" {
 		b.WriteString("\n## Project instructions (OPSDECK.md)\n")
 		b.WriteString(truncate(guide, 30000) + "\n")
@@ -85,10 +92,18 @@ Files holding private keys are never shown to you. To use the user's SSH key, im
 			}
 		}
 	}
-	if skills := w.Skills(); len(skills) > 0 {
+	if list := AllSkills(w); len(list) > 0 {
 		b.WriteString("\n## Skills (load with load_skill before following one)\n")
-		for _, s := range skills {
-			fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
+		for _, s := range list {
+			d := s.Description
+			if r := []rune(d); len(r) > 220 {
+				d = string(r[:220]) + "…"
+			}
+			if s.Builtin {
+				fmt.Fprintf(&b, "- %s (built-in, %s): %s\n", s.Name, s.Category, d)
+			} else {
+				fmt.Fprintf(&b, "- %s: %s\n", s.Name, d)
+			}
 		}
 	}
 	if reports := w.RecentReports(10); len(reports) > 0 {

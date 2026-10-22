@@ -49,6 +49,8 @@ Built-in tools:
 | `repo_write` — write, edit (exact replacement), delete files in a working copy; diff preview | change (shares the repository's approval) |
 | `merge_request` — GitLab merge requests / GitHub pull requests: list, get / create, comment / merge | read / change / always asks |
 | `git_sync` — clone or update a GitRemote on a host with its vault token | change |
+| `topology` — get / catalog / add, update, remove nodes, zones and links, import_inventory, replace, batch | read / change, always asks (one "always" per session) |
+| `load_skill(name, file?)` — a workspace or built-in skill, and its supporting files | read |
 | `mcp__<server>__<tool>` — workspace MCP servers | read if the tool is annotated read-only, else change |
 
 ### 2. No undo

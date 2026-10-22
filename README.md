@@ -26,6 +26,19 @@ plus a complete local workbench that is just as useful without AI.
   requests (create, comment, merge, CI status). The agent works the same way: branch →
   edit → commit → push → merge request, with approvals on push and merge. Repositories can
   be documentation for the agent — see [docs/git.md](docs/git.md).
+- **Topology** — an interactive map of the infrastructure per workspace: zones (DC, VPC,
+  subnet, DMZ, office…), about 45 component types (routers of every kind, switches,
+  firewalls, CDN, WAF, DDoS protection, load balancers, VPN gateways, servers, clusters,
+  databases, CI/CD, monitoring…) with products, technologies and what is deployed on them,
+  and typed connections (HTTPS, BGP, IPsec, SQL, replication…). Saved as `topology.yaml`,
+  exported as Markdown for any AI; the agent reads it, and proposes and makes changes with
+  your approval — see [docs/topology.md](docs/topology.md).
+- **Skills** — 20 well-known infrastructure / networking / DevOps skills built in
+  (Kubernetes manifests, Helm, GitOps, Terraform modules, hybrid-cloud networking, Istio,
+  connectivity triage, GitHub Actions, GitLab CI, Prometheus, Grafana, SLOs, tracing,
+  incident runbooks, postmortems…, from
+  [wshobson/agents](https://github.com/wshobson/agents), MIT) next to your own; browse and
+  customize them on the Skills page — see [docs/skills.md](docs/skills.md).
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
@@ -147,5 +160,7 @@ external infrastructure needed.
 - [docs/workspace.md](docs/workspace.md) — workspace model and files
 - [docs/vpn.md](docs/vpn.md) — VPN drivers, userspace vs system mode, credentials
 - [docs/git.md](docs/git.md) — Git repositories, working copies, merge requests
+- [docs/topology.md](docs/topology.md) — the topology map and the agent's topology tool
+- [docs/skills.md](docs/skills.md) — skills, the built-in library
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions

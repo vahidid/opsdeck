@@ -81,7 +81,7 @@ export type PermissionRule = {
 export type McpServer = { name: string; command: string; args: string[]; env: Record<string, string> };
 export type Workspace = WorkspaceSummary & {
   environments: Environment[];
-  settings: { defaultUser: string; defaultAuth: string; defaultModel: string };
+  settings: { defaultUser: string; defaultAuth: string; defaultModel: string; noBuiltinSkills?: boolean };
   permissions: { rules: PermissionRule[] };
   mcpServers: McpServer[];
 };
@@ -126,7 +126,16 @@ export type Topology = { nodes: TopologyNode[]; edges: { from: string; to: strin
 export type PathHop = { kind: string; name: string; label: string };
 
 export type DocInfo = { path: string; title: string; size: number; updated: string };
-export type Skill = { name: string; description: string; path: string };
+export type Skill = {
+  name: string;
+  description: string;
+  path: string;
+  category?: string;
+  files?: string[];
+  builtin?: boolean;
+  source?: string;
+  license?: string;
+};
 export type McpStatus = {
   name: string;
   status: string;
@@ -343,4 +352,46 @@ export type RemoteRepo = {
   archived: boolean;
   canPush: boolean;
   updated: string;
+};
+
+// Topology: the workspace's infrastructure diagram (topology.yaml).
+export type TopoBox = { x: number; y: number; w?: number; h?: number };
+export type TopoZone = { id: string; label?: string; kind?: string; parent?: string; cidr?: string; provider?: string; notes?: string };
+export type TopoDeployment = { name: string; kind?: string; image?: string; ports?: string[]; replicas?: number; repo?: string; path?: string; notes?: string };
+export type TopoNode = {
+  id: string;
+  type: string;
+  variant?: string;
+  label?: string;
+  zone?: string;
+  vendor?: string;
+  tech?: string[];
+  resource?: string;
+  addresses?: string[];
+  environment?: string;
+  deployments?: TopoDeployment[];
+  tags?: string[];
+  notes?: string;
+};
+export type TopoLink = {
+  id: string;
+  from: string;
+  to: string;
+  kind?: string;
+  label?: string;
+  port?: string;
+  encrypted?: boolean;
+  bidirectional?: boolean;
+  bandwidth?: string;
+  vlan?: string;
+  notes?: string;
+};
+export type TopologyDoc = { version: number; zones: TopoZone[]; nodes: TopoNode[]; links: TopoLink[]; layout?: Record<string, TopoBox> | null };
+export type TopoNodeType = { type: string; label: string; category: string; icon: string; variants?: string[]; tech?: string[]; hint?: string };
+export type TopoLinkKind = { kind: string; label: string; category: string; port?: string };
+export type TopoCatalog = {
+  nodeTypes: TopoNodeType[];
+  linkKinds: TopoLinkKind[];
+  zoneKinds: { id: string; label: string }[];
+  deploymentKinds: { id: string; label: string }[];
 };

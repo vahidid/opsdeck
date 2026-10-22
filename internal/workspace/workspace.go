@@ -33,6 +33,8 @@ type Settings struct {
 	DefaultUser  string `yaml:"defaultUser,omitempty" json:"defaultUser"`
 	DefaultAuth  string `yaml:"defaultAuth,omitempty" json:"defaultAuth"`
 	DefaultModel string `yaml:"defaultModel,omitempty" json:"defaultModel"`
+	// NoBuiltinSkills hides opsdeck's built-in skill library from the agent.
+	NoBuiltinSkills bool `yaml:"noBuiltinSkills,omitempty" json:"noBuiltinSkills"`
 }
 
 // Rule is a permission rule for agent tool calls. First matching rule wins.

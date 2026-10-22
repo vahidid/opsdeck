@@ -2,6 +2,8 @@ import type {
   LogLine,
   VpnDrivers,
   MergeRequest,
+  TopologyDoc,
+  TopoCatalog,
   GitConnection,
   ConnInput,
   ConnOptions,
@@ -183,8 +185,18 @@ export const api = {
   memory: (ws: string) => get<{ content: string }>(`${W(ws)}/memory`),
   saveMemory: (ws: string, content: string) => put(`${W(ws)}/memory`, { content }),
   skills: (ws: string) => arr(get<Skill[]>(`${W(ws)}/skills`)),
+  skillLibrary: () => get<{ skills: Skill[]; attribution: string }>("/api/skills/library"),
+  skillLibraryFile: (name: string, file = "") => get<{ content: string }>(`/api/skills/library/${e(name)}${qs({ file })}`),
+  skillCopy: (ws: string, name: string) => post<{ path: string }>(`${W(ws)}/skills/${e(name)}/copy`),
   mcp: (ws: string) => arr(get<McpStatus[]>(`${W(ws)}/mcp`)),
   trustMcp: (ws: string, name: string) => arr(post<McpStatus[]>(`${W(ws)}/mcp/${e(name)}/trust`)),
+
+  // topology
+  topologyCatalog: () => get<TopoCatalog>("/api/topology/catalog"),
+  topologyDoc: (ws: string) => get<{ topology: TopologyDoc; rev: string; text: string }>(`${W(ws)}/diagram`),
+  saveTopology: (ws: string, topology: TopologyDoc, rev: string, force = false) => put<{ rev: string; text: string }>(`${W(ws)}/diagram`, { topology, rev, force }),
+  topologyImport: (ws: string, topology: TopologyDoc) => post<{ topology: TopologyDoc; added: string[] }>(`${W(ws)}/diagram/import-inventory`, { topology }),
+  topologyExportUrl: (ws: string, format: "md" | "yaml") => `${W(ws)}/diagram/export?format=${format}`,
 
   // git connectors
   gitConnections: () => arr(get<GitConnection[]>("/api/git/connections")),

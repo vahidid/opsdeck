@@ -168,6 +168,27 @@ as `git.*`.
 Documentation repositories appear in `GET /api/workspaces/{ws}/docs` as
 `repo/<name>/<path>` (read-only).
 
+## Topology
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/topology/catalog` | → `{nodeTypes: [{type, label, category, icon, variants, tech}], linkKinds: [{kind, label, category, port}], zoneKinds, deploymentKinds}` |
+| GET | `/api/workspaces/{ws}/diagram` | → `{topology: {version, zones, nodes, links, layout}, rev, text}` (`text` = what the agent reads) |
+| PUT | `/api/workspaces/{ws}/diagram` | `{topology, rev, force?}` → `{rev, text}`; 409 `conflict` when the file changed since `rev` |
+| GET | `/api/workspaces/{ws}/diagram/export?format=md\|yaml` | download: Markdown for an AI (description + YAML) or `topology.yaml` |
+| POST | `/api/workspaces/{ws}/diagram/import-inventory` | `{topology}` → `{topology, added}` (not saved) |
+
+`GET /api/workspaces/{ws}/topology` is the older inventory graph (resources and `via`).
+
+## Skills
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/workspaces/{ws}/skills` | → `[{name, description, path, category, files, builtin, source, license}]`: the workspace's skills plus the built-in library (unless turned off) |
+| GET | `/api/skills/library` | → `{skills, attribution}` |
+| GET | `/api/skills/library/{name}?file=` | → `{content}` (SKILL.md or a supporting file) |
+| POST | `/api/workspaces/{ws}/skills/{name}/copy` | copies a built-in skill into `skills/<name>/` |
+
 ## Hosts
 
 | Method | Path | |

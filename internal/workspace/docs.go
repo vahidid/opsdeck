@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"opsdeck/internal/skills"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -33,7 +34,7 @@ func (w *Workspace) docPath(rel string) (string, error) {
 	ok := rel == "OPSDECK.md" ||
 		(strings.HasPrefix(rel, "docs/") && strings.HasSuffix(rel, ".md")) ||
 		(strings.HasPrefix(rel, "reports/") && strings.HasSuffix(rel, ".md")) ||
-		(strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") == 1)
+		(strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") <= 3)
 	if !ok {
 		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md, skills/*.md or repo/<repository>/<path>.md")
 	}
@@ -159,13 +160,11 @@ func (w *Workspace) DeleteDoc(rel string) error {
 }
 
 // Skill is a packaged procedure the agent can load on demand.
-type Skill struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Path        string `json:"path"`
-}
+type Skill = skills.Skill
 
-// Skills parses skills/*.md. Optional YAML-ish frontmatter:
+// Skills lists the workspace's own skills: skills/<name>.md, or a folder
+// skills/<name>/SKILL.md with supporting files (Agent Skills format).
+// Frontmatter:
 //
 //	---
 //	name: deploy-docker-app
@@ -173,37 +172,65 @@ type Skill struct {
 //	---
 func (w *Workspace) Skills() []Skill {
 	out := []Skill{}
-	matches, _ := filepath.Glob(filepath.Join(w.Path, "skills", "*.md"))
-	sort.Strings(matches)
-	for _, m := range matches {
-		b, err := os.ReadFile(m)
+	add := func(abs, rel, dir string) {
+		b, err := os.ReadFile(abs)
 		if err != nil {
-			continue
+			return
 		}
-		s := Skill{Name: strings.TrimSuffix(filepath.Base(m), ".md"), Path: "skills/" + filepath.Base(m)}
-		text := string(b)
-		if strings.HasPrefix(text, "---") {
-			if end := strings.Index(text[3:], "\n---"); end > 0 {
-				for _, line := range strings.Split(text[3:3+end], "\n") {
-					k, v, ok := strings.Cut(line, ":")
-					if !ok {
-						continue
-					}
-					switch strings.TrimSpace(k) {
-					case "name":
-						s.Name = strings.TrimSpace(v)
-					case "description":
-						s.Description = strings.TrimSpace(v)
-					}
-				}
+		name, desc := skills.Frontmatter(string(b))
+		if name == "" {
+			if dir != "" {
+				name = filepath.Base(dir)
+			} else {
+				name = strings.TrimSuffix(filepath.Base(abs), ".md")
 			}
 		}
-		if s.Description == "" {
-			s.Description = mdTitle(m)
+		if desc == "" {
+			desc = mdTitle(abs)
+		}
+		s := Skill{Name: name, Description: desc, Path: rel}
+		if dir != "" {
+			filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+				if err == nil && !d.IsDir() && p != abs {
+					r, _ := filepath.Rel(dir, p)
+					s.Files = append(s.Files, filepath.ToSlash(r))
+				}
+				return nil
+			})
 		}
 		out = append(out, s)
 	}
+	matches, _ := filepath.Glob(filepath.Join(w.Path, "skills", "*.md"))
+	for _, m := range matches {
+		add(m, "skills/"+filepath.Base(m), "")
+	}
+	dirs, _ := filepath.Glob(filepath.Join(w.Path, "skills", "*", "SKILL.md"))
+	for _, m := range dirs {
+		add(m, "skills/"+filepath.Base(filepath.Dir(m))+"/SKILL.md", filepath.Dir(m))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// SkillFile reads a supporting file of a folder skill.
+func (w *Workspace) SkillFile(s Skill, file string) (string, error) {
+	if !strings.HasSuffix(s.Path, "/SKILL.md") {
+		return "", errors.New("skill " + s.Name + " has no supporting files")
+	}
+	dir := filepath.Join(w.Path, filepath.FromSlash(strings.TrimSuffix(s.Path, "/SKILL.md")))
+	clean := filepath.Clean(filepath.FromSlash(file))
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", errors.New("invalid file")
+	}
+	p, err := w.contained(filepath.Join(dir, clean))
+	if err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(p)
+	if len(b) > 2<<20 {
+		b = b[:2<<20]
+	}
+	return string(b), err
 }
 
 // ReportMeta describes who/what produced a report.

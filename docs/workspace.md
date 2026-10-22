@@ -15,7 +15,8 @@ acme/
 ├── resources/            # inventory: hosts, networks, panels, clusters… (YAML)
 ├── OPSDECK.md            # instructions for the agent (like CLAUDE.md / AGENTS.md)
 ├── docs/                 # documentation and runbooks (Markdown) — yours and the agent's (write_doc)
-├── skills/               # reusable procedures the agent can load
+├── topology.yaml         # the infrastructure map (Topology page, topology tool)
+├── skills/               # reusable procedures the agent can load (name.md or name/SKILL.md + files)
 ├── reports/              # analyses, audits, incident write-ups, plans saved by the agent
 │   └── 2026/10/2026-10-21-0930-disk-and-memory-audit-of-prod.md
 ├── artifacts/            # evidence files (save_artifact): config snapshots, full command output, generated files

@@ -87,6 +87,8 @@ internal/workspace   workspace/resource model, YAML files, docs, skills, validat
 internal/vpn         VPN drivers: WireGuard, Tailscale (tsnet), NetBird (embed), OpenVPN, OpenConnect, openfortivpn; userspace/system modes, local SOCKS5
 internal/connect     networks (VPN profiles, SOCKS), SSH pool + jump hosts, exec/PTY/SFTP, port forwards
 internal/gitx        Git working copies (system git, isolated config, token header / in-memory ssh-agent / SOCKS via), GitLab and GitHub APIs
+internal/topology    the topology map: model, catalog of component and connection types, rendering for the agent
+internal/skills      built-in skill library (embedded)
 internal/docker      docker CLI over SSH
 internal/kube        Kubernetes client (kubeconfig from the vault, dialed through via)
 internal/llm         model gateway: Anthropic SDK + OpenAI-compatible streaming

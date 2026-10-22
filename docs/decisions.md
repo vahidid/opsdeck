@@ -33,6 +33,7 @@
 | 28 | The topology is a separate, hand-and-agent-edited model (`topology.yaml`) rather than derived from the inventory; the inventory can be imported into it | Most of what matters (CDN, WAF, routers, what runs where, which protocol) is not an SSH target; the map must describe it anyway |
 | 29 | Agent changes to the topology always ask (also in Auto mode), with a diff; one "always" per session | The map is shared documentation the user relies on; the agent proposes, the user decides |
 | 30 | A built-in skill library (MIT, from wshobson/agents, unchanged and attributed) ships in the binary; workspaces can turn it off or override a skill by name | Good procedures out of the box without copying files into every workspace |
+| 31 | The topology map is laid out with ELK (elkjs, EPL-2.0, loaded only on the topology page) and connections are routed by our own orthogonal router around the components; the layout is still stored per component in `topology.yaml` | A layered layout puts the internet at the top and data at the bottom and keeps zones nested; an obstacle-aware router is what keeps a dense map readable, and no maintained JS router does this in the browser (libavoid needs WASM) |
 | 19 | Secrets move from local files into the vault inside opsdeck (`vault_import_ssh_key`, `vault_add_item` with `file`/`generate`), never through the model | Keeps "secrets never reach the model" while letting the agent onboard credentials |
 
 ## Open

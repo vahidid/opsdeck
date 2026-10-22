@@ -46,9 +46,13 @@ date with you.
 
 Reading a busy map:
 
-- Connections leave from the side of a component that faces the other end and run as
-  right-angled lines (or straight, see the legend). Several connections between the same
-  two components are drawn side by side.
+- Connections are drawn as right-angled lines **routed around the components**, never
+  through them. They prefer the side of a component that faces the other end (another
+  side when a neighbour is right in front of it), each connection gets its own point on
+  that side, routes avoid crossing each other where they can, and lines that would run on
+  top of each other are drawn side by side. While a component is dragged its
+  connections follow it as simple lines and are routed again when it is dropped. The
+  legend can switch to straight lines.
 - **Hover or select a component**: its connections and neighbours stay bright with their
   labels (`https:443 🔒`, `sql:5432`…) and everything else fades. Selecting a connection shows
   only it and its two ends. The inspector lists the component's connections; clicking one
@@ -62,7 +66,11 @@ Other controls:
 
 - **Import inventory** adds the workspace's hosts, VPNs, clusters, databases… that are not on
   the map yet, linked to their resources, with their `via` paths as connections.
-- **Auto-arrange** lays everything out again.
+- **Auto-arrange** lays everything out again with a layered layout (ELK): traffic flows
+  from the top (internet, users, edge) to the bottom (apps, data, external services),
+  zones stay nested and sized to their contents, and crossings are kept low. A map
+  without positions (for example one the agent wrote) is laid out this way when it is
+  opened; positions are only saved when you save.
 - **Export** downloads a Markdown description for any AI (with the YAML attached) or the raw
   `topology.yaml`.
 
@@ -121,6 +129,10 @@ The `topology` tool:
   before it is offered and again before it is saved.
 
 ## Testing
+
+The router (`web/src/lib/orthoRoute.ts`) was checked on a dense map (6 zones, 21
+components, 40 connections): about 0.1 s, no segment through a component, no slanted
+segment, about two bends per connection.
 
 `internal/topology` tests validation, save/load with revisions, rendering, zone
 removal and inventory import. `internal/server/topology_test.go` has a scripted agent

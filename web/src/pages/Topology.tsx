@@ -19,7 +19,7 @@ import {
   applyNodeChanges,
   useReactFlow,
 } from "@xyflow/react";
-import type { Connection, Edge, EdgeChange, EdgeProps, Node, NodeChange, NodeProps } from "@xyflow/react";
+import type { Connection, Edge, EdgeChange, EdgeProps, FitViewOptions, Node, NodeChange, NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowLeftRight, Bot, Download, FileText, Import, LayoutGrid, Lock, Network, Plus, Save, SquareDashed, Trash2, X } from "lucide-react";
 import { api, errMsg, ApiError } from "../api/client";
@@ -30,6 +30,8 @@ import { Badge, Button, ChipInput, FormField, IconButton, Input, Loading, Search
 import { Popover, MenuItem, useConfirm, useToast } from "../components/overlay";
 import { TopoIcon } from "../components/topoIcons";
 import { useAsync, useInterval, useLocalStorage } from "../hooks";
+import { labelPoint, roundedPath, routeAll, type Pt, type Rect, type Route, type RouteLink } from "../lib/orthoRoute";
+import { elkLayout } from "../lib/topoLayout";
 
 // The topology editor: zones (group boxes), components (nodes) and
 // connections (edges) of the workspace's infrastructure, saved as
@@ -63,7 +65,10 @@ const ZONE_COLOR: Record<string, string> = {
 };
 
 const NODE_W = 190;
-const NODE_H = 76;
+// fitting the map leaves room for the legend (top right) and the minimap
+// (bottom right), so they do not cover components
+const FIT: FitViewOptions = { padding: { top: "64px", right: "170px", bottom: "32px", left: "40px" } };
+const NODE_H = 56;
 
 export function TopologyPage() {
   return (
@@ -221,8 +226,10 @@ function Editor() {
   const [loadErr, setLoadErr] = useState("");
   const [sel, setSel] = useState<Sel>(null);
   const [hover, setHover] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [arranging, setArranging] = useState(false);
   const [labelMode, setLabelMode] = useLocalStorage<"auto" | "all" | "none">("opsdeck.topology.labels", "auto");
-  const [lineMode, setLineMode] = useLocalStorage<"step" | "straight">("opsdeck.topology.lines", "step");
+  const [lineMode, setLineMode] = useLocalStorage<"routed" | "straight">("opsdeck.topology.lines2", "routed");
   const [hiddenCats, setHiddenCats] = useLocalStorage<string[]>("opsdeck.topology.hidden", []);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -245,7 +252,15 @@ function Editor() {
   const load = useCallback(async () => {
     try {
       const r = await api.topologyDoc(ws);
-      const d = fillLayout(clean(r.topology));
+      let d = fillLayout(clean(r.topology));
+      // a map nobody arranged yet (e.g. built by the agent): lay it out by its connections
+      if (Object.keys(r.topology.layout ?? {}).length === 0 && d.nodes.length > 0) {
+        try {
+          d = { ...d, layout: await elkLayout(d, () => ({ w: NODE_W, h: NODE_H })) };
+        } catch {
+          /* keep the grid */
+        }
+      }
       setDoc(d);
       setSaved(JSON.stringify(d));
       setRev(r.rev);
@@ -342,31 +357,64 @@ function Editor() {
       }
       return out;
     });
-    // Each connection leaves from the side of a component that faces the
-    // other end; parallel connections between the same pair are fanned out.
-    const centers = absCenters(doc);
-    const pairCount: Record<string, number> = {};
-    const pairIndex: Record<string, number> = {};
-    for (const l of doc.links) pairCount[[l.from, l.to].sort().join("|")] = (pairCount[[l.from, l.to].sort().join("|")] ?? 0) + 1;
+  }, [doc, sel, typeOf, linkKindOf, focus]);
+
+  // Real sizes of the components on the canvas (they grow with their details).
+  const sizesKey = nodes
+    .filter((n) => n.type === "component")
+    .map((n) => `${n.id}:${Math.round(n.measured?.width ?? NODE_W)}x${Math.round(n.measured?.height ?? NODE_H)}`)
+    .join(",");
+  const sizes = useMemo(() => {
+    const m = new Map<string, { w: number; h: number }>();
+    for (const part of sizesKey.split(",")) {
+      const [id, wh] = part.split(":");
+      if (!id || !wh) continue;
+      const [w, h] = wh.split("x").map(Number);
+      m.set(id, { w, h });
+    }
+    return m;
+  }, [sizesKey]);
+
+  // Routes: every visible connection routed around the components. Only
+  // the geometry counts, so editing a name or a port does not route again.
+  const geometry = useMemo(() => {
+    if (!doc) return "";
+    const rects = absRects(doc, sizes);
+    const visible = doc.links.filter((l) => !hiddenCats.includes(linkKindOf(l.kind).category)).map((l) => ({ id: l.id, from: l.from, to: l.to }));
+    return JSON.stringify({ rects: [...rects], visible });
+  }, [doc, sizes, hiddenCats, linkKindOf]);
+  const routes = useMemo(() => {
+    if (!geometry) return new Map<string, Route>();
+    const g = JSON.parse(geometry) as { rects: [string, Rect][]; visible: RouteLink[] };
+    return routeAll(new Map(g.rects), g.visible);
+  }, [geometry]);
+
+  useEffect(() => {
+    if (!doc) return;
+    // connections of the component (or zone) being dragged follow it with a
+    // simple path until it is dropped and they are routed again
+    const moving = new Set<string>();
+    if (dragging) {
+      moving.add(dragging);
+      for (const n of doc.nodes) if (n.zone && (n.zone === dragging || isInside(doc, n.zone, dragging))) moving.add(n.id);
+    }
     setEdges(
       doc.links.map((l) => {
         const lk = linkKindOf(l.kind);
         const st = LINK_STYLE[lk.category] ?? LINK_STYLE.app;
-        const pair = [l.from, l.to].sort().join("|");
-        const idx = (pairIndex[pair] = (pairIndex[pair] ?? -1) + 1);
-        const fan = (idx - (pairCount[pair] - 1) / 2) * 14;
-        const [sh, th] = sides(centers[l.from], centers[l.to]);
+        const route = routes.get(l.id);
         const hot = focus.links !== null && focus.links.has(l.id);
         const dim = focus.links !== null && !hot;
         const label = [l.kind || lk.label, l.port ? `:${l.port}` : "", l.encrypted ? " 🔒" : ""].join("") + (l.label ? ` · ${l.label}` : "");
         const marker = { type: MarkerType.ArrowClosed, color: st.stroke, width: 14, height: 14 };
+        const live = moving.has(l.from) || moving.has(l.to);
         return {
           id: l.id,
           type: "conn",
           source: l.from,
           target: l.to,
-          sourceHandle: sh,
-          targetHandle: th,
+          sourceHandle: route?.sourceSide ?? Position.Bottom,
+          targetHandle: route?.targetSide ?? Position.Top,
           hidden: hiddenCats.includes(lk.category),
           selected: sel?.kind === "link" && sel.id === l.id,
           data: {
@@ -376,7 +424,7 @@ function Editor() {
             width: (st.width ?? 1.5) + (hot ? 1 : 0),
             dim,
             hot,
-            fan,
+            points: live || lineMode === "straight" ? undefined : route?.points,
             straight: lineMode === "straight",
             showLabel: labelMode === "all" || (labelMode === "auto" && hot),
           } satisfies ConnData,
@@ -386,14 +434,14 @@ function Editor() {
         };
       }),
     );
-  }, [doc, sel, typeOf, linkKindOf, focus, labelMode, lineMode, hiddenCats]);
+  }, [doc, sel, linkKindOf, focus, labelMode, lineMode, hiddenCats, routes, dragging]);
 
   // fit the view once the first diagram is on screen
   const fitted = useRef(false);
   useEffect(() => {
     if (!fitted.current && nodes.length > 0) {
       fitted.current = true;
-      setTimeout(() => rf.fitView({ padding: 0.12 }), 60);
+      setTimeout(() => rf.fitView(FIT), 60);
     }
   }, [nodes.length, rf]);
 
@@ -618,11 +666,22 @@ function Editor() {
           size="sm"
           variant="ghost"
           icon={<LayoutGrid className="size-3.5" />}
-          onClick={() => {
-            setDoc((d) => (d ? { ...d, layout: autoLayout(d) } : d));
-            setTimeout(() => rf.fitView({ duration: 300 }), 50);
+          loading={arranging}
+          onClick={async () => {
+            if (!doc) return;
+            setArranging(true);
+            try {
+              const layout = await elkLayout(doc, (id) => sizes.get(id) ?? { w: NODE_W, h: NODE_H });
+              setDoc((d) => (d ? { ...d, layout } : d));
+            } catch (e) {
+              toast.error("Could not arrange", errMsg(e));
+              setDoc((d) => (d ? { ...d, layout: autoLayout(d) } : d));
+            } finally {
+              setArranging(false);
+              setTimeout(() => rf.fitView({ ...FIT, duration: 300 }), 80);
+            }
           }}
-          title="Arrange everything automatically (positions you set are reset)"
+          title="Arrange everything by its connections (positions you set are reset)"
         >
           Auto-arrange
         </Button>
@@ -675,7 +734,11 @@ function Editor() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onNodeDragStop={onNodeDragStop}
+            onNodeDragStart={(_, n) => setDragging(n.id)}
+            onNodeDragStop={(e, n) => {
+              setDragging(null);
+              onNodeDragStop(e, n);
+            }}
             onNodeClick={(_, n) => setSel({ kind: n.type === "zone" ? "zone" : "node", id: n.id })}
             onEdgeClick={(_, e) => setSel({ kind: "link", id: e.id })}
             onPaneClick={() => setSel(null)}
@@ -683,6 +746,7 @@ function Editor() {
             colorMode={theme === "light" ? "light" : "dark"}
             deleteKeyCode={null}
             fitView
+            fitViewOptions={FIT}
             minZoom={0.15}
             proOptions={{ hideAttribution: true }}
           >
@@ -699,7 +763,7 @@ function Editor() {
                 setLineMode={setLineMode}
               />
             </Panel>
-            <MiniMap pannable zoomable className="!bg-panel" nodeColor={(n) => (n.type === "zone" ? "transparent" : "#4b5563")} nodeStrokeColor={(n) => (n.type === "zone" ? String((n.data as { color?: string }).color ?? "#666") : "#9ca3af")} />
+            <MiniMap pannable zoomable className="!bg-panel" style={{ width: 150, height: 100 }} nodeColor={(n) => (n.type === "zone" ? "transparent" : "#4b5563")} nodeStrokeColor={(n) => (n.type === "zone" ? String((n.data as { color?: string }).color ?? "#666") : "#9ca3af")} />
           </ReactFlow>
           {doc.nodes.length === 0 && doc.zones.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -796,7 +860,7 @@ const ComponentNode = memo(function ComponentNode({ data, selected }: NodeProps)
   return (
     <div
       className={cx(
-        "group rounded-lg border bg-panel shadow-sm px-2.5 py-2 text-left transition-opacity",
+        "group flex flex-col justify-center rounded-lg border bg-panel shadow-sm px-2.5 py-2 text-left transition-opacity",
         selected ? "border-accent ring-2 ring-accent/30" : "border-line-strong",
         dim && "opacity-30",
       )}
@@ -849,21 +913,23 @@ const ZoneNode = memo(function ZoneNode({ data, selected }: NodeProps) {
 
 const NODE_TYPES = { component: ComponentNode, zone: ZoneNode };
 
-type ConnData = { label: string; color: string; dash?: string; width: number; dim: boolean; hot: boolean; fan: number; straight: boolean; showLabel: boolean };
+type ConnData = { label: string; color: string; dash?: string; width: number; dim: boolean; hot: boolean; points?: Pt[]; straight: boolean; showLabel: boolean };
 
 // ConnEdge draws a connection as right-angled (or straight) lines with a
 // readable label pill; dimmed when something else is in focus.
 const ConnEdge = memo(function ConnEdge(p: EdgeProps) {
   const d = p.data as ConnData;
-  const horizontal = p.sourcePosition === Position.Left || p.sourcePosition === Position.Right;
-  // fan parallel connections out sideways
-  const sx = p.sourceX + (horizontal ? 0 : d.fan);
-  const sy = p.sourceY + (horizontal ? d.fan : 0);
-  const tx = p.targetX + (horizontal ? 0 : d.fan);
-  const ty = p.targetY + (horizontal ? d.fan : 0);
-  const [path, lx, ly] = d.straight
-    ? getStraightPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty })
-    : getSmoothStepPath({ sourceX: sx, sourceY: sy, sourcePosition: p.sourcePosition, targetX: tx, targetY: ty, targetPosition: p.targetPosition, borderRadius: 10, offset: 22 + Math.abs(d.fan) });
+  let path: string;
+  let lx: number;
+  let ly: number;
+  if (d.points && d.points.length >= 2) {
+    path = roundedPath(d.points, 9);
+    ({ x: lx, y: ly } = labelPoint(d.points));
+  } else if (d.straight) {
+    [path, lx, ly] = getStraightPath({ sourceX: p.sourceX, sourceY: p.sourceY, targetX: p.targetX, targetY: p.targetY });
+  } else {
+    [path, lx, ly] = getSmoothStepPath({ sourceX: p.sourceX, sourceY: p.sourceY, sourcePosition: p.sourcePosition, targetX: p.targetX, targetY: p.targetY, targetPosition: p.targetPosition, borderRadius: 10, offset: 22 });
+  }
   // nothing in focus: slightly faded so components stand out; in focus: full
   const opacity = d.dim ? 0.1 : d.hot ? 1 : 0.6;
   return (
@@ -892,9 +958,9 @@ const ConnEdge = memo(function ConnEdge(p: EdgeProps) {
 
 const EDGE_TYPES = { conn: ConnEdge };
 
-// absCenters is the centre of every component on the canvas (layout
-// positions are relative to the enclosing zone).
-function absCenters(doc: TopologyDoc): Record<string, { x: number; y: number }> {
+// absRects is every component's box on the canvas (layout positions are
+// relative to the enclosing zone).
+function absRects(doc: TopologyDoc, sizes: Map<string, { w: number; h: number }>): Map<string, Rect> {
   const layout = doc.layout ?? {};
   const zoneOrigin = (id?: string, depth = 0): { x: number; y: number } => {
     if (!id || depth > 20) return { x: 0, y: 0 };
@@ -903,23 +969,14 @@ function absCenters(doc: TopologyDoc): Record<string, { x: number; y: number }> 
     const b = layout[id] ?? { x: 0, y: 0 };
     return { x: o.x + b.x, y: o.y + b.y };
   };
-  const out: Record<string, { x: number; y: number }> = {};
+  const out = new Map<string, Rect>();
   for (const n of doc.nodes) {
     const o = zoneOrigin(n.zone);
     const b = layout[n.id] ?? { x: 0, y: 0 };
-    out[n.id] = { x: o.x + b.x + NODE_W / 2, y: o.y + b.y + NODE_H / 2 };
+    const sz = sizes.get(n.id) ?? { w: NODE_W, h: NODE_H };
+    out.set(n.id, { x: o.x + b.x, y: o.y + b.y, w: sz.w, h: sz.h });
   }
   return out;
-}
-
-// sides picks the facing sides of two components.
-function sides(a?: { x: number; y: number }, b?: { x: number; y: number }): [Position, Position] {
-  if (!a || !b) return [Position.Bottom, Position.Top];
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  // components are wider than tall: prefer top/bottom unless clearly side by side
-  if (Math.abs(dx) > Math.abs(dy) * 1.6) return dx > 0 ? [Position.Right, Position.Left] : [Position.Left, Position.Right];
-  return dy > 0 ? [Position.Bottom, Position.Top] : [Position.Top, Position.Bottom];
 }
 
 const CATEGORY_LABEL: Record<string, string> = { network: "Network", tunnel: "Tunnels / VPN", routing: "Routing", app: "Application", data: "Data", mgmt: "Management" };
@@ -947,8 +1004,8 @@ function Legend({
   counts: Record<string, number>;
   labelMode: "auto" | "all" | "none";
   setLabelMode: (v: "auto" | "all" | "none") => void;
-  lineMode: "step" | "straight";
-  setLineMode: (v: "step" | "straight") => void;
+  lineMode: "routed" | "straight";
+  setLineMode: (v: "routed" | "straight") => void;
 }) {
   const [open, setOpen] = useLocalStorage("opsdeck.topology.legend", false);
   return (
@@ -978,7 +1035,7 @@ function Legend({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-faint">Lines</span>
-              <Segmented3 value={lineMode} onChange={setLineMode} options={["step", "straight"]} />
+              <Segmented3 value={lineMode} onChange={setLineMode} options={["routed", "straight"]} />
             </div>
             <div className="text-faint leading-snug pt-0.5">Hover or select a component to highlight its connections.</div>
           </div>

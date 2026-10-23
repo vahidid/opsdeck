@@ -20,6 +20,7 @@
   <a href="#install">Install</a> ·
   <a href="https://vahidid.github.io/opsdeck/">Website</a> ·
   <a href="#features">Features</a> ·
+  <a href="#screenshots">Screenshots</a> ·
   <a href="docs/">Docs</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -33,6 +34,17 @@ but its world is servers, networks and VPNs, containers, clusters and logs inste
 code repository. It is also a complete local workbench that is just as useful without
 AI. Everything runs on your computer: a desktop app for Windows, macOS and Linux, or
 `opsdeck serve` with the UI in your browser.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshot-agent-approval.png" alt="The agent asks for approval before changing a file on a production host, with a diff of the change"></td>
+    <td width="50%"><img src="docs/assets/screenshot-agent.png" alt="The agent's report after fixing the problem"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Ask why the shop returns 502.</b> The agent reads the containers and logs, finds the cause and shows the fix as a diff. Nothing changes on a server until you approve.</sub></td>
+    <td><sub><b>It applies the fix, checks the result and reports</b> the cause, the change and how it was verified. Every step is in the audit journal.</sub></td>
+  </tr>
+</table>
 
 ## Install
 
@@ -177,6 +189,27 @@ You can turn the check off, or check now, under *App settings → Updates*.
   permission rules; approvals with previews; secrets redacted from everything the model
   sees; a hash-chained audit journal of every action.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshot-docker.png" alt="Docker containers of a Compose project with live usage"><br><sub><b>Docker</b>: containers, Compose projects, Swarm and volumes with live usage.</sub></td>
+    <td width="50%"><img src="docs/assets/screenshot-logs.png" alt="Live container logs with errors highlighted"><br><sub><b>Logs</b>: journald, files and containers, live, with level filters.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-terminal.png" alt="An SSH terminal reached through a bastion host"><br><sub><b>Terminal</b>: SSH through jump hosts and VPNs, which opsdeck sets up for you.</sub></td>
+    <td><img src="docs/assets/screenshot-vault.png" alt="A login with a one-time code in the encrypted vault"><br><sub><b>Vault</b>: SSH keys, logins with TOTP and tokens, encrypted on your computer.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-ansible.png" alt="An Ansible playbook in the visual editor"><br><sub><b>Ansible</b>: playbooks, roles and inventories in a visual editor, runs with live logs.</sub></td>
+    <td><img src="docs/assets/screenshot-settings-agents.png" alt="Models reported by the Claude Code CLI in the settings"><br><sub><b>Local agents</b>: use Claude Code, Codex, Gemini CLI or an ACP agent and pick its models from the list it reports.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-resources.png" alt="The resources of a workspace"><br><sub><b>Resources</b>: hosts, groups, VPNs, panels, databases and clusters as plain YAML.</sub></td>
+    <td><img src="docs/assets/screenshot-activity.png" alt="The hash-chained audit journal"><br><sub><b>Activity</b>: a hash-chained journal of every action, by you or the agent.</sub></td>
+  </tr>
+</table>
+
 ## Getting started
 
 When you first open opsdeck, it asks you to create the vault (master password; there is
@@ -297,6 +330,11 @@ installed `ansible-core`; they are skipped otherwise.
 - [docs/ansible.md](docs/ansible.md) — Ansible: projects, Ansible Vault, runs and logs, the agent's tools and password prompt
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Please report security problems privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

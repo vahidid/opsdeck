@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/vahidid/opsdeck/tree/main/docs
+    about: How workspaces, VPNs, the vault and the agent work.
+  - name: Report a security vulnerability
+    url: https://github.com/vahidid/opsdeck/security/advisories/new
+    about: Please report security problems privately.

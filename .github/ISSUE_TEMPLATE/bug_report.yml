@@ -1,0 +1,50 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please leave out hostnames, addresses, tokens and anything from your vault. Security problems go to the [security policy](https://github.com/vahidid/opsdeck/security/policy), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+  - type: input
+    id: version
+    attributes:
+      label: opsdeck version
+      description: App settings → Updates
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Linux, macOS, Windows]
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run it
+      options: [Desktop app, CLI (opsdeck serve), Built from source]
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      placeholder: e.g. agent, VPN (WireGuard), Docker, Kubernetes, Ansible, vault
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error messages
+      render: text

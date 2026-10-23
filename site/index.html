@@ -8,7 +8,18 @@
   <meta property="og:title" content="opsdeck">
   <meta property="og:description" content="A local workbench and AI agent for your infrastructure.">
   <meta property="og:image" content="https://vahidid.github.io/opsdeck/assets/social-preview.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://vahidid.github.io/opsdeck/">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="keywords" content="devops, sre, infrastructure, ai agent, ssh client, vpn client, wireguard, docker, kubernetes, ansible, homelab, self-hosted, open source">
+  <link rel="canonical" href="https://vahidid.github.io/opsdeck/">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "opsdeck",
+   "description": "A local workbench and AI agent for your infrastructure: SSH, VPNs, Docker, Kubernetes, Ansible and an encrypted vault, with an agent that asks before it changes anything.",
+   "applicationCategory": "DeveloperApplication", "operatingSystem": "Windows, macOS, Linux",
+   "url": "https://vahidid.github.io/opsdeck/", "downloadUrl": "https://github.com/vahidid/opsdeck/releases/latest",
+   "license": "https://opensource.org/licenses/MIT", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
+  </script>
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
   <style>
     :root {
@@ -64,6 +75,11 @@
     .card .ico svg { width: 19px; height: 19px; }
 
     .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+    .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .gallery figure { margin: 0; min-width: 0; }
+    .gallery .shot { margin: 0; border-radius: 10px; box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
+    .gallery figcaption { margin-top: 10px; color: var(--muted); font-size: 14px; }
+    .gallery figcaption b { color: var(--fg); font-weight: 600; }
     .split .shot { margin: 0; }
     .split h2, .split p.sub { text-align: left; margin-left: 0; }
     ul.checks { list-style: none; padding: 0; margin: 0; }
@@ -85,9 +101,10 @@
     @media (max-width: 900px) {
       .grid, .install { grid-template-columns: 1fr 1fr; }
       .split { grid-template-columns: 1fr; }
+      .gallery { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 620px) {
-      .grid, .install { grid-template-columns: 1fr; }
+      .grid, .install, .gallery { grid-template-columns: 1fr; }
       nav.links a.hide-sm { display: none; }
       .hero { padding-top: 56px; }
       section { padding: 52px 0; }
@@ -100,6 +117,7 @@
       <a class="brand" href="#"><img src="assets/logo.svg" alt="">opsdeck</a>
       <nav class="links">
         <a href="#features" class="hide-sm">Features</a>
+        <a href="#screenshots" class="hide-sm">Screenshots</a>
         <a href="#install">Install</a>
         <a href="https://github.com/vahidid/opsdeck/releases" class="hide-sm">Releases</a>
         <a href="https://github.com/vahidid/opsdeck">GitHub</a>
@@ -162,6 +180,36 @@
             <h3>An agent with approvals</h3>
             <p>Any model — Anthropic, OpenAI-compatible, Ollama — or your Claude Code, Codex or Gemini CLI login. Changes are previewed and approved.</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="agent">
+      <div class="wrap split">
+        <div class="shot"><img src="assets/screenshot-agent-approval.png" alt="The opsdeck agent asks for approval before changing a file on a production host, with a diff of the change" loading="lazy"></div>
+        <div>
+          <h2>An agent that shows its work</h2>
+          <p class="sub">Ask it why the shop returns 502. It reads containers and logs on its own, finds the cause, and stops to show you the exact change, as a diff, before it touches production.</p>
+          <ul class="checks">
+            <li><b>Plan, Ask, Auto or Full</b> — you choose how much it may do without asking.</li>
+            <li><b>Infra tools, not a shell guess</b> — exec, Docker, Kubernetes, Ansible, Git, files and docs, through your VPNs and jump hosts.</li>
+            <li><b>Your model or your CLI</b> — Anthropic, OpenAI-compatible APIs and Ollama, or Claude Code, Codex, Gemini CLI and ACP agents with your own login.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots">
+      <div class="wrap">
+        <h2>A look inside</h2>
+        <p class="sub">One app for the work around your servers, with or without the agent.</p>
+        <div class="gallery">
+          <figure><a class="shot" href="assets/screenshot-docker.png" style="display:block"><img src="assets/screenshot-docker.png" alt="Docker containers of a Compose project with live usage" loading="lazy"></a><figcaption><b>Docker</b> — containers, Compose, Swarm and volumes, with live usage.</figcaption></figure>
+          <figure><a class="shot" href="assets/screenshot-logs.png" style="display:block"><img src="assets/screenshot-logs.png" alt="Live container logs with errors highlighted" loading="lazy"></a><figcaption><b>Logs</b> — journald, files and containers, live, with level filters.</figcaption></figure>
+          <figure><a class="shot" href="assets/screenshot-terminal.png" style="display:block"><img src="assets/screenshot-terminal.png" alt="An SSH terminal reached through a bastion host" loading="lazy"></a><figcaption><b>Terminal</b> — SSH through jump hosts and VPNs, set up for you.</figcaption></figure>
+          <figure><a class="shot" href="assets/screenshot-vault.png" style="display:block"><img src="assets/screenshot-vault.png" alt="A login with a one-time code in the encrypted vault" loading="lazy"></a><figcaption><b>Vault</b> — keys, logins with TOTP and tokens, encrypted locally.</figcaption></figure>
+          <figure><a class="shot" href="assets/screenshot-ansible.png" style="display:block"><img src="assets/screenshot-ansible.png" alt="An Ansible playbook in the visual editor" loading="lazy"></a><figcaption><b>Ansible</b> — playbooks in a visual editor, runs with live logs.</figcaption></figure>
+          <figure><a class="shot" href="assets/screenshot-settings-agents.png" style="display:block"><img src="assets/screenshot-settings-agents.png" alt="Models reported by the Claude Code CLI in the settings" loading="lazy"></a><figcaption><b>Local agents</b> — pick models straight from your installed CLI.</figcaption></figure>
         </div>
       </div>
     </section>

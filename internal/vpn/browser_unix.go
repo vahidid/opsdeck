@@ -4,9 +4,10 @@ package vpn
 
 import (
 	"bufio"
-	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
+
+	"opsdeck/internal/sysproc"
 )
 
 func startBrowser(exe string, args []string, profileDir string) (*exec.Cmd, cdpTransport, error) {

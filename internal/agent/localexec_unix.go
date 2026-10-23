@@ -4,9 +4,10 @@ package agent
 
 import (
 	"context"
-	"opsdeck/internal/sysproc"
 	"os/exec"
 	"syscall"
+
+	"opsdeck/internal/sysproc"
 )
 
 // shellCommand runs command with sh in its own process group, so a timeout or

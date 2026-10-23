@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"opsdeck/internal/sysproc"
 )
 
 // Browser is a Chrome/Edge/Chromium window opsdeck drives through the

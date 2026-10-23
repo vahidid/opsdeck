@@ -432,8 +432,12 @@ func pythonFor(t *testing.T) string {
 	path, _ := exec.LookPath("ansible-playbook")
 	b, _ := os.ReadFile(path)
 	first, _, _ := strings.Cut(string(b), "\n")
-	if strings.HasPrefix(first, "#!") {
-		return strings.TrimSpace(strings.TrimPrefix(first, "#!"))
+	// "#!/usr/bin/python3 -E" (distribution packages), "#!/usr/bin/env python3"
+	if f := strings.Fields(strings.TrimPrefix(first, "#!")); strings.HasPrefix(first, "#!") && len(f) > 0 {
+		if filepath.Base(f[0]) == "env" && len(f) > 1 {
+			return f[1]
+		}
+		return f[0]
 	}
 	return "python3"
 }

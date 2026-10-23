@@ -12,11 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+
+	"opsdeck/internal/sysproc"
 )
 
 // Kinds of external agents.

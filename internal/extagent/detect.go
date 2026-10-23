@@ -2,9 +2,10 @@ package extagent
 
 import (
 	"context"
-	"opsdeck/internal/sysproc"
 	"os/exec"
 	"strings"
+
+	"opsdeck/internal/sysproc"
 )
 
 // Installed describes an agent CLI found on this machine.

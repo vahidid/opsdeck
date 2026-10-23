@@ -4,13 +4,14 @@ package vpn
 
 import (
 	"errors"
-	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"opsdeck/internal/sysproc"
 
 	"github.com/gorilla/websocket"
 )

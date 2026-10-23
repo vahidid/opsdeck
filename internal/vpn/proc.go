@@ -5,12 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"opsdeck/internal/sysproc"
 )
 
 // proc is a VPN client subprocess. Its output goes to the tunnel log and to

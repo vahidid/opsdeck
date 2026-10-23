@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"opsdeck/internal/sysproc"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"opsdeck/internal/sysproc"
 )
 
 // Module documentation for the editor, from the user's own ansible-doc:
@@ -56,7 +57,11 @@ var modCache = &docCache{modules: map[string][]ModuleInfo{}, docs: map[string]Mo
 // docJSON runs ansible-doc and returns its standard output (warnings on
 // stderr are ignored unless it fails).
 func docJSON(ctx context.Context, p *Project, args ...string) ([]byte, error) {
-	path, err := lookPath(p, "ansible-doc")
+	return runJSON(ctx, p, "ansible-doc", args...)
+}
+
+func runJSON(ctx context.Context, p *Project, prog string, args ...string) ([]byte, error) {
+	path, err := lookPath(p, prog)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +73,7 @@ func docJSON(ctx context.Context, p *Project, args ...string) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("ansible-doc: %s", lastLines(StripANSI(errb.String()+err.Error()), 4))
+		return nil, fmt.Errorf("%s: %s", prog, lastLines(StripANSI(errb.String()+err.Error()), 4))
 	}
 	return out.Bytes(), nil
 }
@@ -83,13 +88,13 @@ func (m *Manager) Modules(ctx context.Context, p *Project, refresh bool) ([]Modu
 		return list, nil
 	}
 	modCache.mu.Unlock()
-	b, err := docJSON(ctx, p, "--list", "--json")
+	raw, err := listModules(ctx, p, "")
 	if err != nil {
-		return nil, err
-	}
-	var raw map[string]string
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return nil, errors.New("ansible-doc: unexpected output")
+		// One collection with broken documentation makes ansible-doc fail
+		// the whole list; list the collections one by one instead.
+		if raw, err = listByCollection(ctx, p); err != nil {
+			return nil, err
+		}
 	}
 	list := make([]ModuleInfo, 0, len(raw))
 	for name, d := range raw {
@@ -100,6 +105,80 @@ func (m *Manager) Modules(ctx context.Context, p *Project, refresh bool) ([]Modu
 	modCache.modules[key] = list
 	modCache.mu.Unlock()
 	return list, nil
+}
+
+// listModules is ansible-doc's module list: name → short description
+// (of one collection when given).
+func listModules(ctx context.Context, p *Project, collection string) (map[string]string, error) {
+	args := []string{"--list", "--json"}
+	if collection != "" {
+		args = append(args, collection)
+	}
+	b, err := docJSON(ctx, p, args...)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, errors.New("ansible-doc: unexpected output")
+	}
+	out := make(map[string]string, len(raw))
+	for name, d := range raw {
+		out[name] = text(d)
+	}
+	return out, nil
+}
+
+// listByCollection lists ansible.builtin and every installed collection
+// separately, leaving out the collections ansible-doc cannot list.
+func listByCollection(ctx context.Context, p *Project) (map[string]string, error) {
+	names := []string{"ansible.builtin"}
+	if b, err := runJSON(ctx, p, "ansible-galaxy", "collection", "list", "--format", "json"); err == nil {
+		var paths map[string]map[string]any // collection path → name → details
+		if json.Unmarshal(b, &paths) == nil {
+			seen := map[string]bool{}
+			for _, cs := range paths {
+				for name := range cs {
+					if !seen[name] {
+						seen[name] = true
+						names = append(names, name)
+					}
+				}
+			}
+		}
+	}
+	var (
+		mu    sync.Mutex
+		out   = map[string]string{}
+		first error
+		wg    sync.WaitGroup
+		slots = make(chan struct{}, 8)
+	)
+	for _, c := range names {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			list, err := listModules(ctx, p, c)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if c == "ansible.builtin" {
+					first = err
+				}
+				return
+			}
+			for k, v := range list {
+				out[k] = v
+			}
+		}()
+	}
+	wg.Wait()
+	if first != nil {
+		return nil, first
+	}
+	return out, nil
 }
 
 // text joins ansible-doc's string-or-list descriptions.

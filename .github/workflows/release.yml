@@ -1,5 +1,5 @@
 # Builds opsdeck for Linux, Windows and macOS, and publishes a GitHub release
-# for every v* tag:
+# for every v* tag (or a version given to Run workflow):
 #   desktop app  .deb/.rpm (Linux x86_64), installer and portable .exe
 #                (Windows x64), universal .dmg (macOS)
 #   CLI          opsdeck-cli-<version>-<os>-<arch>
@@ -12,7 +12,14 @@ on:
     branches: ["**"]
     tags: ["v*"]
     paths-ignore: ["docs/**", "site/**", "**.md"]
+  # Actions → Build & release → Run workflow, with a version: releases the
+  # chosen branch's commit as v<version> (the tag is created by the release)
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.2.0 (empty: just build)"
+        required: false
+        default: ""
 
 concurrency:
   group: release-${{ github.ref }}
@@ -44,8 +51,13 @@ jobs:
           retention-days: 1
       - name: Version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ -n "$INPUT_VERSION" ]]; then
+            v="${INPUT_VERSION#v}"
+            [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::not a version: $v"; exit 1; }
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF_NAME#v}"
           else
             v="$(jq -r .info.productVersion cmd/opsdeck-desktop/wails.json)-dev.${GITHUB_SHA::7}"
@@ -178,7 +190,7 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     needs: [web, desktop, cli]
     runs-on: ubuntu-latest
     permissions:
@@ -219,6 +231,8 @@ jobs:
           cat notes.md
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.web.outputs.version }}
+          target_commitish: ${{ github.sha }}
           name: opsdeck ${{ needs.web.outputs.version }}
           body_path: notes.md
           files: dist/*

@@ -14,12 +14,15 @@ Builds that aren't from a tag are versioned `<wails.json version>-dev.<commit>`.
    it in its update dialog.
 2. Optionally bump `info.productVersion` in `cmd/opsdeck-desktop/wails.json`. It only
    names the `-dev` builds between releases.
-3. Commit, then tag and push:
+3. Commit and push, then either push a tag:
 
    ```bash
    git tag v0.2.0
    git push origin main v0.2.0
    ```
+
+   or, on GitHub, open *Actions → Build & release → Run workflow*, pick `main` and
+   enter the version (`0.2.0`). The release then creates the `v0.2.0` tag on that commit.
 
 The **Build & release** workflow (`.github/workflows/release.yml`) then:
 

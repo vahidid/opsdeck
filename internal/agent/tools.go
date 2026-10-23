@@ -59,6 +59,11 @@ type Call struct {
 	Environment string
 	Protected   bool
 	Match       string // text matched by permission rules (command, action...)
+	// Shell marks Match as a shell script; permission rules with a match
+	// pattern then apply to each of its simple commands (Commands, nil when
+	// the script could not be parsed).
+	Shell       bool
+	Commands    []CommandPart
 	Preview     string // shown in approval cards (command, diff...)
 	Reasons     []string
 	Credentials []string
@@ -572,7 +577,8 @@ func toolExec() Tool {
 			if timeout > 30*time.Minute {
 				timeout = 30 * time.Minute
 			}
-			risk, reasons := ClassifyCommand(in.Command)
+			an := AnalyzeCommand(in.Command)
+			risk, reasons := an.Risk, an.Reasons
 			envName, protected := targetInfo(env.WS, hosts...)
 			var names []string
 			for _, h := range hosts {
@@ -586,7 +592,7 @@ func toolExec() Tool {
 				}
 			}
 			return &Call{Risk: risk, Target: target, Environment: envName, Protected: protected, Match: in.Command,
-				Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...),
+				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...),
 				Run: func(ctx context.Context) (string, error) {
 					ctx, cancel := context.WithTimeout(ctx, timeout)
 					defer cancel()
@@ -1095,8 +1101,9 @@ func toolSaveArtifact() Tool {
 					}
 					name += ".txt"
 				}
-				risk, reasons := ClassifyCommand(in.Command)
-				return &Call{Risk: risk, Reasons: reasons, Target: "host/" + h.Name, Environment: envName, Protected: protected, Match: in.Command,
+				an := AnalyzeCommand(in.Command)
+				return &Call{Risk: an.Risk, Reasons: an.Reasons, Target: "host/" + h.Name, Environment: envName, Protected: protected, Match: in.Command,
+					Shell: true, Commands: an.Parts,
 					Preview: "$ " + in.Command + "\n\non: " + h.Name + " → artifacts/…/" + name, Credentials: env.creds(h),
 					Run: func(ctx context.Context) (string, error) {
 						ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)

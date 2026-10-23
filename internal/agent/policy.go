@@ -2,6 +2,7 @@ package agent
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"opsdeck/internal/vault"
@@ -181,9 +182,60 @@ func ruleMatches(r workspace.Rule, tool string, c *Call) bool {
 		}
 	}
 	if r.Match != "" {
+		if c.Shell {
+			return shellRuleMatches(r, c)
+		}
 		if ok, _ := filepath.Match(r.Match, c.Match); !ok && !strings.Contains(c.Match, strings.Trim(r.Match, "*")) {
 			return false
 		}
 	}
 	return true
+}
+
+// shellRuleMatches applies a rule's match pattern to a shell script command
+// by command, like the prefix rules of Claude Code: an allow rule covers
+// the script only when every command in it that is not a read matches (so
+// "systemctl status*" never allows "systemctl status x; rm -rf /"); ask and
+// deny rules apply when any command, or the script as a whole, matches.
+func shellRuleMatches(r workspace.Rule, c *Call) bool {
+	if r.Effect == "allow" {
+		if c.Commands == nil {
+			return false // not parsed: nothing is known to be covered
+		}
+		for _, p := range c.Commands {
+			if p.Risk != RiskRead && !commandGlob(r.Match, p.Text) && !commandGlob(r.Match, p.Command) {
+				return false
+			}
+		}
+		return true
+	}
+	if commandGlob(r.Match, c.Match) || strings.Contains(c.Match, strings.Trim(r.Match, "*")) {
+		return true
+	}
+	for _, p := range c.Commands {
+		if commandGlob(r.Match, p.Text) || commandGlob(r.Match, p.Command) {
+			return true
+		}
+	}
+	return false
+}
+
+// commandGlob matches a command against a pattern where * stands for any
+// text (spaces and slashes included) and ? for one character.
+func commandGlob(pattern, s string) bool {
+	var b strings.Builder
+	b.WriteString(`^`)
+	for _, r := range strings.TrimSpace(pattern) {
+		switch r {
+		case '*':
+			b.WriteString(`.*`)
+		case '?':
+			b.WriteString(`.`)
+		default:
+			b.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	b.WriteString(`$`)
+	ok, _ := regexp.MatchString(b.String(), strings.TrimSpace(s))
+	return ok
 }

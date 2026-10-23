@@ -2,6 +2,7 @@ package agent
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -33,19 +34,51 @@ func maxRisk(a, b string) string {
 }
 
 // ClassifyCommand estimates the risk of a shell command by parsing it and
-// classifying every simple command in it (pipelines, &&, subshells, $(...),
-// bash -c / eval strings and here-docs fed to interpreters). Read-only is an
-// allowlist: anything not recognised as harmless is at least a change, and
-// code the classifier cannot see (dynamic command names, scripts on stdin) is
-// destructive so it always needs approval. It is a safety net for approvals,
-// not a sandbox.
+// classifying every simple command in it (pipelines, &&, loops, subshells,
+// $(...), bash -c / eval strings and here-docs fed to interpreters). Read-only
+// is an allowlist: anything not recognised as harmless is at least a change,
+// and code the classifier cannot see (dynamic command names, scripts on
+// stdin) is destructive so it always needs approval. Arguments only known at
+// runtime take the values the script gives them (a for loop over a literal
+// list, a literal assignment) or else are probed with hostile values: the
+// command stays a read only if it is one whatever the value. It is a safety
+// net for approvals, not a sandbox.
 func ClassifyCommand(cmd string) (risk string, reasons []string) {
-	return classifyScript(cmd, 0)
+	a := AnalyzeCommand(cmd)
+	return a.Risk, a.Reasons
+}
+
+// CommandPart is one simple command of a script, for permission rules that
+// match commands: Text as written, Command without wrappers such as sudo.
+// A write through a redirection, a destructive SQL statement and a variable
+// such as PATH set for later commands are parts of their own (no Command).
+type CommandPart struct {
+	Text    string
+	Command string
+	Risk    string
+}
+
+// Analysis is the classification of a script and its simple commands.
+type Analysis struct {
+	Risk    string
+	Reasons []string
+	Parts   []CommandPart
+}
+
+// AnalyzeCommand classifies a script and lists its simple commands (those
+// inside bash -c strings and here-docs fed to a shell instead of the shell).
+func AnalyzeCommand(cmd string) Analysis {
+	parts := []CommandPart{}
+	r, why := classifyScript(cmd, 0, &parts)
+	if _, err := syntax.NewParser().Parse(strings.NewReader(cmd), ""); err != nil {
+		parts = nil
+	}
+	return Analysis{Risk: r, Reasons: why, Parts: parts}
 }
 
 const maxDepth = 4
 
-func classifyScript(cmd string, depth int) (risk string, reasons []string) {
+func classifyScript(cmd string, depth int, parts *[]CommandPart) (risk string, reasons []string) {
 	if depth > maxDepth {
 		return RiskDestructive, []string{"too deeply nested"}
 	}
@@ -60,12 +93,22 @@ func classifyScript(cmd string, depth int) (risk string, reasons []string) {
 			reasons = append(reasons, why...)
 		}
 	}
+	// other is risk that does not belong to one command (a write through a
+	// redirection, a variable for the commands after it): it is listed as a
+	// part of its own, so a rule allowing a command never covers it
+	other := func(text, r, why string) {
+		note(r, why)
+		if parts != nil {
+			*parts = append(*parts, CommandPart{Text: text, Risk: r})
+		}
+	}
 	upper := strings.ToUpper(cmd)
 	for _, pat := range sqlDestructive {
 		if pat.MatchString(upper) {
-			note(RiskDestructive, "destructive SQL/data statement")
+			other("destructive SQL statement", RiskDestructive, "destructive SQL/data statement")
 		}
 	}
+	vars := scriptVars(f)
 	stdin := map[*syntax.CallExpr]string{} // here-doc / here-string bodies per command
 	syntax.Walk(f, func(n syntax.Node) bool {
 		switch x := n.(type) {
@@ -90,46 +133,407 @@ func classifyScript(cmd string, depth int) (risk string, reasons []string) {
 				switch x.Op {
 				case syntax.RdrOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll, syntax.ClbOut, syntax.RdrInOut:
 					if target != "/dev/null" && target != "/dev/stderr" && target != "/dev/stdout" {
-						note(RiskChange, "writes to file "+target)
+						other(printNode(x), RiskChange, "writes to file "+target)
 					}
+				}
+			}
+		case *syntax.DeclClause:
+			// export / declare / local / readonly: a variable that changes how
+			// later commands run (PATH, LD_PRELOAD...) makes the script a change
+			for _, a := range x.Args {
+				if a.Name != nil && dangerousVar(a.Name.Value) {
+					other(printNode(x), RiskChange, "sets "+a.Name.Value+" for the commands after it")
 				}
 			}
 		case *syntax.CallExpr:
-			if len(x.Args) == 0 {
-				return true // plain variable assignment
+			if len(x.Args) == 0 { // plain variable assignment
+				for _, a := range x.Assigns {
+					if a.Name != nil && dangerousVar(a.Name.Value) {
+						other(printNode(x), RiskChange, "sets "+a.Name.Value+" for the commands after it")
+					}
+				}
+				return true
 			}
 			for _, a := range x.Assigns {
-				if a.Name != nil && !safeEnv[a.Name.Value] {
+				if a.Name != nil && !safeEnv(a.Name.Value) {
 					note(RiskChange, "runs with environment override "+a.Name.Value)
 				}
 			}
-			var args []string
-			dynamic := false
+			args := make([]string, len(x.Args))
+			var dyn []int
 			for i, w := range x.Args {
 				lit, ok := wordLiteral(w)
 				if !ok {
-					if i == 0 {
+					if i == 0 && !knownValues(w, vars) {
 						note(RiskDestructive, "command name is computed at runtime")
 						return true
 					}
-					dynamic = true
+					dyn = append(dyn, i)
 				}
-				args = append(args, lit)
+				args[i] = lit
 			}
 			body, hasStdin := stdin[x]
-			r, why := classifyArgs(args, body, hasStdin, depth)
-			if dynamic && r == RiskRead && !readSafeWithDynamicArgs[baseName(stripWrappers(args)[0])] {
-				r, why = RiskChange, []string{"command uses dynamic arguments"}
+			var r string
+			var why []string
+			if len(dyn) == 0 {
+				r, why = classifyArgs(args, body, hasStdin, depth, parts)
+			} else {
+				r, why = classifyDynamic(x.Args, args, dyn, vars, body, hasStdin, depth)
 			}
 			note(r, why...)
+			if parts != nil && !runsNestedScript(args, hasStdin) {
+				*parts = append(*parts, CommandPart{Text: printNode(x), Command: strings.Join(stripWrappers(args), " "), Risk: r})
+			}
 		}
 		return true
 	})
 	return risk, dedupe(reasons)
 }
 
-var safeEnv = map[string]bool{"LANG": true, "LC_ALL": true, "LC_MESSAGES": true, "TZ": true, "TERM": true,
-	"PAGER": true, "SYSTEMD_PAGER": true, "COLUMNS": true, "LINES": true, "NO_COLOR": true}
+// runsNestedScript reports whether a command runs a shell script given as a
+// string or here-doc, whose own commands are listed instead of the shell.
+func runsNestedScript(args []string, hasStdin bool) bool {
+	a := stripWrappers(args)
+	if len(a) == 0 {
+		return false
+	}
+	cmd := baseName(a[0])
+	if cmd == "eval" {
+		return true
+	}
+	if !interpreters[cmd] {
+		return false
+	}
+	_, c := flagValue(a, "-c", "")
+	return c || (len(positional(a)) == 0 && hasStdin)
+}
+
+func printNode(n syntax.Node) string {
+	var b strings.Builder
+	syntax.NewPrinter().Print(&b, n)
+	return strings.TrimSpace(b.String())
+}
+
+// Values tried for an argument only known at runtime: it may become a
+// subcommand, an option, several words or a sed/awk/shell program.
+var dynamicProbes = []string{"x", "rm", "rm -rf /", "-rf", "--force", "-delete", "--delete", "delete", "restart",
+	"drop", "-i", "-w", "-e", "-c", "-o /tmp/x", "-o/tmp/x", "--output=/tmp/x", "-X POST", "-d x", "-exec rm {} +",
+	"1w /tmp/x", "e id", `{system("id")}`, "FLUSHALL", "POST"}
+
+const maxCombinations = 64
+
+// classifyDynamic classifies a command whose arguments contain expansions,
+// as the highest risk over the values the arguments can take.
+func classifyDynamic(words []*syntax.Word, args []string, dyn []int, vars map[string][]string, body string, hasStdin bool, depth int) (string, []string) {
+	risk, reasons := RiskRead, []string(nil)
+	try := func(argv []string) bool {
+		r, why := classifyArgs(argv, body, hasStdin, depth+1, nil)
+		if riskRank(r) > riskRank(risk) {
+			risk, reasons = r, why
+		}
+		return risk != RiskDestructive
+	}
+	// every argument at once with the values the script gives it
+	known := true
+	var each [][][]string
+	for _, i := range dyn {
+		v, ok := expandWord(words[i], vars)
+		if !ok {
+			known = false
+			break
+		}
+		each = append(each, v)
+	}
+	if known {
+		n := 1
+		for _, v := range each {
+			n *= len(v)
+		}
+		if n <= maxCombinations {
+			idx := make([]int, len(dyn))
+			for {
+				var argv []string
+				d := 0
+				for i, a := range args {
+					if d < len(dyn) && dyn[d] == i {
+						argv = append(argv, each[d][idx[d]]...)
+						d++
+					} else {
+						argv = append(argv, a)
+					}
+				}
+				if !try(argv) {
+					return risk, reasons
+				}
+				k := 0
+				for k < len(idx) {
+					idx[k]++
+					if idx[k] < len(each[k]) {
+						break
+					}
+					idx[k] = 0
+					k++
+				}
+				if k == len(idx) {
+					return risk, reasons
+				}
+			}
+		}
+	}
+	// otherwise one argument at a time with hostile values, the others neutral
+	for _, i := range dyn {
+		prefix, suffix, quoted := wordShape(words[i])
+		for _, p := range dynamicProbes {
+			var argv []string
+			for j, a := range args {
+				switch {
+				case j == i && quoted:
+					argv = append(argv, prefix+p+suffix)
+				case j == i:
+					w := strings.Fields(p)
+					w[0] = prefix + w[0]
+					w[len(w)-1] += suffix
+					argv = append(argv, w...)
+				case slices.Contains(dyn, j):
+					argv = append(argv, "x")
+				default:
+					argv = append(argv, a)
+				}
+			}
+			if !try(argv) {
+				break
+			}
+		}
+	}
+	if risk != RiskRead {
+		reasons = append([]string{"depends on values only known when it runs"}, reasons...)
+	}
+	return risk, reasons
+}
+
+// wordShape describes an argument with expansions: the literal text before
+// and after them, and whether they are quoted (one word whatever the value).
+func wordShape(w *syntax.Word) (prefix, suffix string, quoted bool) {
+	quoted = true
+	seen := false
+	add := func(s string) {
+		if seen {
+			suffix += s
+		} else {
+			prefix += s
+		}
+	}
+	for _, p := range w.Parts {
+		switch x := p.(type) {
+		case *syntax.Lit:
+			add(x.Value)
+		case *syntax.SglQuoted:
+			add(x.Value)
+		case *syntax.DblQuoted:
+			for _, q := range x.Parts {
+				if l, ok := q.(*syntax.Lit); ok {
+					add(l.Value)
+				} else {
+					seen, suffix = true, ""
+				}
+			}
+		default:
+			seen, suffix, quoted = true, "", false
+		}
+	}
+	return prefix, suffix, quoted
+}
+
+// scriptVars collects the values of variables that only ever get literal
+// values in the script (for loops over literal lists, literal assignments).
+// Variables set any other way, or not set in the script, are left out.
+func scriptVars(f *syntax.File) map[string][]string {
+	vals := map[string][]string{}
+	unknown := map[string]bool{}
+	set := func(name string, w *syntax.Word) {
+		if w == nil {
+			vals[name] = append(vals[name], "")
+			return
+		}
+		if v, ok := wordLiteral(w); ok {
+			vals[name] = append(vals[name], v)
+		} else {
+			unknown[name] = true
+		}
+	}
+	syntax.Walk(f, func(n syntax.Node) bool {
+		switch x := n.(type) {
+		case *syntax.WordIter:
+			if x.Name == nil {
+				return true
+			}
+			if len(x.Items) == 0 && x.InPos == (syntax.Pos{}) {
+				unknown[x.Name.Value] = true // for v; do (the positional parameters)
+			}
+			for _, w := range x.Items {
+				set(x.Name.Value, w)
+			}
+		case *syntax.CStyleLoop, *syntax.ArithmCmd, *syntax.ArithmExp:
+			syntax.Walk(x, func(m syntax.Node) bool {
+				if l, ok := m.(*syntax.Lit); ok {
+					unknown[l.Value] = true
+				}
+				return true
+			})
+		case *syntax.DeclClause:
+			for _, a := range x.Args {
+				if a.Name == nil {
+					continue
+				}
+				if a.Array != nil || a.Append || a.Index != nil {
+					unknown[a.Name.Value] = true
+				} else {
+					set(a.Name.Value, a.Value)
+				}
+			}
+		case *syntax.CallExpr:
+			if len(x.Args) == 0 {
+				for _, a := range x.Assigns {
+					if a.Name == nil {
+						continue
+					}
+					if a.Array != nil || a.Append || a.Index != nil {
+						unknown[a.Name.Value] = true
+					} else {
+						set(a.Name.Value, a.Value)
+					}
+				}
+				return true
+			}
+			// commands that set variables by name (read x, mapfile x, printf -v x...)
+			for _, w := range x.Args[1:] {
+				if v, ok := wordLiteral(w); ok {
+					unknown[v] = true
+				}
+			}
+		}
+		return true
+	})
+	for k := range unknown {
+		delete(vals, k)
+	}
+	return vals
+}
+
+// expandWord returns the words an argument can expand to when every
+// expansion in it is a plain variable with known values.
+func expandWord(w *syntax.Word, vars map[string][]string) ([][]string, bool) {
+	type piece struct {
+		lits   []string
+		quoted bool
+	}
+	var pieces []piece
+	param := func(p *syntax.ParamExp, quoted bool) bool {
+		if p.Param == nil || p.Excl || p.Length || p.Width || p.Index != nil || p.Slice != nil || p.Repl != nil || p.Exp != nil || p.Names != 0 {
+			return false
+		}
+		v, ok := vars[p.Param.Value]
+		if !ok {
+			return false
+		}
+		pieces = append(pieces, piece{v, quoted})
+		return true
+	}
+	for _, p := range w.Parts {
+		switch x := p.(type) {
+		case *syntax.Lit:
+			pieces = append(pieces, piece{[]string{x.Value}, true})
+		case *syntax.SglQuoted:
+			pieces = append(pieces, piece{[]string{x.Value}, true})
+		case *syntax.DblQuoted:
+			for _, q := range x.Parts {
+				switch y := q.(type) {
+				case *syntax.Lit:
+					pieces = append(pieces, piece{[]string{y.Value}, true})
+				case *syntax.ParamExp:
+					if !param(y, true) {
+						return nil, false
+					}
+				default:
+					return nil, false
+				}
+			}
+		case *syntax.ParamExp:
+			if !param(x, false) {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+	}
+	out := [][]string{{""}}
+	for _, pc := range pieces {
+		var next [][]string
+		for _, prev := range out {
+			for _, v := range pc.lits {
+				words := append([]string(nil), prev...)
+				if pc.quoted {
+					words[len(words)-1] += v
+				} else if f := strings.Fields(v); len(f) > 0 {
+					words[len(words)-1] += f[0]
+					words = append(words, f[1:]...)
+				}
+				next = append(next, words)
+			}
+		}
+		if len(next) > maxCombinations {
+			return nil, false
+		}
+		out = next
+	}
+	return out, true
+}
+
+// knownValues reports whether a command name expands to known literal values.
+func knownValues(w *syntax.Word, vars map[string][]string) bool {
+	v, ok := expandWord(w, vars)
+	if !ok {
+		return false
+	}
+	for _, words := range v {
+		if len(words) == 0 || words[0] == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// safeEnv: variables that may prefix a read-only command without making it
+// a change (they only change formatting, paging or which server is asked).
+func safeEnv(name string) bool {
+	if strings.HasPrefix(name, "LC_") {
+		return true
+	}
+	switch name {
+	case "LANG", "LANGUAGE", "TZ", "TERM", "COLUMNS", "LINES", "NO_COLOR", "IFS", "SYSTEMD_COLORS", "SYSTEMD_LESS",
+		"KUBECONFIG", "DOCKER_HOST", "DOCKER_CONTEXT", "PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "PGPASSWORD",
+		"PGSSLMODE", "MYSQL_PWD", "REDISCLI_AUTH", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "GREP_COLORS":
+		return true
+	}
+	return false
+}
+
+// dangerousVar: variables that change which program runs or what it loads,
+// so setting them for the rest of a script is never a read.
+func dangerousVar(name string) bool {
+	for _, p := range []string{"LD_", "DYLD_", "GIT_", "PYTHON", "PERL5", "RUBY", "BASH_FUNC_", "XDG_"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	switch name {
+	case "PATH", "HOME", "ENV", "BASH_ENV", "PROMPT_COMMAND", "SHELLOPTS", "BASHOPTS", "PS4", "NODE_OPTIONS",
+		"JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "LESSOPEN", "LESSCLOSE", "PAGER", "MANPAGER", "SYSTEMD_PAGER",
+		"EDITOR", "VISUAL", "SSH_ASKPASS", "SUDO_ASKPASS", "GCONV_PATH", "SSL_CERT_FILE", "CURL_HOME", "WGETRC":
+		return true
+	}
+	return false
+}
 
 var sqlDestructive = []*regexp.Regexp{
 	regexp.MustCompile(`\bDROP\s+(DATABASE|TABLE|SCHEMA|INDEX|USER|ROLE)\b`),
@@ -189,12 +593,6 @@ func baseName(cmd string) string {
 	return cmd
 }
 
-// Commands whose read-only nature does not depend on argument values.
-var readSafeWithDynamicArgs = map[string]bool{
-	"echo": true, "printf": true, "cat": true, "grep": true, "ls": true, "head": true, "tail": true,
-	"wc": true, "test": true, "[": true, "stat": true, "du": true, "df": true,
-}
-
 // Read-only regardless of arguments. Commands with write modes are handled
 // explicitly in classifyArgs instead.
 var readOnly = map[string]bool{
@@ -215,6 +613,14 @@ var readOnly = map[string]bool{
 	"comm": true, "expand": true, "top": true, "htop": true, "iotop": true, "nload": true, "iftop": true,
 	"apt-cache": true, "dpkg-query": true, "lsb_release": true, "getfacl": true, "namei": true, "ldd": true,
 	"groups": true, "systemd-analyze": true, "iptables-save": true, "ip6tables-save": true, "showmount": true,
+	"locale": true, "sensors": true, "lshw": true, "dmidecode": true, "hostid": true, "getconf": true, "pstree": true,
+	"pmap": true, "pidstat": true, "lsns": true, "lslocks": true, "lsipc": true, "lsattr": true, "systemd-cgls": true,
+	"systemd-cgtop": true, "systemd-detect-virt": true, "virt-what": true, "ntpstat": true, "numactl": true,
+	"tty": true, "logname": true, "users": true, "lastb": true, "pinky": true, "cal": true, "expr": true, "numfmt": true,
+	"zless": true, "zmore": true, "bzless": true, "zstdcat": true, "lz4cat": true, "bzgrep": true, "xzgrep": true,
+	"zstdgrep": true, "sdiff": true, "colordiff": true, "atop": true, "glances": true, "nethogs": true, "dstat": true,
+	"ssh-keyscan": true, "whois": true, "ldapsearch": true, "ntpq": true,
+	"btop": true, "ncdu": true, "duf": true, "dust": true, "procs": true, "bat": true, "batcat": true, "fd": true, "fdfind": true,
 }
 
 // Prefix wrappers that run the rest of the line as a command, with the
@@ -233,6 +639,9 @@ func stripWrappers(args []string) []string {
 		valueOpts, ok := wrappers[cmd]
 		if !ok {
 			return args
+		}
+		if cmd == "command" && len(args) > 1 && in(args[1], "-v", "-V") {
+			return []string{"true"} // only looks the name up
 		}
 		i := 1
 		for i < len(args) && (strings.HasPrefix(args[i], "-") || (cmd == "env" && strings.Contains(args[i], "="))) {
@@ -323,7 +732,7 @@ func in(s string, list ...string) bool {
 var interpreters = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true, "ash": true, "fish": true}
 var scriptRunners = map[string]bool{"python": true, "python3": true, "perl": true, "ruby": true, "node": true, "php": true, "lua": true}
 
-func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) (string, []string) {
+func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int, parts *[]CommandPart) (string, []string) {
 	args := stripWrappers(rawArgs)
 	if len(args) == 0 {
 		return RiskRead, nil
@@ -332,19 +741,22 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 	cmd := baseName(args[0])
 	s1, s2 := sub(args, 1), sub(args, 2)
 
+	if (cmd == "source" || cmd == ".") && len(args) == 2 && in(args[1], "/etc/os-release", "/usr/lib/os-release", "/etc/lsb-release") {
+		return RiskRead, nil // variables describing the system
+	}
 	// Code passed to another interpreter is classified recursively.
 	if interpreters[cmd] || cmd == "eval" || cmd == "source" || cmd == "." {
 		if cmd == "eval" {
-			return classifyScript(strings.Join(args[1:], " "), depth+1)
+			return classifyScript(strings.Join(args[1:], " "), depth+1, parts)
 		}
 		if c, ok := flagValue(args, "-c", ""); ok {
-			return classifyScript(c, depth+1)
+			return classifyScript(c, depth+1, parts)
 		}
 		if len(positional(args)) == 0 && has(args, "--version") {
 			return RiskRead, nil
 		}
 		if len(positional(args)) == 0 && hasStdin {
-			return classifyScript(stdinBody, depth+1)
+			return classifyScript(stdinBody, depth+1, parts)
 		}
 		if len(positional(args)) == 0 {
 			return one(RiskDestructive, "runs shell code from stdin that cannot be inspected")
@@ -364,7 +776,7 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 			return one(RiskDestructive, "rm -r/-f deletes files")
 		}
 		return one(RiskChange, "rm deletes files")
-	case "dd", "mkfs", "fdisk", "sfdisk", "parted", "wipefs", "shred", "sgdisk", "mkswap", "pvremove", "vgremove", "lvremove", "zpool", "cryptsetup", "mkfs.ext4", "mkfs.xfs", "mkfs.btrfs", "mkfs.vfat":
+	case "dd", "mkfs", "fdisk", "sfdisk", "parted", "wipefs", "shred", "sgdisk", "mkswap", "pvremove", "vgremove", "lvremove", "cryptsetup", "mkfs.ext4", "mkfs.xfs", "mkfs.btrfs", "mkfs.vfat":
 		return one(RiskDestructive, cmd+" can destroy data")
 	case "shutdown", "reboot", "halt", "poweroff", "kexec", "telinit":
 		return one(RiskDestructive, cmd+" takes the host down")
@@ -422,18 +834,22 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 		if has(args, "-r") {
 			return one(RiskDestructive, "removes the crontab")
 		}
-		if has(args, "-l") && len(positional(args)) == 0 {
+		rest := args
+		if u, ok := flagValue(args, "-u", ""); ok {
+			rest = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == u })
+		}
+		if has(args, "-l") && len(positional(rest)) == 0 {
 			return RiskRead, nil
 		}
 		return one(RiskChange, "edits the crontab")
 	case "sed":
 		return classifySed(args)
 	case "awk", "gawk", "mawk":
-		prog := sub(args, 1)
-		if f, ok := flagValue(args, "-f", ""); ok && f != "" {
-			return one(RiskChange, "awk program from file")
+		if _, ok := flagValue(args, "-f", "--file"); ok || has(args, "-i", "--include", "-l", "--load", "-E", "--exec") {
+			return one(RiskChange, "awk program from a file or extension")
 		}
-		if strings.ContainsAny(prog, ">|") || strings.Contains(prog, "system") || strings.Contains(prog, "getline") || has(args, "-i", "--inplace") {
+		prog := awkProgram(args)
+		if awkWrites(prog) {
 			return one(RiskChange, "awk program writes files or runs commands")
 		}
 		return RiskRead, nil
@@ -456,25 +872,34 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 		if has(args, "-delete") {
 			return one(RiskDestructive, "find -delete removes files")
 		}
-		for i, a := range args {
-			if in(a, "-exec", "-execdir", "-ok", "-okdir") {
-				var inner []string
-				for _, b := range args[i+1:] {
-					if b == ";" || b == "+" || b == `\;` {
-						break
-					}
-					if b != "{}" {
-						inner = append(inner, b)
-					}
-				}
-				r, why := classifyArgs(inner, "", false, depth+1)
-				return maxRisk(RiskChange, r), append([]string{"find runs a command per file"}, why...)
-			}
-		}
 		if has(args, "-fprint", "-fprintf", "-fls", "-fprint0") {
 			return one(RiskChange, "find writes files")
 		}
-		return RiskRead, nil
+		risk, reasons := RiskRead, []string(nil)
+		for i, a := range args {
+			if in(a, "-ok", "-okdir") {
+				return one(RiskChange, "find asks before each command")
+			}
+			if !in(a, "-exec", "-execdir") {
+				continue
+			}
+			var inner []string
+			for _, b := range args[i+1:] {
+				if b == ";" || b == "+" || b == `\;` {
+					break
+				}
+				// find passes paths under its starting points, never options
+				inner = append(inner, strings.ReplaceAll(b, "{}", "/x"))
+			}
+			r, why := classifyArgs(inner, "", false, depth+1, nil)
+			if len(inner) > 0 && in(baseName(stripWrappers(inner)[0]), "rm", "unlink", "shred", "truncate") {
+				r, why = RiskDestructive, []string{"find deletes every file it matches"}
+			}
+			if riskRank(r) > riskRank(risk) {
+				risk, reasons = r, append([]string{"find runs a command per file"}, why...)
+			}
+		}
+		return risk, reasons
 	case "curl":
 		method := ""
 		if v, ok := flagValue(args, "-X", "--request"); ok {
@@ -486,8 +911,13 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 		if has(args, "-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "-F", "--form", "-T", "--upload-file", "--json") {
 			return one(RiskChange, "HTTP request with a body")
 		}
-		if has(args, "-o", "--output", "-O", "--remote-name", "-K", "--config") {
+		if has(args, "-O", "--remote-name", "--remote-name-all", "-K", "--config", "-c", "--cookie-jar", "--trace", "--trace-ascii", "--libcurl", "--etag-save", "--hsts", "--alt-svc") {
 			return one(RiskChange, "downloads to a file / reads config")
+		}
+		for _, f := range [][2]string{{"-o", "--output"}, {"-D", "--dump-header"}, {"", "--stderr"}} {
+			if v, ok := flagValue(args, f[0], f[1]); ok && !in(v, "/dev/null", "-", "/dev/stdout", "/dev/stderr") {
+				return one(RiskChange, "curl writes "+v)
+			}
 		}
 		return RiskRead, nil
 	case "wget":
@@ -509,7 +939,9 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 		}
 		return one(RiskChange, "opens a raw connection")
 	case "openssl":
-		if in(s1, "s_client", "x509", "version", "verify", "ciphers", "crl", "asn1parse") && !has(args, "-out", "-new") {
+		if in(s1, "s_client", "x509", "version", "verify", "ciphers", "crl", "asn1parse", "rand", "dgst", "req", "pkey", "rsa", "ec", "pkcs12", "list", "errstr", "speed") &&
+			!has(args, "-out", "-new", "-sign", "-newkey", "-x509toreq", "-export", "-passout", "-writerand") &&
+			(!in(s1, "req", "pkey", "rsa", "ec", "pkcs12") || has(args, "-noout", "-text", "-pubout", "-info", "-nokeys")) {
 			return RiskRead, nil
 		}
 		return one(RiskChange, "openssl may write keys/files")
@@ -580,11 +1012,210 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 		return RiskRead, nil
 	case "git":
 		return classifyGit(args)
-	case "docker", "podman", "nerdctl":
+	// shell builtins that only affect the shell running the script
+	case "set", ":", "exit", "return", "break", "continue", "shift", "wait", "read", "mapfile", "readarray",
+		"getopts", "let", "unset", "ulimit", "umask", "hash", "pushd", "popd", "dirs", "shopt", "local", "declare", "typeset":
+		return RiskRead, nil
+	case "trap":
+		if p := positional(args); len(p) >= 2 {
+			return classifyScript(p[0], depth+1, nil)
+		}
+		return RiskRead, nil
+	case "dpkg":
+		if has(args, "-l", "--list", "-L", "--listfiles", "-s", "--status", "-S", "--search", "-p", "--print-avail",
+			"--get-selections", "--print-architecture", "--print-foreign-architectures", "-c", "--contents", "-I", "--info", "--audit", "-C", "--compare-versions") &&
+			!has(args, "-i", "--install", "-r", "--remove", "-P", "--purge", "--configure", "--unpack", "--set-selections", "--clear-selections") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "dpkg changes packages")
+	case "apt-mark":
+		if strings.HasPrefix(s1, "show") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "apt-mark "+s1)
+	case "update-alternatives":
+		if has(args, "--display", "--query", "--list", "--get-selections") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "changes alternatives")
+	case "pacman":
+		if len(args) > 1 && (strings.HasPrefix(args[1], "-Q") || in(args[1], "-Ss", "-Si", "-Sl", "-Sg")) {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "pacman changes packages")
+	case "zpool":
+		switch s1 {
+		case "status", "list", "iostat", "get", "history", "events", "version":
+			return RiskRead, nil
+		case "destroy", "labelclear", "create", "split":
+			return one(RiskDestructive, "zpool "+s1+" can destroy data")
+		}
+		return one(RiskChange, "zpool "+s1)
+	case "zfs":
+		switch s1 {
+		case "list", "get", "holds", "userspace", "groupspace", "projectspace", "diff", "version":
+			return RiskRead, nil
+		case "destroy", "rollback":
+			return one(RiskDestructive, "zfs "+s1+" removes data")
+		}
+		return one(RiskChange, "zfs "+s1)
+	case "pvs", "vgs", "lvs", "pvdisplay", "vgdisplay", "lvdisplay", "pvscan", "vgscan", "lvscan":
+		if has(args, "--cache", "--mknodes", "-a", "--activate", "--uuid") {
+			return one(RiskChange, cmd+" changes LVM state")
+		}
+		return RiskRead, nil
+	case "mdadm":
+		if has(args, "-D", "--detail", "-E", "--examine", "-Q", "--query", "--detail-platform") &&
+			!has(args, "--fail", "-f", "--remove", "-r", "--add", "-a", "--stop", "-S", "--zero-superblock", "--grow", "-G", "--create", "-C", "--assemble", "-A") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "mdadm changes arrays")
+	case "smartctl":
+		if has(args, "-t", "--test", "-s", "--smart", "-o", "--offlineauto", "-S", "--saveauto", "-X", "--abort", "-g", "--get", "--set") {
+			return one(RiskChange, "smartctl changes drive settings or starts a test")
+		}
+		return RiskRead, nil
+	case "ssh-keygen":
+		if has(args, "-l", "-F", "-y", "-B") && !has(args, "-R", "-H", "-p", "-c", "-N") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "ssh-keygen writes keys or known_hosts")
+	case "firewall-cmd":
+		for _, a := range args[1:] {
+			if !strings.HasPrefix(a, "--list-") && !strings.HasPrefix(a, "--get-") && !strings.HasPrefix(a, "--query-") && !strings.HasPrefix(a, "--info-") &&
+				!in(a, "--state", "--check-config", "--permanent") && !strings.HasPrefix(a, "--zone=") && !strings.HasPrefix(a, "--policy=") {
+				return one(RiskChange, "changes the firewall")
+			}
+		}
+		return RiskRead, nil
+	case "fail2ban-client":
+		if in(s1, "status", "ping", "version", "get", "banned", "echo") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "fail2ban-client "+s1)
+	case "certbot":
+		if in(s1, "certificates", "plugins", "show_account") || has(args, "--version") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "certbot "+s1)
+	case "haproxy", "sshd", "named-checkconf", "named-checkzone", "visudo", "caddy", "promtool", "postconf":
+		if (cmd == "haproxy" && has(args, "-c", "-v", "-vv")) || (cmd == "sshd" && has(args, "-t", "-T")) ||
+			in(cmd, "named-checkconf", "named-checkzone") || (cmd == "visudo" && has(args, "-c", "--check")) ||
+			(cmd == "caddy" && in(s1, "validate", "version", "list-modules", "build-info", "environ", "adapt", "fmt") && !has(args, "--overwrite", "-w")) ||
+			(cmd == "promtool" && in(s1, "check", "query")) || (cmd == "postconf" && !has(args, "-e", "-X", "-#", "-M", "-P")) {
+			return RiskRead, nil
+		}
+		return one(RiskChange, cmd)
+	case "nvidia-smi":
+		if has(args, "-pm", "--persistence-mode", "-pl", "--power-limit", "-ac", "--applications-clocks", "-rac", "-lgc", "-rgc",
+			"-r", "--gpu-reset", "-c", "--compute-mode", "-e", "--ecc-config", "-mig", "--multi-instance-gpu", "-am") {
+			return one(RiskChange, "nvidia-smi changes GPU settings")
+		}
+		return RiskRead, nil
+	case "chronyc":
+		if s1 == "" || in(s1, "tracking", "sources", "sourcestats", "activity", "ntpdata", "clients", "serverstats", "selectdata", "authdata", "rtcdata", "smoothing", "waitsync") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "chronyc "+s1)
+	case "arp":
+		if has(args, "-d", "--delete", "-s", "--set", "-f", "--file") {
+			return one(RiskChange, "changes the ARP table")
+		}
+		return RiskRead, nil
+	case "tc", "bridge":
+		if (s1 != "" && in(s2, "", "show", "ls", "list")) || (s1 == "monitor") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, cmd+" changes network configuration")
+	case "conntrack":
+		if has(args, "-L", "--dump", "-S", "--stats", "-C", "--count", "-G", "--get", "-E", "--event") && !has(args, "-D", "--delete", "-F", "--flush", "-U", "--update", "-I", "--create") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "changes connection tracking")
+	case "ipset":
+		if in(s1, "list", "save", "test", "-L", "-S", "-T", "version") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "ipset "+s1)
+	case "tcpdump":
+		if has(args, "-w", "-z", "-Z") {
+			return one(RiskChange, "tcpdump writes a capture file or runs a command")
+		}
+		return RiskRead, nil
+	case "fuser":
+		if has(args, "-k", "--kill") {
+			return one(RiskChange, "fuser -k kills processes")
+		}
+		return RiskRead, nil
+	case "ldconfig":
+		if has(args, "-p", "--print-cache") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "rebuilds the library cache")
+	case "gzip", "gunzip", "bzip2", "bunzip2", "xz", "unxz", "zstd", "unzstd", "lz4":
+		if has(args, "-c", "--stdout", "-l", "--list", "-t", "--test") && !has(args, "-f", "--force") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, cmd+" writes files")
+	case "pg_isready", "pg_lsclusters", "pg_controldata", "mongostat", "mongotop":
+		return RiskRead, nil
+	case "mysqladmin":
+		ps := positional(args)
+		for _, p := range ps {
+			if !in(p, "status", "ping", "version", "processlist", "variables", "extended-status") {
+				if in(p, "shutdown", "drop") {
+					return one(RiskDestructive, "mysqladmin "+p)
+				}
+				return one(RiskChange, "mysqladmin "+p)
+			}
+		}
+		if len(ps) == 0 {
+			return one(RiskChange, "mysqladmin")
+		}
+		return RiskRead, nil
+	case "virsh":
+		if in(s1, "list", "dominfo", "domstate", "dumpxml", "net-list", "net-info", "net-dumpxml", "pool-list", "pool-info", "vol-list",
+			"nodeinfo", "version", "domblklist", "domiflist", "domstats", "capabilities", "vcpuinfo", "domblkinfo", "dommemstat", "snapshot-list", "uri", "hostname") {
+			return RiskRead, nil
+		}
+		if in(s1, "destroy", "undefine", "vol-delete", "pool-delete", "snapshot-delete") {
+			return one(RiskDestructive, "virsh "+s1)
+		}
+		return one(RiskChange, "virsh "+s1)
+	case "qm", "pct":
+		if in(s1, "list", "status", "config", "pending", "listsnapshot") {
+			return RiskRead, nil
+		}
+		if in(s1, "destroy") {
+			return one(RiskDestructive, cmd+" destroy")
+		}
+		return one(RiskChange, cmd+" "+s1)
+	case "crictl":
+		if in(s1, "ps", "pods", "images", "img", "inspect", "inspectp", "inspecti", "logs", "stats", "statsp", "info", "version", "imagefsinfo") {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "crictl "+s1)
+	case "needrestart":
+		if has(args, "-b") || (has(args, "-r") && func() bool { v, _ := flagValue(args, "-r", ""); return v == "l" }()) {
+			return RiskRead, nil
+		}
+		return one(RiskChange, "needrestart may restart services")
+	case "gcloud", "az", "doctl", "hcloud":
+		return classifyCloudCLI(cmd, args)
+	case "docker", "podman", "nerdctl", "docker-compose":
+		if cmd == "docker-compose" {
+			args = append([]string{"docker", "compose"}, args[1:]...)
+		}
+		if inner, ok := dockerExecCommand(args); ok {
+			r, why := classifyArgs(inner, stdinBody, hasStdin, depth+1, nil)
+			return r, prefixReasons("in the container: ", why)
+		}
 		return classifyDocker(args)
-	case "docker-compose":
-		return classifyDocker(append([]string{"docker", "compose"}, args[1:]...))
 	case "kubectl", "oc", "k":
+		if inner, ok := kubectlExecCommand(args); ok {
+			r, why := classifyArgs(inner, stdinBody, hasStdin, depth+1, nil)
+			return r, prefixReasons("in the pod: ", why)
+		}
 		return classifyKubectl(args)
 	case "helm":
 		if in(s1, "list", "ls", "status", "get", "history", "show", "template", "version", "search", "lint", "env") || (s1 == "repo" && in(s2, "list", "ls")) {
@@ -624,8 +1255,9 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 		return classifySQL(cmd, args)
 	case "redis-cli":
 		return classifyRedis(args)
-	case "apt", "apt-get", "yum", "dnf", "zypper", "apk", "pacman", "snap", "pip", "pip3", "npm", "gem":
-		if in(s1, "list", "search", "show", "info", "policy", "history", "check-update", "outdated", "freeze") {
+	case "apt", "apt-get", "yum", "dnf", "zypper", "apk", "snap", "pip", "pip3", "npm", "gem":
+		if in(s1, "list", "ls", "search", "show", "info", "policy", "history", "check-update", "outdated", "freeze", "view",
+			"repolist", "provides", "whatprovides", "deplist", "repoquery", "check", "madison", "changelog") || (s1 == "audit" && s2 != "fix") {
 			return RiskRead, nil
 		}
 		if in(s1, "remove", "purge", "autoremove", "erase", "uninstall", "del") {
@@ -655,7 +1287,7 @@ func classifyArgs(rawArgs []string, stdinBody string, hasStdin bool, depth int) 
 	if readOnly[cmd] {
 		return RiskRead, nil
 	}
-	if len(args) == 2 && in(args[1], "--version", "-v", "-V", "version", "--help", "-h") {
+	if len(args) == 2 && in(args[1], "--version", "-v", "-V", "version", "-version", "--help", "-h") {
 		return RiskRead, nil
 	}
 	return one(RiskChange, "unrecognised command "+cmd)
@@ -669,6 +1301,66 @@ var (
 
 // classifySed allows only print/delete/substitute scripts without write or
 // execute commands and without in-place editing.
+// awkProgram returns the program text of an awk command line.
+func awkProgram(args []string) string {
+	var progs []string
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case in(a, "-e", "--source") && i+1 < len(args):
+			progs = append(progs, args[i+1])
+			i++
+		case in(a, "-F", "-v", "--assign", "--field-separator"):
+			i++
+		case a == "--" && i+1 < len(args):
+			return strings.Join(append(progs, args[i+1]), "\n")
+		case strings.HasPrefix(a, "-") && a != "-":
+		default:
+			return strings.Join(append(progs, a), "\n")
+		}
+	}
+	return strings.Join(progs, "\n")
+}
+
+var (
+	awkString   = regexp.MustCompile(`"(\\.|[^"\\])*"`)
+	awkPrintOut = regexp.MustCompile(`\bprintf?\b[^;{}\n]*(>|\|)`)
+	awkRun      = regexp.MustCompile(`\bsystem\s*\(|\|\s*getline|\|&|@load|@include`)
+)
+
+// awkWrites reports whether an awk program can write files or run commands:
+// print/printf with > or |, a command piped into getline, system(). A > in
+// a pattern or condition ($3 > 80) is a comparison.
+func awkWrites(prog string) bool {
+	p := awkString.ReplaceAllString(prog, `""`)
+	return awkPrintOut.MatchString(p) || awkRun.MatchString(p)
+}
+
+// classifyCloudCLI classifies gcloud / az / doctl / hcloud by their verb: the
+// first word that is a known read or write verb after the command groups.
+func classifyCloudCLI(cmd string, args []string) (string, []string) {
+	pos := positional(args)
+	for i, p := range pos {
+		secret := i > 0 && in(pos[i-1], "secret", "secrets", "versions")
+		switch {
+		case in(p, "delete", "destroy", "remove", "rm", "purge", "terminate"):
+			return RiskDestructive, []string{cmd + " " + p}
+		case (in(p, "show", "get", "access") || strings.HasPrefix(p, "get-")) && (secret || secretWord.MatchString(p)):
+			return RiskChange, []string{cmd + " " + p + " reveals a secret"}
+		case in(p, "list", "describe", "show", "get", "info", "version", "status") || strings.HasPrefix(p, "list-") ||
+			strings.HasPrefix(p, "describe-") || strings.HasPrefix(p, "show-") || strings.HasPrefix(p, "get-"):
+			return RiskRead, nil
+		case in(p, "create", "update", "set", "add", "start", "stop", "restart", "reset", "deploy", "ssh", "scp", "import", "export",
+			"move", "resize", "attach", "detach", "enable", "disable", "apply", "run", "exec", "login", "logout", "rotate", "invoke",
+			"access", "print-access-token", "print-identity-token", "upload", "download", "cp", "sync", "mv", "tag", "untag"):
+			return RiskChange, []string{cmd + " " + p}
+		}
+	}
+	return RiskChange, []string{cmd + " " + strings.Join(pos, " ")}
+}
+
+var secretWord = regexp.MustCompile(`token|secret|credential|password|access-key|keys?$`)
+
 func classifySed(args []string) (string, []string) {
 	if has(args, "-i", "--in-place") || has(args, "-f", "--file") {
 		return RiskChange, []string{"sed edits files or runs a script file"}
@@ -921,6 +1613,83 @@ func classifyDocker(args []string) (string, []string) {
 		return RiskDestructive, []string{"docker " + s1 + " removes containers/images"}
 	}
 	return RiskChange, []string{"docker " + s1}
+}
+
+// dockerExecCommand returns the command of docker exec / docker container
+// exec / docker compose exec, which is classified like any other command.
+func dockerExecCommand(args []string) ([]string, bool) {
+	i := 1
+	for i < len(args) && strings.HasPrefix(args[i], "-") { // global options
+		if name, _, eq := strings.Cut(args[i], "="); !eq && in(name, "-H", "--host", "-l", "--log-level", "--config", "-c", "--context") {
+			i++
+		}
+		i++
+	}
+	var valueOpts []string
+	switch {
+	case i < len(args) && args[i] == "exec":
+		valueOpts = []string{"-u", "--user", "-w", "--workdir", "-e", "--env", "--env-file", "--detach-keys"}
+		i++
+	case i+1 < len(args) && args[i] == "container" && args[i+1] == "exec":
+		valueOpts = []string{"-u", "--user", "-w", "--workdir", "-e", "--env", "--env-file", "--detach-keys"}
+		i += 2
+	case i < len(args) && args[i] == "compose":
+		i++
+		for i < len(args) && strings.HasPrefix(args[i], "-") {
+			if name, _, eq := strings.Cut(args[i], "="); !eq && in(name, "-f", "--file", "-p", "--project-name", "--env-file", "--profile", "--project-directory", "--ansi", "--progress", "--parallel") {
+				i++
+			}
+			i++
+		}
+		if i >= len(args) || args[i] != "exec" {
+			return nil, false
+		}
+		valueOpts = []string{"-u", "--user", "-w", "--workdir", "-e", "--env", "--index"}
+		i++
+	default:
+		return nil, false
+	}
+	for i < len(args) && strings.HasPrefix(args[i], "-") {
+		if name, _, eq := strings.Cut(args[i], "="); !eq && in(name, valueOpts...) {
+			i++
+		}
+		i++
+	}
+	if i+1 >= len(args) { // container (or service) and a command
+		return nil, false
+	}
+	return args[i+1:], true
+}
+
+// kubectlExecCommand returns the command of kubectl exec ... -- command.
+func kubectlExecCommand(args []string) ([]string, bool) {
+	dash := slices.Index(args, "--")
+	if dash < 0 || dash+1 >= len(args) || !slices.Contains(args[1:dash], "exec") {
+		return nil, false
+	}
+	// the verb is the first word that is not an option or an option's value
+	for i := 1; i < dash; i++ {
+		a := args[i]
+		if a == "exec" {
+			return args[dash+1:], true
+		}
+		if strings.HasPrefix(a, "-") {
+			if name, _, eq := strings.Cut(a, "="); !eq && in(name, "-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "-s", "--server", "--token", "--as", "--request-timeout") {
+				i++
+			}
+			continue
+		}
+		return nil, false
+	}
+	return nil, false
+}
+
+func prefixReasons(p string, why []string) []string {
+	out := make([]string, len(why))
+	for i, w := range why {
+		out[i] = p + w
+	}
+	return out
 }
 
 func indexOf(list []string, s string) int {

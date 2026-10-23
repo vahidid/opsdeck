@@ -24,6 +24,7 @@ import (
 	"opsdeck/internal/audit"
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/dbx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
@@ -49,6 +50,7 @@ type Server struct {
 	hub      *connect.Hub
 	docker   *docker.Client
 	kube     *kube.Manager
+	db       *dbx.Manager
 	git      *gitx.Manager
 	ansible  *ansible.Manager
 	mcp      *mcpx.Manager
@@ -104,6 +106,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.hub.Browser = func() string { return s.cfg.Settings().VPN.Browser }
 	s.docker = docker.New(s.hub)
 	s.kube = kube.New(s.hub, v)
+	s.db = dbx.New(s.hub, v)
 	s.git = gitx.New(s.hub)
 	s.git.Identity = func() (string, string) { g := s.cfg.Settings().Git; return g.Name, g.Email }
 	s.git.Connections = s.cfg.GitConnections
@@ -121,7 +124,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.mcp.Trusted = func(ws string, c workspace.MCPServer) bool { return cfg.MCPTrusted(mcpx.Hash(ws, c)) }
 	s.forwards = connect.NewForwards()
 	s.agents = agent.NewManager(agent.Deps{
-		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, Git: s.git, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
+		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, DB: s.db, Git: s.git, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
 		Router:   s.router,
 		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {

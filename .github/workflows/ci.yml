@@ -18,6 +18,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # real databases for the Databases tests (internal/server/db_test.go)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: app, POSTGRES_PASSWORD: pgpass, POSTGRES_DB: shop }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U app" --health-interval 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env: { MYSQL_ROOT_PASSWORD: rootpass, MYSQL_DATABASE: shop }
+        ports: ["3306:3306"]
+        options: --health-cmd "mysqladmin ping -prootpass" --health-interval 5s --health-retries 30
+    env:
+      OPSDECK_TEST_POSTGRES: app:pgpass@127.0.0.1:5432/shop
+      OPSDECK_TEST_MYSQL: root:rootpass@127.0.0.1:3306/shop
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

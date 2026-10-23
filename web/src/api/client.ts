@@ -76,6 +76,11 @@ import type {
   Workspace,
   WorkspaceSummary,
   InstalledAgent,
+  DbAnswer,
+  DbInfo,
+  DbTable,
+  DbTableInfo,
+  DbNotRead,
   ProviderModels,
   ProviderConfig,
   AnsibleProject,
@@ -159,6 +164,7 @@ const qs = (o: Record<string, string | number | boolean | undefined | null>) => 
 const W = (ws: string) => `/api/workspaces/${e(ws)}`;
 const H = (ws: string, host: string) => `${W(ws)}/hosts/${e(host)}`;
 const C = (ws: string, c: string) => `${W(ws)}/clusters/${e(c)}`;
+const D = (ws: string, db: string) => `${W(ws)}/databases/${e(db)}`;
 const S = (ws: string, id: string) => `${W(ws)}/sessions/${e(id)}`;
 const R = (ws: string, repo: string) => `${W(ws)}/repos/${e(repo)}`;
 const AP = (ws: string, p: string) => `${W(ws)}/ansible/p/${e(p)}`;
@@ -425,6 +431,14 @@ export const api = {
 
   // kubernetes (type is a resource id like "deployments.apps"; ns "_" = cluster scoped)
   kubeOverview: (ws: string, c: string, namespace: string) => get<KubeOverview>(`${C(ws, c)}/overview${qs({ namespace })}`),
+  // databases
+  dbInfo: (ws: string, db: string, database?: string) => get<DbInfo>(`${D(ws, db)}/info${qs({ database })}`),
+  dbDatabases: (ws: string, db: string) => arr(get<string[]>(`${D(ws, db)}/databases`)),
+  dbTables: (ws: string, db: string, database?: string) => arr(get<DbTable[]>(`${D(ws, db)}/tables${qs({ database })}`)),
+  dbTable: (ws: string, db: string, schema: string, name: string, database?: string) => get<DbTableInfo>(`${D(ws, db)}/table${qs({ database, schema, name })}`),
+  dbClassify: (ws: string, db: string, sql: string) => post<DbNotRead>(`${D(ws, db)}/classify`, { sql }),
+  dbQuery: (ws: string, db: string, b: { sql: string; database?: string; write?: boolean; maxRows?: number }) => post<DbAnswer>(`${D(ws, db)}/query`, b),
+
   kubeResources: (ws: string, c: string, refresh = false) => arr(get<KubeResourceType[]>(`${C(ws, c)}/resources${qs({ refresh: refresh ? 1 : undefined })}`)),
   kubeNamespaces: (ws: string, c: string) => get<{ namespaces: string[] | null; default: string }>(`${C(ws, c)}/namespaces`).then((r) => ({ ...r, namespaces: r.namespaces ?? [] })),
   kubeList: (ws: string, c: string, type: string, o: { namespace?: string; labelSelector?: string; fieldSelector?: string }) =>

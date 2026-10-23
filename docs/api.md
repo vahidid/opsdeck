@@ -265,6 +265,20 @@ type HostStats = { hostname; os; kernel; uptimeSec: number; load: number[]; cpus
 
 `Forward = { id, workspace, target, remote: "host:port", localPort, url, created }`
 
+## Databases
+
+Under `/api/workspaces/{ws}/databases/{db}` (`{db}` is the Database resource; `?database=`
+picks another database on the server). See [databases.md](databases.md).
+
+| Method | Path | |
+|---|---|---|
+| GET | `/info` | → `{info: {engine, version, user, database, address}, path, environment, protected}` |
+| GET | `/databases` | → `[name]` |
+| GET | `/tables` | → `[{schema, name, type, rows (estimate, -1 = unknown), bytes}]` |
+| GET | `/table?schema=&name=` | → `{schema, name, columns: [{name, type, nullable, default, primary}], indexes: [{name, definition, unique, primary}]}` |
+| POST | `/classify` | `{sql}` → `{risk, reasons, statements, environment, protected}` |
+| POST | `/query` | `{sql, database?, write?, maxRows?}` → `{risk, reasons, results: [{statement, columns?, rows?, truncated?, rowsAffected, durationMs, error?}], database, durationMs, committed, error?}`. A script that is not a read answers **409** `{code: "not_read", risk, reasons, statements, environment, protected}` until it is sent with `write: true` (audited as `db.query`). SQL errors are part of a 200 answer. |
+
 ## Docker (on a Host, over SSH)
 
 All paths start with `/api/workspaces/{ws}/hosts/{host}/docker`. Changes are audited and

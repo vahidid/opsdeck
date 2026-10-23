@@ -701,3 +701,30 @@ export type AnsibleModuleOption = {
   description?: string;
 };
 export type AnsibleModuleDoc = { name: string; short: string; description?: string; options: AnsibleModuleOption[]; freeForm?: boolean; examples?: string };
+
+// ---------------------------------------------------------------- databases
+
+export type DbInfo = {
+  info: { engine: "postgres" | "mysql"; version: string; user: string; database: string; address: string };
+  path: string[];
+  environment: string;
+  protected: boolean;
+};
+export type DbTable = { schema: string; name: string; type: string; rows: number; bytes: number };
+export type DbColumn = { name: string; type: string; nullable: boolean; default: string | null; primary: boolean };
+export type DbIndex = { name: string; definition: string; unique: boolean; primary: boolean };
+export type DbTableInfo = { schema: string; name: string; columns: DbColumn[]; indexes: DbIndex[] };
+export type DbRisk = "read" | "change" | "destructive";
+export type DbResult = {
+  statement: string;
+  columns?: { name: string; type: string }[];
+  rows?: unknown[][];
+  truncated?: boolean;
+  /** -1 for result sets */
+  rowsAffected: number;
+  durationMs: number;
+  error?: string;
+};
+export type DbAnswer = { risk: DbRisk; reasons: string[]; results: DbResult[]; database: string; durationMs: number; committed: boolean; error?: string };
+/** What a script that is not a read needs to be confirmed (409 not_read). */
+export type DbNotRead = { risk: DbRisk; reasons: string[]; statements: number; environment: string; protected: boolean };

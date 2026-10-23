@@ -17,6 +17,7 @@ import (
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/dbx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
@@ -88,6 +89,7 @@ type Deps struct {
 	Hub        *connect.Hub
 	Docker     *docker.Client
 	Kube       *kube.Manager
+	DB         *dbx.Manager
 	Git        *gitx.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault

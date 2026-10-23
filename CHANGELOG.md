@@ -7,6 +7,18 @@ each release's section becomes its notes on GitHub.
 
 ### Agent
 
+- **Fewer approvals for reads on servers.** The command classifier knows many more read-only
+  commands and forms (shell builtins such as `set -e` and `read`, `awk` conditions, `curl -o
+  /dev/null`, `dpkg -l`, storage, firewall and certificate status tools, cloud CLIs' `list` and
+  `describe`), classifies `docker exec`, `docker compose exec`, `kubectl exec` and `find -exec`
+  by the command they run, and evaluates loop variables with their literal values. Unknown
+  values are tried with hostile ones, so a read stays a read only if it is one whatever they
+  are. In a set of 80 everyday read commands, 47 used to ask for approval; none do now.
+- **Permission rules match each command of a script.** An `allow` rule for `exec` covers a
+  script only when every command in it that is not a read matches, so `systemctl status*` no
+  longer allows `systemctl status x; rm -rf /`. `ask` and `deny` rules apply when any command
+  matches.
+
 - **Model lists from the CLI** — Settings asks each local agent which models your login can
   use (Claude Code, Codex, Gemini CLI, opencode and other ACP agents) and shows them with
   their names and descriptions to tick; API providers list their models from the API

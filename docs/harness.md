@@ -65,7 +65,7 @@ Code has git; production does not. So safety comes before execution, not after:
 - **Risk classes** on every call: `read` → `change` → `destructive`.
   `exec` commands are classified by a parser (`systemctl status` = read,
   `systemctl restart` = change, `rm -rf`, `DROP`, `kubectl delete` = destructive).
-  Unknown = treated as change.
+  Unknown = treated as change. See [How commands are classified](#how-commands-are-classified).
 - **Environment-aware policy**: the same call can be auto-allowed on `dev` and require
   approval on `prod` (environments come from the workspace).
 - **Modes** decide what runs without asking (see [Modes](#modes)); changes on servers ask
@@ -191,6 +191,41 @@ output and approval as before. **Grouped / Detailed** in the session header swit
 grouped and all calls open (remembered in the browser). Nothing is dropped: the session keeps
 every call, output and approval.
 
+## How commands are classified
+
+A shell command from `exec`, `local_exec` or `save_artifact` is parsed (mvdan/sh), not matched
+as text. Like Codex's safe-command check and Claude Code's per-subcommand rules, every simple
+command in it is classified on its own (pipelines, `&&`, `;`, loops, subshells, `$(…)`,
+`bash -c '…'` and here-docs fed to a shell), and the script gets the highest risk. A script runs
+without asking only when **every** command in it is a read:
+
+- **Reads are an allowlist.** About 300 commands are known, with their read-only forms: `cat`,
+  `grep`, `journalctl`, `ss`, `systemctl status`, `docker ps`/`logs`/`inspect`, `kubectl get`,
+  `dpkg -l`, `zpool status`, `pvs`, `smartctl -a`, `firewall-cmd --list-all`, `certbot certificates`,
+  `openssl x509 -noout`, `gcloud … list`, `psql -c 'select …'` and so on. Anything not
+  recognised is a change.
+- **Shell builtins** that only affect the script (`set -euo pipefail`, `read`, `:`, `exit`,
+  `local`) are reads. `source` reads only `/etc/os-release` and `/etc/lsb-release`.
+- **Commands inside containers** are classified by what they run: `docker exec web cat …`,
+  `docker compose exec db pg_isready` and `kubectl exec pod -- env` are reads; `docker exec web
+  rm …` is not. `find -exec` and `xargs` likewise.
+- **Programs passed as arguments** are inspected: `awk '$3 > 80 {print $1}'` is a read, an awk
+  program that prints into a file or a pipe or calls `system()` is a change; `sed` without `-i`,
+  `w` and `e`; SQL without writes.
+- **Values known only when the script runs.** A variable that the script sets only to literal
+  values (`for f in /etc/nginx/*.conf`, `dir=/var/log`) is classified with those values. Any
+  other expansion (`$1`, `read x`, `$(…)`) is tried with hostile values (`rm`, `-delete`,
+  `-o /tmp/x`, `rm -rf /`, a sed or awk program that writes): the command is a read only if it
+  stays one whatever the value. A command *name* that is not known statically is destructive.
+- **Environment.** Setting `PATH`, `LD_*`, `GIT_*`, `HOME`, `BASH_ENV` and similar for later
+  commands (`export PATH=…`) makes the script a change; a prefix like `LANG=C` or `KUBECONFIG=…`
+  on a read stays a read.
+- Writes through redirection (`> file`), `tee`, `curl -o file`, `sort -o` are changes;
+  `> /dev/null` is not.
+
+This is a safety net for approvals, not a sandbox: the approval card shows the reasons for the
+class (e.g. `rm -r/-f deletes files`, `depends on values only known when it runs`).
+
 ## Permission rule examples
 
 ```yaml
@@ -204,6 +239,16 @@ permissions:
     - deny:  { risk: destructive, environment: [prod] }   # human must run it via `!`
     - deny:  { tool: exec, match: "iptables -F*" }
 ```
+
+For shell commands, `match` is a pattern (`*` = any text) applied to each command of the script,
+with and without wrappers such as `sudo`. An **allow** rule covers a script only when every
+command in it that is not a read matches: `allow: { tool: exec, match: "systemctl restart nginx*" }`
+allows `sudo systemctl restart nginx && systemctl status nginx`, but not
+`systemctl restart nginx; rm -rf /tmp/x`. A write through a redirection (`… > /etc/x`), a
+variable such as `PATH` set for later commands and a destructive SQL statement count as commands
+of their own, so a command pattern never covers them. **ask** and **deny** rules apply when any
+command (or the script as a whole) matches. A script that cannot be parsed is never covered by an
+allow rule.
 
 ## Language choice and reference projects
 

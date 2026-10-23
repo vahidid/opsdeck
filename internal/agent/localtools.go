@@ -563,8 +563,10 @@ func toolLocalExec() Tool {
 			if timeout > 30*time.Minute {
 				timeout = 30 * time.Minute
 			}
-			risk, reasons := ClassifyCommand(in.Command)
-			c := &Call{Risk: risk, Target: "local", Environment: "local", Protected: true, Match: in.Command, Reasons: reasons,
+			an := AnalyzeCommand(in.Command)
+			risk := an.Risk
+			c := &Call{Risk: risk, Target: "local", Environment: "local", Protected: true, Match: in.Command, Reasons: an.Reasons,
+				Shell: true, Commands: an.Parts,
 				Preview: "$ " + in.Command + "\n\non: this computer (" + runtime.GOOS + ")\nin: " + cwd}
 			if risk == RiskRead && (!lp.AutoReadCommands || strings.Contains(strings.ToLower(in.Command), "opsdeck")) {
 				c.Consent = "runs a command on this computer"

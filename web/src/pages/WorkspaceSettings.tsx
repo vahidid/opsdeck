@@ -191,8 +191,10 @@ export function WorkspaceSettingsPage() {
           }
         >
           <div className="text-xs text-muted mb-3">
-            Evaluated top to bottom; the first matching rule wins. Without a match: reads are allowed, changes ask, destructive actions ask. <span className="font-mono">match</span> is a glob
-            on the command (for <span className="font-mono">exec</span>).
+            Evaluated top to bottom; the first matching rule wins. Without a match: reads are allowed, changes ask, destructive actions ask. <span className="font-mono">match</span> is a pattern
+            (<span className="font-mono">*</span> = anything) checked against each command of a shell script (<span className="font-mono">exec</span>,{" "}
+            <span className="font-mono">local_exec</span>): an <b>allow</b> rule covers a script only when every command in it that is not a read matches, so{" "}
+            <span className="font-mono">systemctl restart nginx*</span> never allows <span className="font-mono">…; rm -rf …</span>. <b>ask</b> and <b>deny</b> apply when any command matches.
           </div>
           {w.permissions.rules.length === 0 && <div className="text-xs text-faint">No custom rules — defaults apply.</div>}
           <div className="space-y-2">

@@ -434,7 +434,7 @@ export const api = {
   // databases
   dbInfo: (ws: string, db: string, database?: string) => get<DbInfo>(`${D(ws, db)}/info${qs({ database })}`),
   dbDatabases: (ws: string, db: string) => arr(get<string[]>(`${D(ws, db)}/databases`)),
-  dbTables: (ws: string, db: string, database?: string) => arr(get<DbTable[]>(`${D(ws, db)}/tables${qs({ database })}`)),
+  dbTables: (ws: string, db: string, database?: string, match?: string) => arr(get<DbTable[]>(`${D(ws, db)}/tables${qs({ database, match })}`)),
   dbTable: (ws: string, db: string, schema: string, name: string, database?: string) => get<DbTableInfo>(`${D(ws, db)}/table${qs({ database, schema, name })}`),
   dbClassify: (ws: string, db: string, sql: string) => post<DbNotRead>(`${D(ws, db)}/classify`, { sql }),
   dbQuery: (ws: string, db: string, b: { sql: string; database?: string; write?: boolean; maxRows?: number }) => post<DbAnswer>(`${D(ws, db)}/query`, b),

@@ -7,20 +7,27 @@ each release's section becomes its notes on GitHub.
 
 ### Workbench
 
-- **Databases** — a new page for the PostgreSQL, MySQL and MariaDB databases of a workspace,
-  reached through its VPNs and jump hosts or an SSH tunnel to the database's host, with the
-  login from the vault: the databases on the server, tables and views with estimated rows,
-  columns and indexes, and a SQL editor (highlighting, completion, Ctrl/⌘-Enter, history)
-  with results as a table. Reads run in a read-only transaction; a script that is not a read
-  is shown with its risk for confirmation (destructive ones on a protected environment ask
-  for the database's name) and runs as one transaction, recorded in the activity journal.
+- **Databases** — a new page for the PostgreSQL, MySQL, MariaDB, MongoDB and Redis databases
+  of a workspace, reached through its VPNs and jump hosts or an SSH tunnel to the database's
+  host, with the login from the vault: the databases on the server, tables and views,
+  collections or keys with estimated sizes, their structure (columns and indexes, fields
+  inferred from sampled documents, a key's type, TTL and memory), and an editor for SQL,
+  mongosh-style queries or redis-cli commands (highlighting, completion, Ctrl/⌘-Enter,
+  history). Reads cannot change data (a read-only transaction for SQL; only read operations
+  and commands for MongoDB and Redis); a script that is not a read is shown with its risk for
+  confirmation (destructive ones on a protected environment ask for the database's name),
+  runs as one transaction where the engine has one, and is recorded in the activity journal.
+- **Results grid** — virtualized rows, resizable and sortable columns, a row filter, wrapped
+  or single-line cells and a JSON view. Double-click a cell (or press Enter) for the whole
+  value — up to 64K characters, JSON indented, with search — or open the whole row; copy as
+  tab-separated, CSV or JSON, or download a CSV or JSON file.
 
 ### Agent
 
 - **`database` tool** — the agent queries workspace databases with the vault login instead
-  of running psql or mysql with passwords on a host: databases, tables, describe, query.
-  Reads need no approval and run in a read-only transaction; changes go to the approval card
-  with their SQL.
+  of running psql, mysql, mongosh or redis-cli with passwords on a host: databases, tables
+  (collections, keys), describe, query. Reads need no approval; changes go to the approval
+  card with their script.
 - **Fewer approvals for reads on servers.** The command classifier knows many more read-only
   commands and forms (shell builtins such as `set -e` and `read`, `awk` conditions, `curl -o
   /dev/null`, `dpkg -l`, storage, firewall and certificate status tools, cloud CLIs' `list` and

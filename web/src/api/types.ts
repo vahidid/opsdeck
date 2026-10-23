@@ -704,16 +704,28 @@ export type AnsibleModuleDoc = { name: string; short: string; description?: stri
 
 // ---------------------------------------------------------------- databases
 
+export type DbEngine = "postgres" | "mysql" | "mongodb" | "redis";
 export type DbInfo = {
-  info: { engine: "postgres" | "mysql"; version: string; user: string; database: string; address: string };
+  info: { engine: DbEngine; version: string; user: string; database: string; address: string };
   path: string[];
   environment: string;
   protected: boolean;
+  /** a change script runs as one transaction (SQL); MongoDB and Redis run statement by statement */
+  atomic: boolean;
 };
-export type DbTable = { schema: string; name: string; type: string; rows: number; bytes: number };
+/** A table or view, a MongoDB collection, or a Redis key. */
+export type DbTable = { schema: string; name: string; type: string; rows: number; bytes: number; /** what shows its content */ query: string };
 export type DbColumn = { name: string; type: string; nullable: boolean; default: string | null; primary: boolean };
 export type DbIndex = { name: string; definition: string; unique: boolean; primary: boolean };
-export type DbTableInfo = { schema: string; name: string; columns: DbColumn[]; indexes: DbIndex[] };
+export type DbTableInfo = {
+  schema: string;
+  name: string;
+  kind: "table" | "collection" | "key";
+  columns: DbColumn[];
+  indexes: DbIndex[];
+  properties?: { name: string; value: string }[];
+  note?: string;
+};
 export type DbRisk = "read" | "change" | "destructive";
 export type DbResult = {
   statement: string;
@@ -724,7 +736,8 @@ export type DbResult = {
   rowsAffected: number;
   durationMs: number;
   error?: string;
+  note?: string;
 };
 export type DbAnswer = { risk: DbRisk; reasons: string[]; results: DbResult[]; database: string; durationMs: number; committed: boolean; error?: string };
 /** What a script that is not a read needs to be confirmed (409 not_read). */
-export type DbNotRead = { risk: DbRisk; reasons: string[]; statements: number; environment: string; protected: boolean };
+export type DbNotRead = { risk: DbRisk; reasons: string[]; statements: number; environment: string; protected: boolean; atomic: boolean };

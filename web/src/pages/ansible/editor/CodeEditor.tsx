@@ -20,17 +20,18 @@ import { jinja2 } from "@codemirror/legacy-modes/mode/jinja2";
 import { properties } from "@codemirror/legacy-modes/mode/properties";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { python } from "@codemirror/legacy-modes/mode/python";
-import { json } from "@codemirror/legacy-modes/mode/javascript";
+import { javascript, json } from "@codemirror/legacy-modes/mode/javascript";
 import { mySQL, pgSQL } from "@codemirror/legacy-modes/mode/sql";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import type { StringStream } from "@codemirror/language";
 import { linter, lintGutter, lintKeymap } from "@codemirror/lint";
 import type { Diagnostic } from "@codemirror/lint";
 import { tags as t } from "@lezer/highlight";
 import { COMPLETE_TASK, PLAY_KEYWORDS, parseYaml, yamlProblems } from "./model";
 
-export type Language = "yaml" | "jinja" | "ini" | "shell" | "json" | "python" | "pgsql" | "mysql" | "text";
+export type Language = "yaml" | "jinja" | "ini" | "shell" | "json" | "python" | "pgsql" | "mysql" | "mongo" | "redis" | "text";
 export type ModuleItem = { name: string; description: string };
 
 const theme = EditorView.theme({
@@ -87,9 +88,45 @@ function languageExt(lang: Language): Extension {
       return StreamLanguage.define(pgSQL);
     case "mysql":
       return StreamLanguage.define(mySQL);
+    case "mongo":
+      return StreamLanguage.define(javascript);
+    case "redis":
+      return StreamLanguage.define(redisMode);
   }
   return [];
 }
+
+// redis-cli lines: the command, then quoted or plain arguments.
+const redisMode = {
+  name: "redis",
+  startState: () => ({ first: true }),
+  token(stream: StringStream, state: { first: boolean }) {
+    if (stream.sol()) state.first = true;
+    if (stream.eatSpace()) return null;
+    if (state.first && (stream.match("#") || stream.match("//"))) {
+      stream.skipToEnd();
+      return "comment";
+    }
+    const q = stream.peek();
+    if (q === '"' || q === "'") {
+      stream.next();
+      let esc = false;
+      let c: string | void;
+      while ((c = stream.next()) != null) {
+        if (c === q && !esc) break;
+        esc = !esc && c === "\\";
+      }
+      state.first = false;
+      return "string";
+    }
+    stream.match(/^[^\s"']+/);
+    if (state.first) {
+      state.first = false;
+      return "keyword";
+    }
+    return /^-?\d+(\.\d+)?$/.test(stream.current()) ? "number" : null;
+  },
+};
 
 function yamlLint(view: EditorView): Diagnostic[] {
   const text = view.state.doc.toString();
@@ -119,16 +156,27 @@ function ansibleCompletion(modules: () => ModuleItem[]) {
   };
 }
 
-// SQL completion: keywords and the database's table and column names.
+// Query completion: the language's keywords (SQL, MongoDB methods, Redis
+// commands) and the database's names (tables, collections, keys).
 const SQL_KEYWORDS = ["SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "JOIN", "LEFT JOIN", "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE FROM", "WITH", "AS", "AND", "OR", "NOT", "NULL", "IS", "IN", "LIKE", "COUNT", "DISTINCT", "HAVING", "EXPLAIN", "SHOW"];
-function sqlCompletion(words: () => string[]) {
+const MONGO_KEYWORDS = ["find", "findOne", "aggregate", "countDocuments", "estimatedDocumentCount", "distinct", "getIndexes", "sort", "limit", "skip", "projection",
+  "insertOne", "insertMany", "updateOne", "updateMany", "replaceOne", "deleteOne", "deleteMany", "findOneAndUpdate", "createIndex", "dropIndex", "runCommand",
+  "getCollection", "getCollectionNames", "stats", "show collections", "show dbs", "use", "ObjectId", "ISODate", "NumberLong", "NumberDecimal",
+  "$match", "$group", "$project", "$sort", "$limit", "$lookup", "$unwind", "$count", "$sum", "$avg", "$in", "$gt", "$gte", "$lt", "$lte", "$ne", "$exists", "$regex", "$set", "$inc", "$push"];
+const REDIS_KEYWORDS = ["GET", "MGET", "SET", "DEL", "EXISTS", "TYPE", "TTL", "EXPIRE", "SCAN", "KEYS", "HGET", "HGETALL", "HSET", "HDEL", "HSCAN", "LRANGE", "LLEN", "LPUSH", "RPUSH",
+  "SMEMBERS", "SSCAN", "SADD", "SREM", "ZRANGE", "ZSCORE", "ZADD", "ZREM", "XRANGE", "XREVRANGE", "XLEN", "XINFO", "INFO", "DBSIZE", "CONFIG GET", "CLIENT LIST",
+  "SLOWLOG GET", "MEMORY USAGE", "OBJECT ENCODING", "MATCH", "COUNT", "WITHSCORES"];
+const KEYWORDS: Partial<Record<Language, string[]>> = { pgsql: SQL_KEYWORDS, mysql: SQL_KEYWORDS, mongo: MONGO_KEYWORDS, redis: REDIS_KEYWORDS };
+function queryCompletion(language: Language, words: () => string[]) {
+  const kws = KEYWORDS[language] ?? [];
+  const valid = language === "redis" ? /^[^\s"']*$/ : /^[\w.$]*$/;
   return (ctx: CompletionContext): CompletionResult | null => {
-    const w = ctx.matchBefore(/[\w.$]+/);
+    const w = ctx.matchBefore(language === "redis" ? /[^\s"']+/ : /[\w.$]+/);
     if (!w || (w.from === w.to && !ctx.explicit)) return null;
     return {
       from: w.from,
-      options: [...SQL_KEYWORDS.map((k) => ({ label: k, type: "keyword" })), ...words().map((n) => ({ label: n, type: n.includes(".") ? "class" : "property", boost: 1 }))],
-      validFor: /^[\w.$]*$/,
+      options: [...kws.map((k) => ({ label: k, type: "keyword" })), ...words().map((n) => ({ label: n, type: n.includes(".") ? "class" : "property", boost: 1 }))],
+      validFor: valid,
     };
   };
 }
@@ -148,6 +196,7 @@ export default function CodeEditor({
   autoFocus = false,
   onRun,
   words,
+  wrap = false,
 }: {
   value: string;
   onChange?: (v: string) => void;
@@ -158,8 +207,10 @@ export default function CodeEditor({
   autoFocus?: boolean;
   /** Ctrl/⌘-Enter (the SQL editor runs the query) */
   onRun?: () => void;
-  /** names offered by SQL completion */
+  /** names offered by query completion (tables, collections, keys) */
   words?: string[];
+  /** wrap long lines */
+  wrap?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -195,6 +246,7 @@ export default function CodeEditor({
       syntaxHighlighting(highlight),
       theme,
       languageExt(language),
+      wrap ? EditorView.lineWrapping : [],
       ro.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
       keymap.of([
         { key: "Mod-s", run: () => (cb.current.onSave?.(), true), preventDefault: true },
@@ -212,8 +264,8 @@ export default function CodeEditor({
         if (u.docChanged) cb.current.onChange?.(u.state.doc.toString());
       }),
     ];
-    if (language === "pgsql" || language === "mysql") {
-      ext.push(autocompletion({ override: [sqlCompletion(() => names.current)], activateOnTyping: true }));
+    if (KEYWORDS[language]) {
+      ext.push(autocompletion({ override: [queryCompletion(language, () => names.current)], activateOnTyping: true }));
     }
     if (language === "yaml") {
       ext.push(linter(yamlLint, { delay: 400 }), lintGutter(), autocompletion({ override: [ansibleCompletion(() => mods.current)], activateOnTyping: true }));
@@ -227,7 +279,7 @@ export default function CodeEditor({
     };
     // the editor is created once per language; value changes are applied below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language]);
+  }, [language, wrap]);
 
   // outside changes (the visual editor, a reload) replace the text
   useEffect(() => {

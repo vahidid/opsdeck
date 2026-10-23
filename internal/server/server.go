@@ -57,12 +57,14 @@ type Server struct {
 	token     string
 	devOrigin string
 	port      int
+	desktop   bool
 }
 
 // Options configure the server.
 type Options struct {
 	Port      int
 	DevOrigin string // extra allowed Origin for UI development (e.g. http://localhost:5173)
+	Desktop   bool   // serving the desktop app's window: links and downloads go through the server
 }
 
 // New opens all stores under dirs.
@@ -83,7 +85,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{dirs: dirs, cfg: cfg, vault: v, audit: al, port: opts.Port, devOrigin: opts.DevOrigin}
+	s := &Server{dirs: dirs, cfg: cfg, vault: v, audit: al, port: opts.Port, devOrigin: opts.DevOrigin, desktop: opts.Desktop}
 	s.ws = workspace.NewManager(dirs.Workspaces(), cfg.ExternalWorkspaces(), cfg.SetExternalWorkspaces)
 	// Older versions kept per-workspace state outside the folder; adopt it.
 	for _, w := range s.ws.List() {
@@ -230,6 +232,9 @@ func (s *Server) Close() {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.routes(mux)
+	if s.desktop {
+		s.desktopRoutes(mux)
+	}
 	dist, _ := fs.Sub(distFS, "dist")
 	static := http.FileServer(http.FS(dist))
 	// MCP bridge for external agents (bearer token per running session).

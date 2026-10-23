@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
+	"opsdeck/internal/sysproc"
 	"sort"
 	"strings"
 	"sync"
@@ -62,7 +62,7 @@ func docJSON(ctx context.Context, p *Project, args ...string) ([]byte, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := sysproc.CommandContext(ctx, path, args...)
 	cmd.Dir = p.Root
 	cmd.Env = append(baseEnv(p), "ANSIBLE_FORCE_COLOR=0", "NO_COLOR=1")
 	var out, errb bytes.Buffer

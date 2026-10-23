@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"opsdeck/internal/sysproc"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/workspace"
 )
@@ -116,7 +116,7 @@ func (m *Manager) Ensure(ctx context.Context, w *workspace.Workspace) {
 
 func (m *Manager) start(ctx context.Context, ws string, cfg workspace.MCPServer) *server {
 	s := &server{cfg: cfg}
-	cmd := exec.Command(cfg.Command, cfg.Args...)
+	cmd := sysproc.Command(cfg.Command, cfg.Args...)
 	cmd.Env = os.Environ()
 	for k, v := range cfg.Env {
 		if strings.HasPrefix(v, "vault://") {

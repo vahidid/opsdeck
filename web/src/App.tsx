@@ -6,7 +6,8 @@ import { TerminalProvider } from "./context/terminals";
 import { TabCtx, TabsProvider, useTabs } from "./context/tabs";
 import { TabStrip } from "./components/TabStrip";
 import { sectionInfo } from "./lib/nav";
-import { ConfirmProvider, ToastProvider } from "./components/overlay";
+import { ConfirmProvider, ToastProvider, useToast } from "./components/overlay";
+import { installDesktop, isDesktop } from "./lib/desktop";
 import { Button, EmptyState, ErrorBox, Loading, cx } from "./components/ui";
 import { Boot } from "./pages/Boot";
 import { CreateWorkspaceModal, Shell } from "./pages/Shell";
@@ -34,6 +35,7 @@ import { WorkspaceSettingsPage } from "./pages/WorkspaceSettings";
 export function App() {
   return (
     <ToastProvider>
+      {isDesktop && <DesktopBridge />}
       <ConfirmProvider>
         <Boot>
           {(lock) => (
@@ -59,6 +61,14 @@ export function App() {
       </ConfirmProvider>
     </ToastProvider>
   );
+}
+
+// In the desktop app, web links open in the default browser and downloads
+// are saved in the downloads folder (see lib/desktop).
+function DesktopBridge() {
+  const toast = useToast();
+  useEffect(() => installDesktop((n) => toast[n.kind](n.title, n.detail)), [toast]);
+  return null;
 }
 
 function Home() {

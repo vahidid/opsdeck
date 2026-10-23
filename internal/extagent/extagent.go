@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"strings"
@@ -136,7 +137,7 @@ type process struct {
 }
 
 func start(ctx context.Context, name string, args []string, env []string, dir string) (*process, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := sysproc.CommandContext(ctx, name, args...)
 	cmd.Env, cmd.Dir = env, dir
 	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.WaitDelay = 5e9

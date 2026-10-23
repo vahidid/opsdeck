@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,7 +27,7 @@ type proc struct {
 // startProc runs argv (prefixed with elevate when non-empty) with stdin.
 func startProc(argv, elevate []string, stdin string, log *Log, onLine func(string)) (*proc, error) {
 	full := append(append([]string{}, elevate...), argv...)
-	cmd := exec.Command(full[0], full[1:]...)
+	cmd := sysproc.Command(full[0], full[1:]...)
 	setProcAttrs(cmd, len(elevate) > 0)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -101,7 +102,7 @@ func (p *proc) stop(grace time.Duration) {
 func run(ctx context.Context, argv, elevate []string, log *Log) (string, error) {
 	full := append(append([]string{}, elevate...), argv...)
 	log.Printf("$ %s", strings.Join(full, " "))
-	cmd := exec.CommandContext(ctx, full[0], full[1:]...)
+	cmd := sysproc.CommandContext(ctx, full[0], full[1:]...)
 	cmd.Stdin = nil
 	out, err := cmd.CombinedOutput()
 	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {

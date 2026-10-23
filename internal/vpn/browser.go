@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -415,21 +416,8 @@ func (p *pipeTransport) close() {
 
 // openURL opens a URL in the user's default browser (best effort).
 func openURL(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
-			return errors.New("no desktop session")
-		}
-		cmd = exec.Command("xdg-open", url)
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return errors.New("no desktop session")
 	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go cmd.Wait()
-	return nil
+	return sysproc.Open(url)
 }

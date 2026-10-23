@@ -1,4 +1,4 @@
-package main
+package mcpx
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// mcpStdio relays the opsdeck MCP bridge (streamable HTTP) over stdio, for
+// RelayStdio relays the opsdeck MCP bridge (streamable HTTP) over stdio, for
 // agents that can only launch stdio MCP servers. The session token is read
 // from OPSDECK_MCP_TOKEN so it never appears in process listings.
-func mcpStdio(url string) error {
+func RelayStdio(url, version string) error {
 	token := os.Getenv("OPSDECK_MCP_TOKEN")
 	if url == "" || token == "" {
 		return fmt.Errorf("usage: OPSDECK_MCP_TOKEN=<token> opsdeck mcp-stdio --url http://127.0.0.1:7788/mcp/")

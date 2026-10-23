@@ -1,0 +1,38 @@
+# Linux packages (deb, rpm) of the desktop app, built by nfpm from the
+# binary `wails build` leaves in build/bin. VERSION and ARCH come from the
+# environment (see .github/workflows/desktop.yml).
+name: opsdeck
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: devel
+priority: optional
+maintainer: opsdeck <opsdeck@users.noreply.github.com>
+description: |
+  Local workbench and AI agent harness for infrastructure: servers, VPNs,
+  containers, clusters and logs, with an encrypted local vault.
+homepage: https://github.com/vahidid/opsdeck
+contents:
+  - src: ./build/bin/opsdeck
+    dst: /usr/bin/opsdeck-desktop
+    file_info:
+      mode: 0755
+  - src: ./build/linux/opsdeck.desktop
+    dst: /usr/share/applications/opsdeck.desktop
+  - src: ./build/linux/opsdeck.png
+    dst: /usr/share/icons/hicolor/512x512/apps/opsdeck.png
+overrides:
+  deb:
+    depends:
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
+    recommends:
+      - git
+      - openssh-client
+  rpm:
+    depends:
+      - gtk3
+      - webkit2gtk4.1
+    recommends:
+      - git
+      - openssh-clients

@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build web test demo clean release
+.PHONY: all build web test demo clean release desktop
 
 all: build
 
@@ -14,6 +14,11 @@ build: web
 test:
 	go test ./...
 	cd web && npm run typecheck
+
+# Desktop app in cmd/opsdeck-desktop/build/bin (docs/desktop.md): needs the wails
+# CLI, and on Linux libgtk-3-dev and libwebkit2gtk-4.1-dev.
+desktop: web
+	cd cmd/opsdeck-desktop && wails build -skipbindings -trimpath $(if $(filter Linux,$(shell uname -s)),-tags webkit2_41) -ldflags "-X main.version=$(VERSION)"
 
 # Local SSH servers (bastion + app) and a scripted model, for trying the UI.
 demo:
@@ -28,4 +33,4 @@ release: web
 	done
 
 clean:
-	rm -rf bin dist internal/server/dist/assets internal/server/dist/index.html
+	rm -rf bin dist internal/server/dist/assets internal/server/dist/index.html cmd/opsdeck-desktop/build/bin

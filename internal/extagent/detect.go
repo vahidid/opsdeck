@@ -2,6 +2,7 @@ package extagent
 
 import (
 	"context"
+	"opsdeck/internal/sysproc"
 	"os/exec"
 	"strings"
 )
@@ -43,7 +44,7 @@ func Detect(ctx context.Context) []Installed {
 		}
 		in := c.Installed
 		in.Path = path
-		if b, err := exec.CommandContext(ctx, path, c.versionArgs...).Output(); err == nil {
+		if b, err := sysproc.CommandContext(ctx, path, c.versionArgs...).Output(); err == nil {
 			in.Version = strings.TrimSpace(strings.SplitN(string(b), "\n", 2)[0])
 		}
 		out = append(out, in)

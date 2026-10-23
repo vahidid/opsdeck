@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=opsdeck
+GenericName=Infrastructure workbench
+Comment=Local workbench and AI agent harness for infrastructure
+Exec=/usr/bin/opsdeck-desktop
+Icon=opsdeck
+Terminal=false
+Categories=Development;Network;System;
+Keywords=ssh;vpn;docker;kubernetes;ansible;devops;
+StartupWMClass=opsdeck

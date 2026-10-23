@@ -4,6 +4,7 @@ package vpn
 
 import (
 	"bufio"
+	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 )
@@ -20,7 +21,7 @@ func startBrowser(exe string, args []string, profileDir string) (*exec.Cmd, cdpT
 		inW.Close()
 		return nil, nil, err
 	}
-	cmd := exec.Command(exe, append(args, "--remote-debugging-pipe", "about:blank")...)
+	cmd := sysproc.Command(exe, append(args, "--remote-debugging-pipe", "about:blank")...)
 	cmd.ExtraFiles = []*os.File{inR, outW}
 	cmd.Env = os.Environ()
 	if err := cmd.Start(); err != nil {

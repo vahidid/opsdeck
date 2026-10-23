@@ -1,0 +1,164 @@
+# Builds the desktop app (cmd/opsdeck-desktop) for Linux, Windows and macOS:
+#   Linux    .deb and .rpm (x86_64)
+#   Windows  installer (NSIS) and a portable .exe (x86_64)
+#   macOS    .dmg with a universal (Apple silicon + Intel) app
+# Every run keeps them as workflow artifacts; a v* tag also publishes them
+# as a GitHub release.
+name: Desktop
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web UI
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      number: ${{ steps.version.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: internal/server/dist
+          retention-days: 1
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="$(jq -r .info.productVersion cmd/opsdeck-desktop/wails.json)-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          # installers want a plain x.y.z
+          echo "number=${v%%[-+]*}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: web
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the oldest supported Ubuntu, so the binary runs on older glibc too
+          - name: Linux
+            os: ubuntu-22.04
+            platform: linux/amd64
+            tags: webkit2_41
+          # the Windows build needs no cgo: cross-compiled, installer by makensis
+          - name: Windows
+            os: ubuntu-latest
+            platform: windows/amd64
+            tags: ""
+          - name: macOS
+            os: macos-latest
+            platform: darwin/universal
+            tags: ""
+    env:
+      VERSION: ${{ needs.web.outputs.version }}
+      NUMBER: ${{ needs.web.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/server/dist
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Linux build dependencies
+        if: matrix.name == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+      - name: NSIS
+        if: matrix.name == 'Windows'
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
+      - name: Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+
+      - name: Build
+        working-directory: cmd/opsdeck-desktop
+        shell: bash
+        run: |
+          jq --arg n "$NUMBER" '.info.productVersion = $n' wails.json > wails.tmp && mv wails.tmp wails.json
+          args=(-platform "${{ matrix.platform }}" -skipbindings -trimpath -ldflags "-X main.version=$VERSION")
+          [[ -n "${{ matrix.tags }}" ]] && args+=(-tags "${{ matrix.tags }}")
+          [[ "${{ matrix.name }}" == Windows ]] && args+=(-nsis)
+          wails build "${args[@]}"
+          ls -la build/bin
+
+      - name: Package (Linux)
+        if: matrix.name == 'Linux'
+        working-directory: cmd/opsdeck-desktop
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          mkdir -p dist
+          for p in deb rpm; do VERSION="$VERSION" ARCH=amd64 nfpm package -f build/linux/nfpm.yaml -p $p -t dist/; done
+
+      - name: Package (Windows)
+        if: matrix.name == 'Windows'
+        working-directory: cmd/opsdeck-desktop
+        run: |
+          mkdir -p dist
+          mv build/bin/opsdeck-amd64-installer.exe "dist/opsdeck-$VERSION-windows-x64-setup.exe"
+          mv build/bin/opsdeck.exe "dist/opsdeck-$VERSION-windows-x64-portable.exe"
+
+      - name: Package (macOS)
+        if: matrix.name == 'macOS'
+        working-directory: cmd/opsdeck-desktop
+        run: |
+          # not notarized yet: an ad-hoc signature lets it run after "Open" in
+          # the Finder's context menu (or System Settings → Privacy & Security)
+          codesign --force --deep --sign - build/bin/opsdeck.app
+          mkdir -p dist dmg
+          cp -R build/bin/opsdeck.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname opsdeck -srcfolder dmg -ov -format UDZO "dist/opsdeck-$VERSION-macos-universal.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opsdeck-${{ needs.web.outputs.version }}-${{ matrix.name }}
+          path: cmd/opsdeck-desktop/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [web, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: opsdeck-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

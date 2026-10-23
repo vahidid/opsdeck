@@ -8,16 +8,16 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"syscall"
 	"time"
 
 	"opsdeck/internal/gitx"
+	"opsdeck/internal/mcpx"
 	"opsdeck/internal/paths"
 	"opsdeck/internal/server"
+	"opsdeck/internal/sysproc"
 )
 
 var version = "0.1.0-dev"
@@ -75,7 +75,7 @@ func main() {
 		srv.Close()
 		return
 	case "mcp-stdio":
-		if err := mcpStdio(*mcpURL); err != nil {
+		if err := mcpx.RelayStdio(*mcpURL, version); err != nil {
 			fmt.Fprintln(os.Stderr, "opsdeck mcp-stdio:", err)
 			os.Exit(1)
 		}
@@ -99,7 +99,7 @@ func main() {
 	if !*noOpen {
 		go func() {
 			time.Sleep(400 * time.Millisecond)
-			openBrowser(srv.URL())
+			sysproc.Open(srv.URL())
 		}()
 	}
 
@@ -116,17 +116,4 @@ func main() {
 	defer cancel()
 	httpSrv.Shutdown(ctx)
 	srv.Close()
-}
-
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	cmd.Start()
 }

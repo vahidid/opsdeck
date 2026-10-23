@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "opsdeck",
+  "outputfilename": "opsdeck",
+  "frontend:dir": "build",
+  "wailsjsdir": "build",
+  "frontend:install": "",
+  "frontend:build": "",
+  "build:tags": "desktop",
+  "author": {
+    "name": "opsdeck"
+  },
+  "info": {
+    "companyName": "opsdeck",
+    "productName": "opsdeck",
+    "productVersion": "0.1.0",
+    "comments": "Local workbench and AI agent harness for infrastructure",
+    "copyright": "opsdeck contributors"
+  }
+}

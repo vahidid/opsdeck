@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -20,6 +19,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"opsdeck/internal/sysproc"
 	"opsdeck/internal/workspace"
 )
 
@@ -436,7 +436,7 @@ func (m *Manager) Start(ctx context.Context, p *Project, o RunOptions, actor str
 		return nil, err
 	}
 
-	cmd := exec.Command(prog, args...)
+	cmd := sysproc.Command(prog, args...)
 	cmd.Dir = p.Root
 	cmd.Env = pe.env
 	setProcessGroup(cmd)

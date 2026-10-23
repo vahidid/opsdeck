@@ -4,6 +4,7 @@ package vpn
 
 import (
 	"errors"
+	"opsdeck/internal/sysproc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,7 @@ import (
 // local port for the time of the login.
 func startBrowser(exe string, args []string, profileDir string) (*exec.Cmd, cdpTransport, error) {
 	os.Remove(filepath.Join(profileDir, "DevToolsActivePort"))
-	cmd := exec.Command(exe, append(args, "--remote-debugging-port=0", "about:blank")...)
+	cmd := sysproc.Command(exe, append(args, "--remote-debugging-port=0", "about:blank")...)
 	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}

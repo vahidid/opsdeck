@@ -36,6 +36,7 @@ import (
 
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/sysproc"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/vpn"
 	"opsdeck/internal/workspace"
@@ -537,7 +538,7 @@ func run(ctx context.Context, e *env, dir string, stdin []byte, max int, args ..
 		ctx, cancel = context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := sysproc.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = e.list()
 	cmd.WaitDelay = 5 * time.Second

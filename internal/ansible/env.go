@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -20,6 +19,7 @@ import (
 	sshagent "golang.org/x/crypto/ssh/agent"
 	"gopkg.in/yaml.v3"
 
+	"opsdeck/internal/sysproc"
 	"opsdeck/internal/vpn"
 	"opsdeck/internal/workspace"
 )
@@ -421,7 +421,7 @@ func (m *Manager) Exec(ctx context.Context, p *Project, o RunOptions, withVault 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, full...)
+	cmd := sysproc.CommandContext(ctx, path, full...)
 	cmd.Dir = p.Root
 	cmd.Env = append(pe.env, "ANSIBLE_FORCE_COLOR=0", "PY_COLORS=0", "NO_COLOR=1", "ANSIBLE_NOCOLOR=1")
 	setProcessGroup(cmd)

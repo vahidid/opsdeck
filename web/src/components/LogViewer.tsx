@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ArrowDown, ArrowDownToLine, Clock, Copy, Download, Pause, Play, Regex, Trash2, WrapText } from "lucide-react";
 import { Badge, IconButton, SearchInput, Segmented, StatusDot, cx } from "./ui";
 import { ansiCss, hasAnsi, parseAnsi, stripAnsi } from "../lib/ansi";
+import { saveFile } from "../lib/desktop";
 
 const MAX_LINES = 10000;
 const ROW_H = 19; // px, one unwrapped line (virtualised rendering)
@@ -283,11 +284,10 @@ export function LogViewer({
 
   function download() {
     const text = visible.map((l) => [l.ts, l.src, l.stderr ? "[stderr]" : "", l.plain].filter(Boolean).join(" ")).join("\n") + "\n";
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-    a.download = `${downloadName.replace(/[^\w.-]+/g, "_")}-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    void saveFile(
+      new Blob([text], { type: "text/plain" }),
+      `${downloadName.replace(/[^\w.-]+/g, "_")}-${new Date().toISOString().replace(/[:.]/g, "-")}.log`,
+    );
   }
 
   const toggleExpand = (seq: number) =>

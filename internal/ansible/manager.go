@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"opsdeck/internal/connect"
+	"opsdeck/internal/sysproc"
 	"opsdeck/internal/workspace"
 )
 
@@ -513,7 +514,7 @@ func (m *Manager) Detect(ctx context.Context, p *Project) Version {
 		v.Path = path
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, path, "--version")
+		cmd := sysproc.CommandContext(ctx, path, "--version")
 		cmd.Env = baseEnv(p)
 		out, err := cmd.CombinedOutput()
 		if err != nil {

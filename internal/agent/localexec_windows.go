@@ -4,9 +4,10 @@ package agent
 
 import (
 	"context"
+	"opsdeck/internal/sysproc"
 	"os/exec"
 )
 
 func shellCommand(ctx context.Context, command string) *exec.Cmd {
-	return exec.CommandContext(ctx, "cmd", "/C", command)
+	return sysproc.CommandContext(ctx, "cmd", "/C", command)
 }

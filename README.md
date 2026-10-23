@@ -124,6 +124,13 @@ The first screen creates the vault (master password; there is no recovery). Then
 
 Without any model configured everything except the Agent page works.
 
+### Desktop app
+
+opsdeck also comes as an installable app for Linux (.deb, .rpm), Windows (installer) and
+macOS (.dmg): the same local server, with the UI in its own window instead of a browser
+tab. Builds come from the **Desktop** GitHub workflow; `make desktop` builds it locally —
+see [docs/desktop.md](docs/desktop.md).
+
 ### Try it without servers
 
 ```bash
@@ -195,6 +202,7 @@ installed `ansible-core`; they are skipped otherwise.
 ## Documents
 
 - [docs/architecture.md](docs/architecture.md) — framework, modules, data layout
+- [docs/desktop.md](docs/desktop.md) — the desktop app: how it works, install, build
 - [docs/harness.md](docs/harness.md) — agent loop, tools, permissions
 - [docs/vault.md](docs/vault.md) — vault design
 - [docs/workspace.md](docs/workspace.md) — workspace model and files

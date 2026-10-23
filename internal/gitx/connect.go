@@ -20,6 +20,7 @@ import (
 
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/sysproc"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/workspace"
 )
@@ -490,10 +491,10 @@ func CLIToken(ctx context.Context, c config.GitConnection) (tool, token string, 
 	var cmd *exec.Cmd
 	if c.Provider == "github" {
 		tool = "gh"
-		cmd = exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", host)
+		cmd = sysproc.CommandContext(ctx, "gh", "auth", "token", "--hostname", host)
 	} else {
 		tool = "glab"
-		cmd = exec.CommandContext(ctx, "glab", "config", "get", "token", "--host", host)
+		cmd = sysproc.CommandContext(ctx, "glab", "config", "get", "token", "--host", host)
 	}
 	if _, err := exec.LookPath(tool); err != nil {
 		return tool, "", fmt.Errorf("%s is not installed", tool)

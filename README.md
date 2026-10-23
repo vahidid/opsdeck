@@ -161,7 +161,8 @@ You can turn the check off, or check now, under *App settings → Updates*.
   your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** (Google
   account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
   built-in tools are switched off; they work only through opsdeck's tools (served to
-  them over MCP), so approvals, redaction and audit still apply.
+  them over MCP), so approvals, redaction and audit still apply. Settings asks each CLI
+  which models your login can use and you pick them from the list.
 - **Tabs** — the sidebar groups a workspace's sections (Infrastructure, Deploy, Library,
   Security; groups fold) and opens each in its own tab, or switches to the tab already
   showing it; Ctrl/⌘-click, middle-click or + opens another. Inside a page, Ctrl/⌘-click

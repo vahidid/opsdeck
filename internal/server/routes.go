@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 		defer cancel()
 		writeJSON(w, 200, extagent.Detect(ctx))
 	}))
+	mux.HandleFunc("POST /api/providers/models", u(s.providerModels))
 	mux.HandleFunc("GET /api/models", u(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, llm.ListModels(s.cfg.Settings().Providers))
 	}))
@@ -509,6 +511,44 @@ func (s *Server) passwordGen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"password": p})
 }
 
+// providerModels lists the models a provider offers, for the model picker in
+// Settings: an agent CLI is asked with the user's own login, an API with its key.
+// The provider is the (possibly unsaved) config from the form.
+func (s *Server) providerModels(w http.ResponseWriter, r *http.Request) {
+	var p config.Provider
+	if err := readJSON(r, &p); err != nil {
+		fail(w, err)
+		return
+	}
+	if extagent.IsKind(p.Type) {
+		writeJSON(w, 200, extagent.ListModels(r.Context(), extagent.Spec{Kind: p.Type, Command: p.Command, Args: p.Args, Env: p.Env}))
+		return
+	}
+	if p.Type != "anthropic" && p.Type != "openai" {
+		fail(w, fmt.Errorf("unknown provider type %q", p.Type))
+		return
+	}
+	out := extagent.ModelList{Models: []extagent.Model{}, Source: "api"}
+	key := ""
+	if p.APIKeyRef != "" {
+		k, err := s.providerKey(p.APIKeyRef)
+		if err != nil {
+			out.Error = "API key: " + err.Error()
+			writeJSON(w, 200, out)
+			return
+		}
+		key = k
+	}
+	models, err := llm.FetchModels(r.Context(), p, key)
+	if err != nil {
+		out.Error = err.Error()
+	}
+	for _, m := range models {
+		out.Models = append(out.Models, extagent.Model{ID: m.ID, Name: m.Name, Description: m.Description})
+	}
+	writeJSON(w, 200, out)
+}
+
 func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 	var in config.Settings
 	if err := readJSON(r, &in); err != nil {
@@ -537,6 +577,11 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 		}
 		if extagent.IsKind(p.Type) && len(p.Models) == 0 {
 			p.Models = []string{"default"}
+		}
+		for m := range p.ModelNames {
+			if !slices.Contains(p.Models, m) {
+				delete(p.ModelNames, m)
+			}
 		}
 		if p.APIKeyRef != "" && !strings.HasPrefix(p.APIKeyRef, "vault://") {
 			fail(w, fmt.Errorf("provider %s: the API key must be a vault:// reference", p.ID))

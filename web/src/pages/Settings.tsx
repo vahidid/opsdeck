@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bot, Cpu, KeyRound, Laptop, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings } from "../api/types";
@@ -8,6 +8,7 @@ import { useUpdate } from "../context/update";
 import { Badge, Button, Card, ChipInput, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { VaultItemModal } from "../components/VaultItemForm";
+import { ModelChooser } from "../components/ModelChooser";
 import { passwordStrength } from "../lib/format";
 
 const PRESETS: { label: string; type: ProviderConfig["type"]; id: string; baseUrl: string; models: string[]; needsKey: boolean }[] = [
@@ -19,7 +20,7 @@ const PRESETS: { label: string; type: ProviderConfig["type"]; id: string; baseUr
 ];
 
 const AGENT_PRESETS: { kind: AgentKind; label: string; id: string; command: string; args: string[]; models: string[]; login: string }[] = [
-  { kind: "claude-code", label: "Claude Code", id: "claude-code", command: "claude", args: [], models: ["default", "opus", "sonnet", "haiku"], login: "Uses your own Claude Code login (subscription or API key). Run `claude` once in a terminal and sign in." },
+  { kind: "claude-code", label: "Claude Code", id: "claude-code", command: "claude", args: [], models: ["default"], login: "Uses your own Claude Code login (subscription or API key). Run `claude` once in a terminal and sign in." },
   { kind: "codex", label: "Codex (ChatGPT)", id: "codex", command: "codex", args: [], models: ["default"], login: "Uses your ChatGPT account through the official Codex CLI. Run `codex login` once." },
   { kind: "gemini-cli", label: "Gemini CLI", id: "gemini", command: "gemini", args: [], models: ["default"], login: "Uses your Google account through Gemini CLI. Run `gemini` once and sign in." },
   { kind: "acp", label: "Other ACP agent (opencode, Qwen Code…)", id: "acp-agent", command: "", args: [], models: ["default"], login: "Any agent that speaks the Agent Client Protocol, e.g. `opencode acp`." },
@@ -53,6 +54,8 @@ export function AppSettingsPage() {
   const [tokens, setTokens] = useState<Item[]>([]);
   const [newKeyFor, setNewKeyFor] = useState<number | null>(null);
   const [installed, setInstalled] = useState<InstalledAgent[] | null>(null);
+  // providers added in this visit whose models are fetched right away
+  const autoLoad = useRef(new Set<string>());
   const { theme, setTheme } = useApp();
   const toast = useToast();
   const confirm = useConfirm();
@@ -83,12 +86,15 @@ export function AppSettingsPage() {
   if (!s) return <Loading />;
   const dirty = JSON.stringify(s) !== orig;
 
-  const setProvider = (i: number, p: Partial<ProviderConfig>) => setS({ ...s, providers: s.providers.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+  // functional: model lists load in the background and land after other edits
+  const setProvider = (i: number, p: Partial<ProviderConfig>) =>
+    setS((cur) => (cur ? { ...cur, providers: cur.providers.map((x, j) => (j === i ? { ...x, ...p } : x)) } : cur));
   const addPreset = (idx: number) => {
     const pr = PRESETS[idx];
     let id = pr.id;
     let n = 2;
     while (s.providers.some((p) => p.id === id)) id = `${pr.id}-${n++}`;
+    if (!pr.needsKey) autoLoad.current.add(id);
     setS({ ...s, providers: [...s.providers, { id, type: pr.type, name: pr.label, baseUrl: pr.baseUrl, apiKeyRef: "", models: pr.models }] });
   };
   const uniqueId = (base: string) => {
@@ -97,9 +103,13 @@ export function AppSettingsPage() {
     while (s.providers.some((p) => p.id === id)) id = `${base}-${n++}`;
     return id;
   };
-  const addAgent = (a: { kind: AgentKind; label: string; id: string; command: string; args: string[]; models: string[] }) =>
-    setS({ ...s, providers: [...s.providers, { id: uniqueId(a.id), type: a.kind, name: a.label, baseUrl: "", apiKeyRef: "", models: a.models, command: a.command, args: a.args, env: {} }] });
-  const allModels = s.providers.flatMap((p) => p.models.map((m) => `${p.id}/${m}`));
+  const addAgent = (a: { kind: AgentKind; label: string; id: string; command: string; args: string[]; models: string[] }) => {
+    const id = uniqueId(a.id);
+    // ask the CLI for its models unless it is an ACP agent without a command yet
+    if (a.command || a.kind !== "acp") autoLoad.current.add(id);
+    setS({ ...s, providers: [...s.providers, { id, type: a.kind, name: a.label, baseUrl: "", apiKeyRef: "", models: a.models, command: a.command, args: a.args, env: {} }] });
+  };
+  const allModels = s.providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}/${m}`, label: `${p.name} · ${p.modelNames?.[m] || m}` })));
 
   async function save() {
     if (!s) return;
@@ -245,9 +255,7 @@ export function AppSettingsPage() {
                         <ChipInput mono value={p.args ?? []} onChange={(a) => setProvider(i, { args: a })} placeholder="argument…" />
                       </FormField>
                     </div>
-                    <FormField label="Models" help="“default” uses the agent's own default model; or add model names/aliases the agent accepts">
-                      <ChipInput mono value={p.models} onChange={(m) => setProvider(i, { models: m })} placeholder="model…" />
-                    </FormField>
+                    <ModelChooser p={p} onChange={(v) => setProvider(i, v)} autoLoad={autoLoad.current.has(p.id)} />
                   </>
                 ) : (
                   <>
@@ -272,9 +280,7 @@ export function AppSettingsPage() {
                     </Select>
                   </div>
                 </FormField>
-                <FormField label="Models" help="Press Enter after each model id">
-                  <ChipInput mono value={p.models} onChange={(m) => setProvider(i, { models: m })} placeholder="model id…" />
-                </FormField>
+                <ModelChooser p={p} onChange={(v) => setProvider(i, v)} autoLoad={autoLoad.current.has(p.id)} />
                   </>
                 )}
               </div>
@@ -285,9 +291,10 @@ export function AppSettingsPage() {
               <FormField label="Default model">
                 <Select value={s.defaultModel} onChange={(e) => setS({ ...s, defaultModel: e.target.value })} className="font-mono text-xs">
                   <option value="">— first available —</option>
+                  {s.defaultModel && !allModels.some((m) => m.id === s.defaultModel) && <option value={s.defaultModel}>{s.defaultModel}</option>}
                   {allModels.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
+                    <option key={m.id} value={m.id}>
+                      {m.label}
                     </option>
                   ))}
                 </Select>

@@ -127,17 +127,23 @@ func (r *Router) Lookup(id string) (config.Provider, string, bool) {
 
 // ModelInfo is listed for model pickers.
 type ModelInfo struct {
-	ID       string `json:"id"`
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Label    string `json:"label"`
+	ID           string `json:"id"`
+	Provider     string `json:"provider"`
+	ProviderName string `json:"providerName"`
+	Model        string `json:"model"`
+	Name         string `json:"name"` // the model's display name
+	Label        string `json:"label"`
 }
 
 func ListModels(providers []config.Provider) []ModelInfo {
 	out := []ModelInfo{}
 	for _, p := range providers {
 		for _, m := range p.Models {
-			out = append(out, ModelInfo{ID: p.ID + "/" + m, Provider: p.ID, Model: m, Label: p.Name + " · " + m})
+			name := p.ModelNames[m]
+			if name == "" {
+				name = m
+			}
+			out = append(out, ModelInfo{ID: p.ID + "/" + m, Provider: p.ID, ProviderName: p.Name, Model: m, Name: name, Label: p.Name + " · " + name})
 		}
 	}
 	return out

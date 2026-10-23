@@ -305,14 +305,29 @@ function ModePicker({ value, onChange }: { value: SessionMode; onChange: (m: Ses
 }
 
 function ModelPicker({ models, value, onChange }: { models: ModelInfo[]; value: string; onChange: (m: string) => void }) {
+  // one group per provider when there are several
+  const groups: { provider: string; name: string; models: ModelInfo[] }[] = [];
+  for (const m of models) {
+    const g = groups.find((x) => x.provider === m.provider);
+    if (g) g.models.push(m);
+    else groups.push({ provider: m.provider, name: m.providerName || m.provider, models: [m] });
+  }
+  // the full label: the closed picker shows only the selected option
+  const option = (m: ModelInfo) => (
+    <option key={m.id} value={m.id} title={m.id}>
+      {m.label || m.id}
+    </option>
+  );
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className="h-7 text-xs w-auto max-w-56 py-0">
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className="h-7 text-xs w-auto max-w-56 py-0" title={value}>
       {!models.some((m) => m.id === value) && value && <option value={value}>{value}</option>}
-      {models.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.label || m.id}
-        </option>
-      ))}
+      {groups.length > 1
+        ? groups.map((g) => (
+            <optgroup key={g.provider} label={g.name}>
+              {g.models.map(option)}
+            </optgroup>
+          ))
+        : models.map(option)}
     </Select>
   );
 }

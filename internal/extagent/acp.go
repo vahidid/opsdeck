@@ -244,23 +244,8 @@ func runACP(ctx context.Context, req Request, emit func(Event)) (Result, error) 
 		return res, err
 	}
 
-	var initRes struct {
-		AgentCapabilities struct {
-			LoadSession     bool `json:"loadSession"`
-			MCPCapabilities struct {
-				HTTP bool `json:"http"`
-			} `json:"mcpCapabilities"`
-		} `json:"agentCapabilities"`
-		AuthMethods []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"authMethods"`
-	}
-	if err := conn.call(ctx, "initialize", map[string]any{
-		"protocolVersion":    1,
-		"clientCapabilities": map[string]any{"fs": map[string]bool{"readTextFile": false, "writeTextFile": false}, "terminal": false},
-		"clientInfo":         map[string]string{"name": "opsdeck", "version": "0.1.0"},
-	}, &initRes); err != nil {
+	initRes, err := conn.initialize(ctx)
+	if err != nil {
 		return fail(err)
 	}
 
@@ -278,9 +263,10 @@ func runACP(ctx context.Context, req Request, emit func(Event)) (Result, error) 
 	}
 
 	sessionID := ""
+	var sess acpSession
 	if req.Resume != "" && initRes.AgentCapabilities.LoadSession {
 		loading.Store(true) // the agent replays history: don't show it again
-		err := conn.call(ctx, "session/load", map[string]any{"sessionId": req.Resume, "cwd": req.WorkDir, "mcpServers": servers}, nil)
+		err := conn.call(ctx, "session/load", map[string]any{"sessionId": req.Resume, "cwd": req.WorkDir, "mcpServers": servers}, &sess)
 		loading.Store(false)
 		if err == nil {
 			sessionID = req.Resume
@@ -288,23 +274,23 @@ func runACP(ctx context.Context, req Request, emit func(Event)) (Result, error) 
 	}
 	prompt := req.Prompt
 	if sessionID == "" {
-		var ns struct {
-			SessionID string `json:"sessionId"`
+		sess = acpSession{}
+		if err := conn.call(ctx, "session/new", map[string]any{"cwd": req.WorkDir, "mcpServers": servers}, &sess); err != nil {
+			return fail(initRes.authHint(err))
 		}
-		err := conn.call(ctx, "session/new", map[string]any{"cwd": req.WorkDir, "mcpServers": servers}, &ns)
-		if err != nil {
-			if len(initRes.AuthMethods) > 0 {
-				var names []string
-				for _, a := range initRes.AuthMethods {
-					names = append(names, a.Name)
-				}
-				return fail(fmt.Errorf("%w — the agent may need you to sign in first: open it once in a terminal (%s)", err, strings.Join(names, ", ")))
-			}
-			return fail(err)
-		}
-		sessionID = ns.SessionID
+		sessionID = sess.SessionID
 		// ACP has no system prompt: put opsdeck's instructions first.
 		prompt = "<opsdeck-context>\n" + req.System + "\n</opsdeck-context>\n\n" + req.Prompt
+	}
+	// Gemini CLI gets the model on its command line; other agents switch the
+	// session's model through ACP.
+	if m := req.Spec.Model; !gemini && m != "" && m != "default" {
+		if err := conn.setModel(ctx, sess, sessionID, m); err != nil {
+			if ctx.Err() != nil {
+				return fail(err)
+			}
+			emit(Event{Kind: "notice", Text: "Could not switch the agent to model \"" + m + "\" (" + err.Error() + "); it uses its default model"})
+		}
 	}
 	res.Resume = sessionID
 
@@ -330,4 +316,134 @@ func runACP(ctx context.Context, req Request, emit func(Event)) (Result, error) 
 	cancel()
 	<-done
 	return res, nil
+}
+
+type acpInit struct {
+	AgentCapabilities struct {
+		LoadSession     bool `json:"loadSession"`
+		MCPCapabilities struct {
+			HTTP bool `json:"http"`
+		} `json:"mcpCapabilities"`
+		SessionCapabilities struct {
+			Close json.RawMessage `json:"close"`
+		} `json:"sessionCapabilities"`
+	} `json:"agentCapabilities"`
+	AuthMethods []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"authMethods"`
+}
+
+func (c *acpConn) initialize(ctx context.Context) (acpInit, error) {
+	var r acpInit
+	err := c.call(ctx, "initialize", map[string]any{
+		"protocolVersion":    1,
+		"clientCapabilities": map[string]any{"fs": map[string]bool{"readTextFile": false, "writeTextFile": false}, "terminal": false},
+		"clientInfo":         map[string]string{"name": "opsdeck", "version": "0.1.0"},
+	}, &r)
+	return r, err
+}
+
+// authHint explains a failed session/new of an agent that has sign-in methods.
+func (r acpInit) authHint(err error) error {
+	if len(r.AuthMethods) == 0 {
+		return err
+	}
+	var names []string
+	for _, a := range r.AuthMethods {
+		names = append(names, a.Name)
+	}
+	return fmt.Errorf("%w — the agent may need you to sign in first: open it once in a terminal (%s)", err, strings.Join(names, ", "))
+}
+
+// acpSession is the result of session/new and session/load. Agents offer
+// models as a "model" select config option (session/set_config_option) or,
+// in older versions of the protocol, as a models field (session/set_model).
+type acpSession struct {
+	SessionID     string            `json:"sessionId"`
+	ConfigOptions []acpConfigOption `json:"configOptions"`
+	Models        *struct {
+		CurrentModelID  string `json:"currentModelId"`
+		AvailableModels []struct {
+			ModelID     string `json:"modelId"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"availableModels"`
+	} `json:"models"`
+}
+
+type acpConfigOption struct {
+	ID           string          `json:"id"`
+	Category     string          `json:"category"`
+	Type         string          `json:"type"`
+	CurrentValue json.RawMessage `json:"currentValue"`
+	// a value, or a group {group, name, options}
+	Options []struct {
+		Value       string `json:"value"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Options     []struct {
+			Value       string `json:"value"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"options"`
+	} `json:"options"`
+}
+
+func (s acpSession) modelOption() *acpConfigOption {
+	for i, o := range s.ConfigOptions {
+		if o.Type == "select" && (o.Category == "model" || (o.Category == "" && o.ID == "model")) {
+			return &s.ConfigOptions[i]
+		}
+	}
+	return nil
+}
+
+// models lists the session's model choices and the current one.
+func (s acpSession) models() ([]Model, string) {
+	var out []Model
+	if o := s.modelOption(); o != nil {
+		var cur string
+		json.Unmarshal(o.CurrentValue, &cur)
+		for _, v := range o.Options {
+			if v.Value != "" {
+				out = append(out, Model{ID: v.Value, Name: firstNonEmpty(v.Name, v.Value), Description: v.Description})
+			}
+			for _, g := range v.Options {
+				desc := g.Description
+				if v.Name != "" && desc == "" {
+					desc = v.Name
+				}
+				out = append(out, Model{ID: g.Value, Name: firstNonEmpty(g.Name, g.Value), Description: desc})
+			}
+		}
+		if len(out) > 0 {
+			return out, cur
+		}
+	}
+	if s.Models != nil {
+		for _, m := range s.Models.AvailableModels {
+			out = append(out, Model{ID: m.ModelID, Name: firstNonEmpty(m.Name, m.ModelID), Description: m.Description})
+		}
+		return out, s.Models.CurrentModelID
+	}
+	return nil, ""
+}
+
+// setModel switches a session to a model.
+func (c *acpConn) setModel(ctx context.Context, s acpSession, sessionID, model string) error {
+	if o := s.modelOption(); o != nil {
+		var cur string
+		if json.Unmarshal(o.CurrentValue, &cur) == nil && cur == model {
+			return nil
+		}
+		return c.call(ctx, "session/set_config_option", map[string]any{"sessionId": sessionID, "configId": o.ID, "value": model}, nil)
+	}
+	if s.Models != nil {
+		if s.Models.CurrentModelID == model {
+			return nil
+		}
+		return c.call(ctx, "session/set_model", map[string]any{"sessionId": sessionID, "modelId": model}, nil)
+	}
+	return errors.New("this agent does not let clients choose a model")
 }

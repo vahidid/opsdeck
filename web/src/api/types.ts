@@ -41,6 +41,8 @@ export type ProviderConfig = {
   baseUrl: string;
   apiKeyRef: string;
   models: string[];
+  /** display names of models, as the provider or agent CLI listed them */
+  modelNames?: Record<string, string>;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -73,7 +75,9 @@ export type UpdateStatus = {
   progress: number;
   message?: string;
 };
-export type ModelInfo = { id: string; provider: string; model: string; label: string };
+export type ModelInfo = { id: string; provider: string; providerName: string; model: string; name: string; label: string };
+/** Models a provider offers: reported by the agent CLI or the API, or the built-in list when it could not be asked. */
+export type ProviderModels = { models: { id: string; name: string; description?: string }[]; source: "cli" | "api" | "builtin"; error?: string };
 
 export type WorkspaceSummary = {
   name: string;

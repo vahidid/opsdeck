@@ -236,6 +236,14 @@ opsdeck session ──► agent CLI (own loop, own login)
 | Gemini CLI | `gemini --acp` | private settings (`GEMINI_CLI_SYSTEM_SETTINGS_PATH`): `tools.core` = opsdeck tools only, built-ins excluded, opsdeck server trusted | ACP `session/load` |
 | Any ACP agent | its ACP command (e.g. `opencode acp`, `qwen --acp`, `copilot --acp`) | client offers no fs/terminal; permission requests granted only for opsdeck tools | ACP `session/load` |
 
+**Models.** Settings asks each CLI which models your login can use, without sending a
+prompt: Claude Code through the stream-json control protocol (`initialize` lists its
+models), Codex through `codex app-server` (`model/list`), Gemini CLI and other ACP agents
+from a new ACP session's model choices (the `model` config option, or the older `models`
+field). A chosen model goes on the command line (`--model`) for Claude Code, Codex and
+Gemini CLI; other ACP agents are switched with `session/set_config_option` (or
+`session/set_model`) before the prompt. `default` leaves the agent's own choice.
+
 Agents that only launch stdio MCP servers get `opsdeck mcp-stdio`, a relay to the bridge
 (token passed in the environment). The bridge refuses requests with an `Origin` header
 (browsers) and tokens are valid only while that session's turn runs.

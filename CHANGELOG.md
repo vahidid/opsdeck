@@ -3,6 +3,18 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
+## [Unreleased]
+
+### Agent
+
+- **Model lists from the CLI** — Settings asks each local agent which models your login can
+  use (Claude Code, Codex, Gemini CLI, opencode and other ACP agents) and shows them with
+  their names and descriptions to tick; API providers list their models from the API
+  (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…). The model picker shows these names,
+  grouped by provider.
+- ACP agents (opencode, Qwen Code, Copilot CLI…) now run with the chosen model; before,
+  only Gemini CLI honoured it.
+
 ## [0.1.0] — 2026-10-23
 
 The first release: a local workbench and AI agent harness for infrastructure, as a

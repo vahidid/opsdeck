@@ -195,21 +195,24 @@ func (s *Server) stateDir(ws string) string {
 }
 
 func (s *Server) router() *llm.Router {
-	return llm.NewRouter(s.cfg.Settings().Providers, func(ref string) (string, error) {
-		it, field, err := s.vault.ResolveFor("", ref) // provider keys live in the global scope
-		if err != nil {
-			return "", err
-		}
-		if field == "" {
-			for _, f := range []string{"token", "password"} {
-				if v := it.Get(f); v != "" {
-					return v, nil
-				}
+	return llm.NewRouter(s.cfg.Settings().Providers, s.providerKey)
+}
+
+// providerKey resolves a model provider's API key reference.
+func (s *Server) providerKey(ref string) (string, error) {
+	it, field, err := s.vault.ResolveFor("", ref) // provider keys live in the global scope
+	if err != nil {
+		return "", err
+	}
+	if field == "" {
+		for _, f := range []string{"token", "password"} {
+			if v := it.Get(f); v != "" {
+				return v, nil
 			}
-			return "", errors.New("the referenced vault item has no token")
 		}
-		return it.Get(field), nil
-	})
+		return "", errors.New("the referenced vault item has no token")
+	}
+	return it.Get(field), nil
 }
 
 func loadToken(path string) (string, error) {

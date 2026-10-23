@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Activity, Bot, Boxes, Container, FileCode2, FileText, GitBranch, KeyRound, LayoutGrid, Network, ScrollText, Server, Settings, ShieldCheck, Sparkles, SquareTerminal, Workflow } from "lucide-react";
+import { Activity, Bot, Boxes, Container, Database, FileCode2, FileText, GitBranch, KeyRound, LayoutGrid, Network, ScrollText, Server, Settings, ShieldCheck, Sparkles, SquareTerminal, Workflow } from "lucide-react";
 
 export type NavGroup = "workspace" | "infra" | "deploy" | "library" | "security";
 
@@ -21,6 +21,7 @@ export const NAV: { to: string; label: string; icon: ReactNode; group: NavGroup 
   { to: "vpn", label: "VPN", icon: <ShieldCheck />, group: "infra" },
   { to: "terminal", label: "Terminal", icon: <SquareTerminal />, group: "infra" },
   { to: "logs", label: "Logs", icon: <ScrollText />, group: "infra" },
+  { to: "databases", label: "Databases", icon: <Database />, group: "infra" },
   { to: "git", label: "Repositories", icon: <GitBranch />, group: "deploy" },
   { to: "docker", label: "Docker", icon: <Container />, group: "deploy" },
   { to: "kubernetes", label: "Kubernetes", icon: <Boxes />, group: "deploy" },

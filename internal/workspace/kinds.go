@@ -142,10 +142,14 @@ var Kinds = []KindSchema{
 	}},
 	{Kind: "Database", Label: "Database", Category: "service", Icon: "database", CanVia: true, Fields: []FieldSchema{
 		{Key: "engine", Label: "Engine", Type: "select", Options: []string{"postgres", "mysql", "mariadb", "mongodb", "redis", "elasticsearch", "other"}},
-		{Key: "address", Label: "Address", Type: "string", Required: true, Placeholder: "10.20.2.5:5432"},
-		{Key: "host", Label: "Runs on host", Type: "resourceRef", RefKinds: []string{"Host"}},
+		{Key: "address", Label: "Address", Type: "string", Required: true, Placeholder: "10.20.2.5:5432",
+			Help: "host:port as opsdeck reaches it, or as the host below sees it (e.g. 127.0.0.1:5432)"},
+		{Key: "host", Label: "Runs on host", Type: "resourceRef", RefKinds: []string{"Host"},
+			Help: "Without via, opsdeck connects through an SSH tunnel to this host"},
 		{Key: "database", Label: "Database name", Type: "string"},
-		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}},
+		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "Username and password of the database user"},
+		{Key: "tls", Label: "TLS", Type: "select", Options: []string{"prefer", "require", "verify-full", "disable"}, Advanced: true,
+			Help: "prefer: TLS when the server offers it. verify-full also checks the certificate"},
 	}},
 	{Kind: "KubernetesCluster", Label: "Kubernetes cluster", Category: "cluster", Icon: "boxes", CanVia: true, Fields: []FieldSchema{
 		{Key: "kubeconfig", Label: "Kubeconfig", Type: "secretRef", Required: true, ItemTypes: []string{"kubeconfig"}},

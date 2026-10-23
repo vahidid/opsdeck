@@ -5,8 +5,22 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Workbench
+
+- **Databases** — a new page for the PostgreSQL, MySQL and MariaDB databases of a workspace,
+  reached through its VPNs and jump hosts or an SSH tunnel to the database's host, with the
+  login from the vault: the databases on the server, tables and views with estimated rows,
+  columns and indexes, and a SQL editor (highlighting, completion, Ctrl/⌘-Enter, history)
+  with results as a table. Reads run in a read-only transaction; a script that is not a read
+  is shown with its risk for confirmation (destructive ones on a protected environment ask
+  for the database's name) and runs as one transaction, recorded in the activity journal.
+
 ### Agent
 
+- **`database` tool** — the agent queries workspace databases with the vault login instead
+  of running psql or mysql with passwords on a host: databases, tables, describe, query.
+  Reads need no approval and run in a read-only transaction; changes go to the approval card
+  with their SQL.
 - **Fewer approvals for reads on servers.** The command classifier knows many more read-only
   commands and forms (shell builtins such as `set -e` and `read`, `awk` conditions, `curl -o
   /dev/null`, `dpkg -l`, storage, firewall and certificate status tools, cloud CLIs' `list` and

@@ -130,6 +130,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	// kubernetes
 	s.kubeRoutes(mux, u)
+	s.dbRoutes(mux, u)
 
 	// logs
 	mux.HandleFunc("GET /api/workspaces/{ws}/logs/stream", u(s.logStream))

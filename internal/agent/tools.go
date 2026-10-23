@@ -22,6 +22,7 @@ import (
 
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/connect"
+	"opsdeck/internal/dbx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
@@ -38,6 +39,7 @@ type Env struct {
 	Hub        *connect.Hub
 	Docker     *docker.Client
 	Kube       *kube.Manager
+	DB         *dbx.Manager
 	Git        *gitx.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault
@@ -262,7 +264,7 @@ func Tools() []Tool {
 	return []Tool{
 		toolInventory(), toolReadDoc(), toolKnowledge(), toolLoadSkill(), toolMemory(), toolWriteDoc(), toolWriteReport(), toolSaveArtifact(),
 		toolExec(), toolReadFile(), toolListDir(), toolWriteFile(), toolEditFile(),
-		toolNetCheck(), toolDocker(), toolKubernetes(), toolGitSync(),
+		toolNetCheck(), toolDocker(), toolKubernetes(), toolDatabase(), toolGitSync(),
 		toolRepo(), toolRepoFiles(), toolRepoWrite(), toolMergeRequest(), toolTopology(),
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 		toolScript(), toolRunScript(),

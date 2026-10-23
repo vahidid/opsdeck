@@ -21,6 +21,7 @@ import { properties } from "@codemirror/legacy-modes/mode/properties";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { python } from "@codemirror/legacy-modes/mode/python";
 import { json } from "@codemirror/legacy-modes/mode/javascript";
+import { mySQL, pgSQL } from "@codemirror/legacy-modes/mode/sql";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
@@ -29,7 +30,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import { tags as t } from "@lezer/highlight";
 import { COMPLETE_TASK, PLAY_KEYWORDS, parseYaml, yamlProblems } from "./model";
 
-export type Language = "yaml" | "jinja" | "ini" | "shell" | "json" | "python" | "text";
+export type Language = "yaml" | "jinja" | "ini" | "shell" | "json" | "python" | "pgsql" | "mysql" | "text";
 export type ModuleItem = { name: string; description: string };
 
 const theme = EditorView.theme({
@@ -82,6 +83,10 @@ function languageExt(lang: Language): Extension {
       return StreamLanguage.define(python);
     case "json":
       return StreamLanguage.define(json);
+    case "pgsql":
+      return StreamLanguage.define(pgSQL);
+    case "mysql":
+      return StreamLanguage.define(mySQL);
   }
   return [];
 }
@@ -114,6 +119,20 @@ function ansibleCompletion(modules: () => ModuleItem[]) {
   };
 }
 
+// SQL completion: keywords and the database's table and column names.
+const SQL_KEYWORDS = ["SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "JOIN", "LEFT JOIN", "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE FROM", "WITH", "AS", "AND", "OR", "NOT", "NULL", "IS", "IN", "LIKE", "COUNT", "DISTINCT", "HAVING", "EXPLAIN", "SHOW"];
+function sqlCompletion(words: () => string[]) {
+  return (ctx: CompletionContext): CompletionResult | null => {
+    const w = ctx.matchBefore(/[\w.$]+/);
+    if (!w || (w.from === w.to && !ctx.explicit)) return null;
+    return {
+      from: w.from,
+      options: [...SQL_KEYWORDS.map((k) => ({ label: k, type: "keyword" })), ...words().map((n) => ({ label: n, type: n.includes(".") ? "class" : "property", boost: 1 }))],
+      validFor: /^[\w.$]*$/,
+    };
+  };
+}
+
 /**
  * CodeEditor is the text editor of the Ansible page: syntax highlighting,
  * line numbers, folding, search and replace (Ctrl/⌘-F), YAML checks,
@@ -127,6 +146,8 @@ export default function CodeEditor({
   readOnly = false,
   modules = [],
   autoFocus = false,
+  onRun,
+  words,
 }: {
   value: string;
   onChange?: (v: string) => void;
@@ -135,11 +156,17 @@ export default function CodeEditor({
   readOnly?: boolean;
   modules?: ModuleItem[];
   autoFocus?: boolean;
+  /** Ctrl/⌘-Enter (the SQL editor runs the query) */
+  onRun?: () => void;
+  /** names offered by SQL completion */
+  words?: string[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const cb = useRef({ onChange, onSave });
-  cb.current = { onChange, onSave };
+  const cb = useRef({ onChange, onSave, onRun });
+  cb.current = { onChange, onSave, onRun };
+  const names = useRef(words ?? []);
+  names.current = words ?? [];
   const mods = useRef(modules);
   mods.current = modules;
   const ro = useRef(new Compartment());
@@ -171,6 +198,7 @@ export default function CodeEditor({
       ro.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
       keymap.of([
         { key: "Mod-s", run: () => (cb.current.onSave?.(), true), preventDefault: true },
+        { key: "Mod-Enter", run: () => (cb.current.onRun ? (cb.current.onRun(), true) : false), preventDefault: true },
         ...closeBracketsKeymap,
         ...defaultKeymap,
         ...searchKeymap,
@@ -184,6 +212,9 @@ export default function CodeEditor({
         if (u.docChanged) cb.current.onChange?.(u.state.doc.toString());
       }),
     ];
+    if (language === "pgsql" || language === "mysql") {
+      ext.push(autocompletion({ override: [sqlCompletion(() => names.current)], activateOnTyping: true }));
+    }
     if (language === "yaml") {
       ext.push(linter(yamlLint, { delay: 400 }), lintGutter(), autocompletion({ override: [ansibleCompletion(() => mods.current)], activateOnTyping: true }));
     }

@@ -16,8 +16,8 @@ type Installed struct {
 	Args    []string `json:"args"`
 	Path    string   `json:"path"`
 	Version string   `json:"version"`
-	Login   string   `json:"login"` // how the user signs in (shown in the UI)
-	Models  []string `json:"models"`
+	Login   string   `json:"login"`  // how the user signs in (shown in the UI)
+	Models  []string `json:"models"` // built-in list; ListModels asks the CLI
 }
 
 type candidate struct {
@@ -27,9 +27,9 @@ type candidate struct {
 
 // Known agents. ACP entries run an agent that speaks the Agent Client Protocol.
 var candidates = []candidate{
-	{Installed: Installed{Kind: ClaudeCode, Name: "Claude Code", Command: "claude", Login: "Your Claude subscription or API key — run `claude` once and log in", Models: []string{"default", "opus", "sonnet", "haiku"}}, versionArgs: []string{"--version"}},
+	{Installed: Installed{Kind: ClaudeCode, Name: "Claude Code", Command: "claude", Login: "Your Claude subscription or API key — run `claude` once and log in", Models: []string{"default", "opus", "fable", "sonnet", "haiku"}}, versionArgs: []string{"--version"}},
 	{Installed: Installed{Kind: Codex, Name: "Codex (ChatGPT)", Command: "codex", Login: "Your ChatGPT account — run `codex login`", Models: []string{"default"}}, versionArgs: []string{"--version"}},
-	{Installed: Installed{Kind: GeminiCLI, Name: "Gemini CLI", Command: "gemini", Login: "Your Google account — run `gemini` once and sign in", Models: []string{"default", "gemini-2.5-pro", "gemini-2.5-flash"}}, versionArgs: []string{"--version"}},
+	{Installed: Installed{Kind: GeminiCLI, Name: "Gemini CLI", Command: "gemini", Login: "Your Google account — run `gemini` once and sign in", Models: []string{"default", "auto", "pro", "flash", "flash-lite"}}, versionArgs: []string{"--version"}},
 	{Installed: Installed{Kind: ACP, Name: "opencode", Command: "opencode", Args: []string{"acp"}, Login: "The providers configured in opencode (`opencode auth login`)", Models: []string{"default"}}, versionArgs: []string{"--version"}},
 	{Installed: Installed{Kind: ACP, Name: "Qwen Code", Command: "qwen", Args: []string{"--acp"}, Login: "Your Qwen account — run `qwen` once", Models: []string{"default"}}, versionArgs: []string{"--version"}},
 	{Installed: Installed{Kind: ACP, Name: "GitHub Copilot CLI", Command: "copilot", Args: []string{"--acp"}, Login: "Your GitHub Copilot subscription — run `copilot` once and /login", Models: []string{"default"}}, versionArgs: []string{"--version"}},

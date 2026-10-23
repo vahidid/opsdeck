@@ -76,6 +76,8 @@ import type {
   Workspace,
   WorkspaceSummary,
   InstalledAgent,
+  ProviderModels,
+  ProviderConfig,
   AnsibleProject,
   AnsibleFile,
   AnsibleFileContent,
@@ -199,6 +201,7 @@ export const api = {
   installUpdate: () => post<UpdateStatus>("/api/update/install"),
   detectAgents: () => arr(get<InstalledAgent[]>("/api/agents/detect")),
   models: () => arr(get<ModelInfo[]>("/api/models")),
+  providerModels: (p: ProviderConfig) => post<ProviderModels>("/api/providers/models", p),
 
   // workspaces
   workspaces: () => arr(get<WorkspaceSummary[]>("/api/workspaces")),

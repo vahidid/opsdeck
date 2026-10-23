@@ -51,14 +51,16 @@ Item types: `ssh-key`, `login`, `token`, `kubeconfig`, `vpn`, `certificate`, `fi
 ## Settings & models
 
 | GET/PUT | `/api/settings` | `Settings` |
-| GET | `/api/models` | → `[{id: "providerId/model", provider, model, label}]` |
-| GET | `/api/agents/detect` | → `[{kind, name, command, args, path, version, login, models}]` agent CLIs found on PATH |
+| GET | `/api/models` | → `[{id: "providerId/model", provider, providerName, model, name, label}]` |
+| GET | `/api/agents/detect` | → `[{kind, name, command, args, path, version, login, models}]` agent CLIs found on PATH (`models`: built-in list) |
+| POST | `/api/providers/models` | provider config (saved or not) → `{models: [{id, name, description?}], source: "cli"\|"api"\|"builtin", error?}`: the models an agent CLI offers with your login, or an API offers with the key; `builtin` + `error` when it could not be asked |
 
 ```ts
 type Settings = { autoLockMinutes: number; defaultModel: string;
   providers: { id: string; type: "anthropic"|"openai"; name: string; baseUrl: string;
                apiKeyRef: string;   // vault ref, e.g. vault://global/anthropic-key ; empty for Ollama
-               models: string[] }[];
+               models: string[];
+               modelNames?: Record<string, string> }[];   // display names, as listed by the CLI/API
   vpn: { elevate: "auto"|"sudo"|"pkexec"|"none";   // how system-mode VPN clients get root
          browser: string };                         // Chrome/Edge/Chromium for SSO login windows ("" = detect)
   localAccess: { disabled: boolean;        // agent access to this computer (default on)

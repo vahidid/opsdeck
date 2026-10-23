@@ -21,6 +21,8 @@ type Provider struct {
 	BaseURL   string   `yaml:"baseUrl" json:"baseUrl"`
 	APIKeyRef string   `yaml:"apiKeyRef,omitempty" json:"apiKeyRef"`
 	Models    []string `yaml:"models" json:"models"`
+	// Display names of models, as the provider or agent CLI listed them.
+	ModelNames map[string]string `yaml:"modelNames,omitempty" json:"modelNames,omitempty"`
 	// External agents (claude-code, codex, gemini-cli, acp): the local CLI to run.
 	Command string            `yaml:"command,omitempty" json:"command"`
 	Args    []string          `yaml:"args,omitempty" json:"args"`

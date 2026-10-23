@@ -25,6 +25,10 @@ func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd 
 	return cmd
 }
 
+// Detach makes cmd outlive opsdeck: its own session (Unix) or a process
+// without a console (Windows). Used for steps that run after opsdeck quits.
+func Detach(cmd *exec.Cmd) { detach(cmd) }
+
 // Open opens a URL in the default browser (or a file or folder in its
 // default application).
 func Open(target string) error {

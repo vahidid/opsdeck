@@ -35,6 +35,13 @@ type Settings struct {
 	Agent           Agent       `yaml:"agent" json:"agent"`
 	VPN             VPN         `yaml:"vpn" json:"vpn"`
 	Git             Git         `yaml:"git" json:"git"`
+	Updates         Updates     `yaml:"updates" json:"updates"`
+}
+
+// Updates controls the check for new releases.
+type Updates struct {
+	// NoCheck stops the automatic check (Check now still works).
+	NoCheck bool `yaml:"noCheck,omitempty" json:"noCheck"`
 }
 
 // Git holds the commit author for working copies ("" = the access token's

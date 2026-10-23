@@ -54,6 +54,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// settings
 	mux.HandleFunc("GET /api/settings", u(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.cfg.Settings()) }))
 	mux.HandleFunc("PUT /api/settings", u(s.settingsPut))
+	mux.HandleFunc("GET /api/update", s.updateStatus)
+	mux.HandleFunc("POST /api/update/install", s.updateInstall)
 	mux.HandleFunc("GET /api/agents/detect", u(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
@@ -1513,4 +1515,22 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
 	writeJSON(w, 200, s.audit.Query(q.Get("workspace"), before, limit))
+}
+
+// updateStatus reports the running and the latest version; it checks GitHub
+// at most hourly (refresh=1: now), and not on its own when that is off.
+func (s *Server) updateStatus(w http.ResponseWriter, r *http.Request) {
+	refresh := r.URL.Query().Get("refresh") == "1"
+	check := refresh || !s.cfg.Settings().Updates.NoCheck
+	writeJSON(w, 200, s.updater.Status(r.Context(), check, refresh))
+}
+
+func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
+	err := s.updater.Install()
+	s.record(r, "", "app.update", "", nil, err)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 202, s.updater.Status(r.Context(), false, false))
 }

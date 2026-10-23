@@ -57,6 +57,21 @@ export type Settings = {
   agent?: { autoServerChanges: boolean };
   vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string };
   git: { name: string; email: string };
+  updates?: { noCheck: boolean };
+};
+export type UpdateRelease = { version: string; name: string; notes: string; url: string; published: string };
+export type UpdateStatus = {
+  current: string;
+  latest?: UpdateRelease;
+  available: boolean;
+  checkedAt?: string;
+  error?: string;
+  /** how it installs here; empty: by hand (see manual) */
+  method?: "installer" | "portable" | "app" | "deb" | "rpm" | "binary";
+  manual?: string;
+  state?: "downloading" | "installing" | "restarting" | "done" | "failed";
+  progress: number;
+  message?: string;
 };
 export type ModelInfo = { id: string; provider: string; model: string; label: string };
 

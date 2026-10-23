@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Bot, Cpu, KeyRound, Laptop, Moon, Plus, Save, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
+import { Bot, Cpu, KeyRound, Laptop, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
+import { useUpdate } from "../context/update";
 import { Badge, Button, Card, ChipInput, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { VaultItemModal } from "../components/VaultItemForm";
@@ -32,6 +33,7 @@ const normSettings = (v: Settings): Settings => ({
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
   agent: { autoServerChanges: !!v.agent?.autoServerChanges },
+  updates: { noCheck: !!v.updates?.noCheck },
 });
 
 const KIND_LABEL: Record<string, string> = {
@@ -388,6 +390,19 @@ export function AppSettingsPage() {
           <ChangePassword />
         </Card>
 
+        <Card
+          title={
+            <>
+              <Sparkles className="size-4 text-muted" /> Updates
+            </>
+          }
+        >
+          <UpdatesSection
+            autoCheck={!s.updates?.noCheck}
+            setAutoCheck={(v) => setS({ ...s, updates: { noCheck: !v } })}
+          />
+        </Card>
+
         <Card title="Appearance">
           <Segmented
             value={theme}
@@ -410,6 +425,47 @@ export function AppSettingsPage() {
           if (newKeyFor !== null) setProvider(newKeyFor, { apiKeyRef: it.ref });
         }}
       />
+    </div>
+  );
+}
+
+function UpdatesSection({ autoCheck, setAutoCheck }: { autoCheck: boolean; setAutoCheck: (v: boolean) => void }) {
+  const { status, checking, check, showDialog } = useUpdate();
+  const latest = status?.latest;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 text-[13px]">
+          <div>
+            opsdeck <span className="font-mono">{status?.current || "…"}</span>
+          </div>
+          <div className="text-xs text-muted mt-0.5">
+            {status?.error
+              ? status.error
+              : status?.state === "done" && latest
+                ? `Version ${latest.version} is installed; restart opsdeck to use it.`
+                : status?.available && latest
+                  ? `Version ${latest.version} is available.`
+                  : status?.manual
+                    ? status.manual
+                    : latest
+                      ? "You have the latest version."
+                      : status?.checkedAt
+                        ? "No release found."
+                        : "Not checked yet."}
+            {status?.checkedAt && <> · checked {new Date(status.checkedAt).toLocaleString()}</>}
+          </div>
+        </div>
+        {status?.available && (
+          <Button variant="primary" size="sm" onClick={showDialog}>
+            Show update
+          </Button>
+        )}
+        <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => void check()} loading={checking}>
+          Check now
+        </Button>
+      </div>
+      <Toggle checked={autoCheck} onChange={setAutoCheck} label="Check for new versions on GitHub automatically" />
     </div>
   );
 }

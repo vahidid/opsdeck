@@ -1,0 +1,36 @@
+# Tests: Go (vet and the test suite, which runs its own SSH servers, WireGuard
+# peers and scripted models) and the web UI's typecheck.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["docs/**", "site/**", "**.md"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web UI
+        working-directory: web
+        run: npm ci && npm run typecheck && npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: go vet ./...
+      - run: go test ./...

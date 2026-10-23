@@ -30,6 +30,7 @@ import (
 	"opsdeck/internal/llm"
 	"opsdeck/internal/mcpx"
 	"opsdeck/internal/paths"
+	"opsdeck/internal/update"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/vpn"
 	"opsdeck/internal/workspace"
@@ -58,6 +59,7 @@ type Server struct {
 	devOrigin string
 	port      int
 	desktop   bool
+	updater   *update.Updater
 }
 
 // Options configure the server.
@@ -65,6 +67,10 @@ type Options struct {
 	Port      int
 	DevOrigin string // extra allowed Origin for UI development (e.g. http://localhost:5173)
 	Desktop   bool   // serving the desktop app's window: links and downloads go through the server
+	Version   string // of this opsdeck, for updates
+	// Quit ends the program so an update can be installed (desktop app);
+	// without it an update asks for a restart.
+	Quit func()
 }
 
 // New opens all stores under dirs.
@@ -145,6 +151,11 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		s.hub.CloseAll()
 		s.audit.Record(audit.Entry{Actor: "system", Action: "vault.lock"})
 	})
+	kind := update.KindCLI
+	if opts.Desktop {
+		kind = update.KindDesktop
+	}
+	s.updater = update.New(opts.Version, kind, opts.Quit)
 	s.agents.SetMCPBase("http://127.0.0.1:" + strconv.Itoa(opts.Port) + "/mcp/")
 	if s.token, err = loadToken(filepath.Join(dirs.State, "server.token")); err != nil {
 		return nil, err

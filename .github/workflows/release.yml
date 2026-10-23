@@ -1,20 +1,21 @@
-# Builds the desktop app (cmd/opsdeck-desktop) for Linux, Windows and macOS:
-#   Linux    .deb and .rpm (x86_64)
-#   Windows  installer (NSIS) and a portable .exe (x86_64)
-#   macOS    .dmg with a universal (Apple silicon + Intel) app
-# Every run keeps them as workflow artifacts; a v* tag also publishes them
-# as a GitHub release.
-name: Desktop
+# Builds opsdeck for Linux, Windows and macOS, and publishes a GitHub release
+# for every v* tag:
+#   desktop app  .deb/.rpm (Linux x86_64), installer and portable .exe
+#                (Windows x64), universal .dmg (macOS)
+#   CLI          opsdeck-cli-<version>-<os>-<arch>
+#   checksums    SHA256SUMS.txt (the in-app updater refuses files without one)
+# Other pushes keep the builds as workflow artifacts.
+name: Build & release
 
 on:
   push:
     branches: ["**"]
     tags: ["v*"]
-    paths-ignore: ["docs/**", "**.md"]
+    paths-ignore: ["docs/**", "site/**", "**.md"]
   workflow_dispatch:
 
 concurrency:
-  group: desktop-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -53,8 +54,8 @@ jobs:
           # installers want a plain x.y.z
           echo "number=${v%%[-+]*}" >> "$GITHUB_OUTPUT"
 
-  build:
-    name: ${{ matrix.name }}
+  desktop:
+    name: Desktop · ${{ matrix.name }}
     needs: web
     runs-on: ${{ matrix.os }}
     strategy:
@@ -140,25 +141,86 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: opsdeck-${{ needs.web.outputs.version }}-${{ matrix.name }}
+          name: opsdeck-${{ needs.web.outputs.version }}-desktop-${{ matrix.name }}
           path: cmd/opsdeck-desktop/dist/*
+          if-no-files-found: error
+
+  cli:
+    name: CLI
+    needs: web
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.web.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/server/dist
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+              -o "dist/opsdeck-cli-$VERSION-$os-$arch$ext" ./cmd/opsdeck
+          done
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opsdeck-${{ needs.web.outputs.version }}-cli
+          path: dist/*
           if-no-files-found: error
 
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [web, build]
+    needs: [web, desktop, cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VERSION: ${{ needs.web.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: opsdeck-*
           path: dist
           merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Release notes
+        run: |
+          # this version's section of CHANGELOG.md, then how to install
+          awk -v v="$VERSION" '
+            /^## / { if (f) exit; if (index($0, "[" v "]") || $2 == v) { f = 1; next } }
+            f' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ## Install
+
+          | System | Download |
+          |---|---|
+          | Windows 10/11 (x64) | \`opsdeck-$VERSION-windows-x64-setup.exe\` (or the portable \`.exe\`) |
+          | macOS 12+ (Apple silicon and Intel) | \`opsdeck-$VERSION-macos-universal.dmg\` |
+          | Debian / Ubuntu (x86_64) | \`opsdeck_${VERSION}_amd64.deb\` |
+          | Fedora / RHEL / openSUSE (x86_64) | \`opsdeck-${VERSION}-1.x86_64.rpm\` |
+          | CLI only (\`opsdeck serve\`, opens in the browser) | \`opsdeck-cli-$VERSION-<os>-<arch>\` |
+
+          Or run the install script — see [Install](https://github.com/${{ github.repository }}#install).
+          Already installed? opsdeck shows the update in its sidebar and installs it for you.
+          EOF
+          cat notes.md
       - uses: softprops/action-gh-release@v2
         with:
+          name: opsdeck ${{ needs.web.outputs.version }}
+          body_path: notes.md
           files: dist/*
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          prerelease: ${{ contains(needs.web.outputs.version, '-') }}
+          make_latest: ${{ !contains(needs.web.outputs.version, '-') }}

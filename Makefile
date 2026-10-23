@@ -1,4 +1,4 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(patsubst v%,%,$(shell git describe --tags --always --dirty 2>/dev/null || echo dev))
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 .PHONY: all build web test demo clean release desktop

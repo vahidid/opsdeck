@@ -12,6 +12,7 @@ description: |
   Local workbench and AI agent harness for infrastructure: servers, VPNs,
   containers, clusters and logs, with an encrypted local vault.
 homepage: https://github.com/vahidid/opsdeck
+license: MIT
 contents:
   - src: ./build/bin/opsdeck
     dst: /usr/bin/opsdeck-desktop

@@ -45,8 +45,10 @@ stdio MCP relay for external agents (`mcp-stdio`). The desktop binary answers bo
 
 ## Install
 
-Builds come from the **Desktop** workflow (`.github/workflows/desktop.yml`). Each run
-keeps them as workflow artifacts. A `v*` tag also publishes them as a GitHub release.
+Builds come from the **Build & release** workflow (`.github/workflows/release.yml`). Each
+run keeps them as workflow artifacts. A `v*` tag also publishes them as a GitHub release
+(see [releasing.md](releasing.md)). The install scripts in `scripts/` download the right
+file for you (see the README's *Install* section).
 
 | System | File | Notes |
 |---|---|---|
@@ -90,7 +92,6 @@ The main package carries the `desktop` build tag, which `wails build` sets. This
 
 ## Not yet
 
-- Code signing and notarization (Apple Developer ID, a Windows certificate) and
-  auto-update.
+- Code signing and notarization (Apple Developer ID, a Windows certificate).
 - A tray icon so VPNs and forwards stay up while the window is closed.
 - Linux arm64 and Windows arm64 builds.

@@ -1,0 +1,45 @@
+# Publishes the website (site/) on GitHub Pages, with the images from
+# docs/assets and the install scripts, so these work:
+#   curl -fsSL https://vahidid.github.io/opsdeck/install.sh | sh
+#   irm https://vahidid.github.io/opsdeck/install.ps1 | iex
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "docs/assets/**", "scripts/install.*", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble
+        run: |
+          mkdir -p _site/assets
+          cp -R site/. _site/
+          cp docs/assets/logo.svg docs/assets/social-preview.png docs/assets/screenshot-*.png _site/assets/
+          cp scripts/install.sh scripts/install.ps1 _site/
+          touch _site/.nojekyll
+          ls -R _site
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

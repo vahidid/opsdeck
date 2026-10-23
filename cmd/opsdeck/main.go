@@ -86,7 +86,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	srv, err := server.New(dirs, server.Options{Port: *port, DevOrigin: *devOrigin})
+	srv, err := server.New(dirs, server.Options{Port: *port, DevOrigin: *devOrigin, Version: version})
 	if err != nil {
 		log.Fatalf("opsdeck: %v", err)
 	}

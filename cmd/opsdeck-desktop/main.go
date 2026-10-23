@@ -150,7 +150,10 @@ func (a *app) serve() (string, error) {
 		}
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	srv, err := server.New(a.dirs, server.Options{Port: port, Desktop: true})
+	srv, err := server.New(a.dirs, server.Options{Port: port, Desktop: true, Version: version,
+		// an update quits the app; its installer step starts it again
+		Quit: func() { wruntime.Quit(a.ctx) },
+	})
 	if err != nil {
 		ln.Close()
 		return "", err

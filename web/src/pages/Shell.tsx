@@ -17,6 +17,7 @@ import { api, errMsg } from "../api/client";
 import { useApp } from "../context/app";
 import { useTerminals } from "../context/terminals";
 import { useTabs } from "../context/tabs";
+import { UpdateBox } from "../context/update";
 import { NAV, NAV_GROUPS, SINGLETON_SECTIONS } from "../lib/nav";
 import type { NavGroup } from "../lib/nav";
 import { Button, FormField, IconButton, Input, Kbd, Tabs, Textarea, cx } from "../components/ui";
@@ -62,6 +63,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <nav className="flex-1 overflow-y-auto px-2 pb-2">
           {ws ? <SidebarNav ws={ws} terminals={tabs.length} /> : <div className="px-2.5 py-3 text-xs text-faint">Select or create a workspace to get started.</div>}
         </nav>
+        <UpdateBox />
         <div className="border-t border-line p-2 space-y-px">
           {ws && (
             <NavLink

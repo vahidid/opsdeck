@@ -1,8 +1,82 @@
-# opsdeck
+<p align="center">
+  <img src="docs/assets/logo.svg" width="96" height="96" alt="opsdeck logo">
+</p>
 
-An AI agent harness for infrastructure — like Claude Code / opencode, but its world is
-servers, networks/VPNs, containers, clusters and logs instead of a code repository —
-plus a complete local workbench that is just as useful without AI.
+<h1 align="center">opsdeck</h1>
+
+<p align="center">
+  <b>A local workbench and AI agent for your infrastructure</b><br>
+  servers, VPNs, containers, clusters and logs, from one app
+</p>
+
+<p align="center">
+  <a href="https://github.com/vahidid/opsdeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/vahidid/opsdeck?sort=semver&color=10b981"></a>
+  <a href="https://github.com/vahidid/opsdeck/actions/workflows/release.yml"><img alt="Build" src="https://github.com/vahidid/opsdeck/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/vahidid/opsdeck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/vahidid/opsdeck/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/vahidid/opsdeck?color=10b981"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="https://vahidid.github.io/opsdeck/">Website</a> ·
+  <a href="#features">Features</a> ·
+  <a href="docs/">Docs</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/screenshot-overview.png" alt="opsdeck: a workspace overview with hosts, topology and validation" width="900">
+</p>
+
+opsdeck is an AI agent harness for infrastructure. It works like Claude Code or opencode,
+but its world is servers, networks and VPNs, containers, clusters and logs instead of a
+code repository. It is also a complete local workbench that is just as useful without
+AI. Everything runs on your computer: a desktop app for Windows, macOS and Linux, or
+`opsdeck serve` with the UI in your browser.
+
+## Install
+
+Download the latest release for your system from
+**[Releases](https://github.com/vahidid/opsdeck/releases/latest)**:
+
+| System | File |
+|---|---|
+| Windows 10/11 (x64) | `opsdeck-<version>-windows-x64-setup.exe` (or the portable `.exe`) |
+| macOS 12+ (Apple silicon and Intel) | `opsdeck-<version>-macos-universal.dmg` |
+| Debian, Ubuntu (x86_64) | `opsdeck_<version>_amd64.deb` |
+| Fedora, RHEL, openSUSE (x86_64) | `opsdeck-<version>-1.x86_64.rpm` |
+| CLI only (any of the above, plus Linux arm64) | `opsdeck-cli-<version>-<os>-<arch>` |
+
+Or let a script pick the right file, check its checksum and install it:
+
+```bash
+# Linux and macOS
+curl -fsSL https://vahidid.github.io/opsdeck/install.sh | sh
+# only the CLI, into ~/.local/bin
+curl -fsSL https://vahidid.github.io/opsdeck/install.sh | sh -s -- --cli
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://vahidid.github.io/opsdeck/install.ps1 | iex
+```
+
+The builds are not code-signed yet. The first time you open opsdeck on **macOS**,
+right-click the app and choose *Open*. On **Windows**, SmartScreen asks once: choose
+*More info → Run anyway*.
+
+**Updates:** opsdeck checks GitHub for new releases and shows an *Update available* box
+in the sidebar. One click downloads the update and checks it against the release's
+`SHA256SUMS.txt`, then installs it the way you installed opsdeck and restarts:
+
+- the installer on Windows
+- the app in place on macOS
+- the `.deb` or `.rpm` package on Linux, after your password
+- the binary itself for the CLI
+
+You can turn the check off, or check now, under *App settings → Updates*.
+
+## Features
 
 - **Workspaces** — one per project: hosts, groups, VPN profiles and proxies, jump hosts,
   web panels, Git repos, databases, Kubernetes clusters, docs and runbooks. Plain YAML +
@@ -102,16 +176,10 @@ plus a complete local workbench that is just as useful without AI.
   permission rules; approvals with previews; secrets redacted from everything the model
   sees; a hash-chained audit journal of every action.
 
-## Quick start
+## Getting started
 
-Requirements to build: Go 1.24+ (the toolchain auto-downloads 1.27), Node 20+. Optional for VPNs: openvpn, openconnect (+ ocproxy), openfortivpn, wireguard-tools.
-
-```bash
-make build          # builds the web UI and bin/opsdeck
-bin/opsdeck         # starts on http://127.0.0.1:7788 and opens the browser
-```
-
-The first screen creates the vault (master password; there is no recovery). Then:
+When you first open opsdeck, it asks you to create the vault (master password; there is
+no recovery). Then:
 
 1. **New workspace** → e.g. `acme`.
 2. **Vault → Generate SSH key** (or import yours); copy the public key to your servers.
@@ -126,12 +194,20 @@ The first screen creates the vault (master password; there is no recovery). Then
 
 Without any model configured everything except the Agent page works.
 
-### Desktop app
+<p align="center">
+  <img src="docs/assets/screenshot-topology.png" alt="The topology map of a workspace" width="900">
+</p>
 
-opsdeck also comes as an installable app for Linux (.deb, .rpm), Windows (installer) and
-macOS (.dmg): the same local server, with the UI in its own window instead of a browser
-tab. Builds come from the **Desktop** GitHub workflow; `make desktop` builds it locally —
-see [docs/desktop.md](docs/desktop.md).
+### Build from source
+
+Requirements: Go 1.24+ (the toolchain auto-downloads 1.27) and Node 20+. For VPNs, these
+are optional: openvpn, openconnect (+ ocproxy), openfortivpn, wireguard-tools.
+
+```bash
+make build          # builds the web UI and bin/opsdeck
+bin/opsdeck         # starts on http://127.0.0.1:7788 and opens the browser
+make desktop        # the desktop app (needs the Wails CLI), see docs/desktop.md
+```
 
 ### Try it without servers
 
@@ -199,12 +275,14 @@ installed `ansible-core`; they are skipped otherwise.
 - The agent's access to this computer (Settings → This computer) is on by default: it can
   read files with consent, and every local write or command asks. Turn it off there if you
   only want it to work on workspace hosts.
-- Tested on Linux; macOS and Windows builds compile but have not been exercised yet.
+- Tested mostly on Linux. The macOS and Windows desktop apps are built and released by CI,
+  but have seen less use.
 
 ## Documents
 
 - [docs/architecture.md](docs/architecture.md) — framework, modules, data layout
 - [docs/desktop.md](docs/desktop.md) — the desktop app: how it works, install, build
+- [docs/releasing.md](docs/releasing.md) — versions, releases and how updates install
 - [docs/harness.md](docs/harness.md) — agent loop, tools, permissions
 - [docs/vault.md](docs/vault.md) — vault design
 - [docs/workspace.md](docs/workspace.md) — workspace model and files
@@ -218,3 +296,9 @@ installed `ansible-core`; they are skipped otherwise.
 - [docs/ansible.md](docs/ansible.md) — Ansible: projects, Ansible Vault, runs and logs, the agent's tools and password prompt
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI
 - [docs/decisions.md](docs/decisions.md) — decisions and open questions
+
+## License
+
+opsdeck is released under the [MIT License](LICENSE). The built-in skills from
+[wshobson/agents](https://github.com/wshobson/agents) keep their own MIT license
+(`internal/skills/library/LICENSE-wshobson-agents`).

@@ -72,6 +72,7 @@ import type {
   Topology,
   ValidationIssue,
   VaultStatus,
+  UpdateStatus,
   Workspace,
   WorkspaceSummary,
   InstalledAgent,
@@ -194,6 +195,8 @@ export const api = {
   // settings
   settings: () => get<Settings>("/api/settings"),
   saveSettings: (s: Settings) => put<Settings>("/api/settings", s),
+  updateStatus: (refresh = false) => get<UpdateStatus>(`/api/update${refresh ? "?refresh=1" : ""}`),
+  installUpdate: () => post<UpdateStatus>("/api/update/install"),
   detectAgents: () => arr(get<InstalledAgent[]>("/api/agents/detect")),
   models: () => arr(get<ModelInfo[]>("/api/models")),
 

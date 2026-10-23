@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "
 import { Layers, Plus } from "lucide-react";
 import { AppProvider, WorkspaceProvider, useApp, useWs } from "./context/app";
 import { TerminalProvider } from "./context/terminals";
+import { UpdateProvider } from "./context/update";
 import { TabCtx, TabsProvider, useTabs } from "./context/tabs";
 import { TabStrip } from "./components/TabStrip";
 import { sectionInfo } from "./lib/nav";
@@ -40,6 +41,7 @@ export function App() {
         <Boot>
           {(lock) => (
             <AppProvider onLock={lock}>
+              <UpdateProvider>
               <TerminalProvider>
                 <BrowserRouter>
                   <TabsProvider>
@@ -55,6 +57,7 @@ export function App() {
                   </TabsProvider>
                 </BrowserRouter>
               </TerminalProvider>
+              </UpdateProvider>
             </AppProvider>
           )}
         </Boot>

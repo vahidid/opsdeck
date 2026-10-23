@@ -17,3 +17,17 @@ func noWindow(cmd *exec.Cmd) {
 	}
 	cmd.SysProcAttr.CreationFlags |= createNoWindow
 }
+
+const (
+	detachedProcess       = 0x00000008
+	createNewProcessGroup = 0x00000200
+)
+
+func detach(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	// no console at all (CREATE_NO_WINDOW does not combine with it)
+	cmd.SysProcAttr.CreationFlags = detachedProcess | createNewProcessGroup
+	cmd.SysProcAttr.HideWindow = true
+}

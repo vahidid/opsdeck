@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { useTabs, tabLabel } from "../context/tabs";
-import { NAV, sectionInfo } from "../lib/nav";
+import { NAV, NAV_GROUPS, sectionInfo } from "../lib/nav";
 import { MenuItem, Popover } from "./overlay";
 import { cx } from "./ui";
 
@@ -96,19 +96,24 @@ export function TabStrip({ ws }: { ws: string }) {
         <button onClick={() => setMenu((v) => !v)} className="rounded p-1.5 text-muted hover:text-fg hover:bg-panel-2" title="New tab">
           <Plus className="size-4" />
         </button>
-        <Popover open={menu} onClose={() => setMenu(false)} className="left-0 top-full mt-1 w-56">
+        <Popover open={menu} onClose={() => setMenu(false)} className="left-0 top-full mt-1 w-56 max-h-[70vh] overflow-y-auto">
           <div className="px-3 pt-1 pb-1.5 text-[11px] text-faint">Open in a new tab</div>
-          {NAV.map((n) => (
-            <MenuItem
-              key={n.to}
-              icon={n.icon}
-              onClick={() => {
-                setMenu(false);
-                tabs.open(ws, n.to);
-              }}
-            >
-              {n.label}
-            </MenuItem>
+          {NAV_GROUPS.map((g, gi) => (
+            <div key={g.id}>
+              {gi > 0 && <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint">{g.label}</div>}
+              {NAV.filter((n) => n.group === g.id).map((n) => (
+                <MenuItem
+                  key={n.to}
+                  icon={n.icon}
+                  onClick={() => {
+                    setMenu(false);
+                    tabs.open(ws, n.to);
+                  }}
+                >
+                  {n.label}
+                </MenuItem>
+              ))}
+            </div>
           ))}
         </Popover>
       </div>

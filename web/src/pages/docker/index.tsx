@@ -53,7 +53,7 @@ export function DockerPage() {
   const info = useAsync(() => (host ? api.dockerInfo(ws, host) : Promise.resolve(undefined)), [ws, host]);
   const [drawer, setDrawer] = useState<{ id: string; name: string; view: ContainerView } | null>(null);
   useTabTitle(
-    tab === "compose" && params.get("project") ? `${params.get("project")} · compose` : tab === "volumes" && params.get("volume") ? `${params.get("volume")} · volume` : `Docker · ${host}`,
+    tab === "compose" && params.get("project") ? `${params.get("project")} · compose` : tab === "volumes" && params.get("volume") ? `${params.get("volume")} · volume` : host ? `Docker · ${host}` : "Docker",
   );
 
   const goto = useCallback(

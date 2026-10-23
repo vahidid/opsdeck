@@ -88,9 +88,11 @@ plus a complete local workbench that is just as useful without AI.
   account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
   built-in tools are switched off; they work only through opsdeck's tools (served to
   them over MCP), so approvals, redaction and audit still apply.
-- **Tabs** — any section (an agent session, a document, the VPN page, logs…) opens in its
-  own tab inside the workspace (Ctrl/⌘-click, middle-click or +); tabs keep their state and
-  are remembered per workspace.
+- **Tabs** — the sidebar groups a workspace's sections (Infrastructure, Deploy, Library,
+  Security; groups fold) and opens each in its own tab, or switches to the tab already
+  showing it; Ctrl/⌘-click, middle-click or + opens another. Inside a page, Ctrl/⌘-click
+  or middle-click on a link opens it in a new tab. Tabs keep their state and are
+  remembered per workspace.
 - **Persian / RTL** — agent answers, your messages and documents in Persian (or another
   right-to-left language) are laid out right-to-left with a Persian font, while commands,
   paths and code stay left-to-right.

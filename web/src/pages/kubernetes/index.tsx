@@ -84,7 +84,17 @@ export function KubernetesPage() {
   const [apply, setApply] = useState<{ manifest?: string; ns: string } | null>(null);
 
   const rt = useMemo(() => (VIEWS[view] ? undefined : (types.data ?? []).find((t) => t.id === view)), [types.data, view]);
-  useTabTitle(obj ? `${obj.name} · k8s` : rt ? `${plural(rt)} · ${cluster}` : VIEWS[view] && view !== "overview" ? `${VIEWS[view].label} · ${cluster}` : `Kubernetes · ${cluster}`);
+  useTabTitle(
+    obj
+      ? `${obj.name} · k8s`
+      : !cluster
+        ? "Kubernetes"
+        : rt
+          ? `${plural(rt)} · ${cluster}`
+          : VIEWS[view] && view !== "overview"
+            ? `${VIEWS[view].label} · ${cluster}`
+            : `Kubernetes · ${cluster}`,
+  );
 
   const ctx: KubeCtx = useMemo(
     () => ({

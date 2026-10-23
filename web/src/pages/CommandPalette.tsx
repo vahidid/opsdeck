@@ -8,6 +8,7 @@ import { api } from "../api/client";
 import type { Resource } from "../api/types";
 import { useApp } from "../context/app";
 import { useTerminals } from "../context/terminals";
+import { useTabs } from "../context/tabs";
 import { KindIcon } from "../components/icons";
 import { cx } from "../components/ui";
 
@@ -18,6 +19,7 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
   const { workspaces, theme, setTheme } = useApp();
   const terms = useTerminals();
   const navigate = useNavigate();
+  const tabs = useTabs();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -71,7 +73,7 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
           group: "Go to",
           label: s.label,
           icon: <ArrowRight className="size-4" />,
-          run: () => navigate(`${W}/${s.to}`),
+          run: () => tabs.show(ws, s.to),
         });
       }
     }
@@ -94,7 +96,7 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
     });
     out.push({ id: "app-settings", group: "Go to", label: "App settings", icon: <ArrowRight className="size-4" />, run: () => navigate("/settings") });
     return out;
-  }, [ws, resources, workspaces, theme, setTheme, navigate, terms]);
+  }, [ws, resources, workspaces, theme, setTheme, navigate, terms, tabs]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();

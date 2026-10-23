@@ -13,6 +13,7 @@ type WsTabs = { tabs: WsTab[]; active: string };
 type TabsApi = {
   get: (ws: string) => WsTabs;
   open: (ws: string, path: string, activate?: boolean) => void;
+  show: (ws: string, path: string) => void;
   close: (ws: string, id: string) => void;
   activate: (ws: string, id: string) => void;
   move: (ws: string, from: number, to: number) => void;
@@ -72,6 +73,26 @@ export function TabsProvider({ children }: { children: ReactNode }) {
           active: activate ? id : t.active,
         }));
         if (activate) navigate(wsUrl(ws, single?.path ?? path));
+      },
+      // show brings a section up: in the active tab when it already shows
+      // that section, else in a tab showing it (as left), else in a new tab.
+      show(ws, path) {
+        const cur = get(ws);
+        const s = sectionOf(path);
+        const active = cur.tabs.find((t) => t.id === cur.active);
+        if (!active || sectionOf(active.path) === s) {
+          navigate(wsUrl(ws, path));
+          return;
+        }
+        const other = cur.tabs.find((t) => t.path === path) ?? cur.tabs.find((t) => sectionOf(t.path) === s);
+        if (other) {
+          update(ws, (t) => ({ ...t, active: other.id }));
+          navigate(wsUrl(ws, other.path));
+          return;
+        }
+        const id = newId();
+        update(ws, (t) => ({ tabs: [...t.tabs, { id, path }], active: id }));
+        navigate(wsUrl(ws, path));
       },
       close(ws, id) {
         const cur = get(ws);

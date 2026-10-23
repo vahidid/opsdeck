@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import {
+  ChevronDown,
   ChevronsUpDown,
   FolderInput,
   Lock,
@@ -16,7 +17,8 @@ import { api, errMsg } from "../api/client";
 import { useApp } from "../context/app";
 import { useTerminals } from "../context/terminals";
 import { useTabs } from "../context/tabs";
-import { NAV, SINGLETON_SECTIONS } from "../lib/nav";
+import { NAV, NAV_GROUPS, SINGLETON_SECTIONS } from "../lib/nav";
+import type { NavGroup } from "../lib/nav";
 import { Button, FormField, IconButton, Input, Kbd, Tabs, Textarea, cx } from "../components/ui";
 import { MenuItem, Modal, Popover, useToast } from "../components/overlay";
 import { WORKSPACE_COLORS, slugify } from "../lib/format";
@@ -57,59 +59,14 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="p-2">
           <WorkspaceSwitcher current={ws} />
         </div>
-        <nav className="flex-1 overflow-y-auto px-2 pb-2 space-y-px">
-          {ws ? (
-            NAV.map((n) => (
-              <NavLink
-                key={n.to}
-                to={`/w/${encodeURIComponent(ws)}/${n.to}`}
-                onClick={(e) => {
-                  if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    wsTabs.open(ws, n.to, !e.shiftKey);
-                  }
-                }}
-                onAuxClick={(e) => {
-                  if (e.button === 1) {
-                    e.preventDefault();
-                    wsTabs.open(ws, n.to, false);
-                  }
-                }}
-                title={`${n.label} — Ctrl/⌘-click or middle-click opens a new tab`}
-                className={({ isActive }) =>
-                  cx(
-                    "group flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] transition-colors [&_svg]:size-4",
-                    isActive ? "bg-panel-3 text-fg [&_svg]:text-accent" : "text-muted hover:text-fg hover:bg-panel-2",
-                  )
-                }
-              >
-                {n.icon}
-                <span className="flex-1">{n.label}</span>
-                {n.to === "terminal" && tabs.length > 0 && <span className="text-[11px] text-faint tabular-nums">{tabs.length}</span>}
-                {!SINGLETON_SECTIONS.has(n.to) && (
-                  <span
-                    role="button"
-                    title="Open in a new tab"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      wsTabs.open(ws, n.to);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-faint hover:text-fg hover:bg-panel-3 [&_svg]:!size-3.5 [&_svg]:!text-current"
-                  >
-                    <Plus />
-                  </span>
-                )}
-              </NavLink>
-            ))
-          ) : (
-            <div className="px-2.5 py-3 text-xs text-faint">Select or create a workspace to get started.</div>
-          )}
+        <nav className="flex-1 overflow-y-auto px-2 pb-2">
+          {ws ? <SidebarNav ws={ws} terminals={tabs.length} /> : <div className="px-2.5 py-3 text-xs text-faint">Select or create a workspace to get started.</div>}
         </nav>
         <div className="border-t border-line p-2 space-y-px">
           {ws && (
             <NavLink
               to={`/w/${encodeURIComponent(ws)}/settings`}
+              {...tabClick(wsTabs, ws, "settings")}
               className={({ isActive }) =>
                 cx(
                   "flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] [&_svg]:size-4",
@@ -159,6 +116,114 @@ export function Shell({ children }: { children: ReactNode }) {
       <main className="flex-1 min-w-0 flex flex-col bg-bg">{children}</main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} ws={ws} />
     </div>
+  );
+}
+
+// tabClick opens a workspace section from the sidebar: a click brings up the
+// tab showing it or opens one, Ctrl/⌘-click always opens another tab (with
+// Shift: in the background), a middle click opens one in the background.
+function tabClick(tabs: ReturnType<typeof useTabs>, ws: string, to: string) {
+  return {
+    onClick: (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) tabs.open(ws, to, !e.shiftKey);
+      else tabs.show(ws, to);
+    },
+    onAuxClick: (e: React.MouseEvent) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        tabs.open(ws, to, false);
+      }
+    },
+  };
+}
+
+const COLLAPSED_KEY = "opsdeck.nav.collapsed";
+
+function loadCollapsed(): Set<NavGroup> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as NavGroup[]);
+  } catch {
+    return new Set();
+  }
+}
+
+// SidebarNav lists a workspace's sections in groups that fold; a folded
+// group still shows the section that is open.
+function SidebarNav({ ws, terminals }: { ws: string; terminals: number }) {
+  const wsTabs = useTabs();
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const match = useMatch("/w/:ws/:section/*");
+  const current = match?.params.section ?? "";
+
+  const toggle = (g: NavGroup) =>
+    setCollapsed((c) => {
+      const n = new Set(c);
+      if (n.has(g)) n.delete(g);
+      else n.add(g);
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...n]));
+      } catch {
+        /* ignore */
+      }
+      return n;
+    });
+
+  return (
+    <>
+      {NAV_GROUPS.map((g, gi) => {
+        const folded = collapsed.has(g.id);
+        const items = NAV.filter((n) => n.group === g.id && (!folded || n.to === current));
+        return (
+          <div key={g.id} className={cx(gi > 0 && "mt-1.5")}>
+            {gi > 0 && (
+              <button
+                onClick={() => toggle(g.id)}
+                className="group/h flex w-full items-center gap-1 h-6 px-2.5 text-[10.5px] font-medium uppercase tracking-wider text-faint hover:text-muted"
+                aria-expanded={!folded}
+              >
+                <span className="flex-1 text-left">{g.label}</span>
+                <ChevronDown className={cx("size-3 opacity-0 group-hover/h:opacity-100 transition-transform", folded && "-rotate-90 opacity-100")} />
+              </button>
+            )}
+            <div className="space-y-px">
+              {items.map((n) => (
+                <NavLink
+                  key={n.to}
+                  to={`/w/${encodeURIComponent(ws)}/${n.to}`}
+                  {...tabClick(wsTabs, ws, n.to)}
+                  title={SINGLETON_SECTIONS.has(n.to) ? n.label : `${n.label} — opens in its own tab; Ctrl/⌘-click opens another`}
+                  className={({ isActive }) =>
+                    cx(
+                      "group flex items-center gap-2.5 h-7 px-2.5 rounded-md text-[13px] transition-colors [&_svg]:size-4",
+                      isActive ? "bg-panel-3 text-fg [&_svg]:text-accent" : "text-muted hover:text-fg hover:bg-panel-2",
+                    )
+                  }
+                >
+                  {n.icon}
+                  <span className="flex-1">{n.label}</span>
+                  {n.to === "terminal" && terminals > 0 && <span className="text-[11px] text-faint tabular-nums">{terminals}</span>}
+                  {!SINGLETON_SECTIONS.has(n.to) && (
+                    <span
+                      role="button"
+                      title="Open another tab"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        wsTabs.open(ws, n.to);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-faint hover:text-fg hover:bg-panel-3 [&_svg]:!size-3.5 [&_svg]:!text-current"
+                    >
+                      <Plus />
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 

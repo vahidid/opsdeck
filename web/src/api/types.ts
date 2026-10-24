@@ -56,10 +56,32 @@ export type Settings = {
   defaultModel: string;
   providers: ProviderConfig[];
   localAccess: LocalAccess;
-  agent?: { autoServerChanges: boolean };
+  agent?: AgentSettings;
+  web?: WebSettings;
   vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string; codes: VpnCodes };
   git: { name: string; email: string };
   updates?: { noCheck: boolean };
+};
+export type HookDef = {
+  name: string;
+  event: "before_tool" | "after_tool" | "turn_end";
+  command: string;
+  tool?: string;
+  risk?: "" | Risk;
+  environment?: string[];
+  workspace?: string;
+  timeoutSec?: number;
+  disabled?: boolean;
+};
+export type AgentSettings = { autoServerChanges: boolean; subagentModel?: string; noSubagents?: boolean; hooks?: HookDef[] };
+export type WebSettings = {
+  access: "" | "off" | "search" | "fetch";
+  search: "" | "duckduckgo" | "searxng" | "brave" | "tavily";
+  searchUrl: string;
+  keyRef: string;
+  proxy: string;
+  domains: string[];
+  noDefaultDomains: boolean;
 };
 export type UpdateRelease = { version: string; name: string; notes: string; url: string; published: string };
 export type UpdateStatus = {
@@ -101,9 +123,23 @@ export type PermissionRule = {
 export type McpServer = { name: string; command: string; args: string[]; env: Record<string, string> };
 export type Workspace = WorkspaceSummary & {
   environments: Environment[];
-  settings: { defaultUser: string; defaultAuth: string; defaultModel: string; noBuiltinSkills?: boolean };
+  settings: {
+    defaultUser: string;
+    defaultAuth: string;
+    defaultModel: string;
+    noBuiltinSkills?: boolean;
+    /** the agent's web access here ("" = the app default) */
+    web?: "" | "off" | "search" | "fetch";
+    /** route web requests through one of the workspace's networks */
+    webVia?: string;
+    /** models sessions may use (patterns like ollama/*; empty = any) */
+    models?: string[];
+  };
   permissions: { rules: PermissionRule[] };
   mcpServers: McpServer[];
+  hooks?: HookDef[];
+  /** indexes of hooks that came from the folder and wait for trust */
+  untrustedHooks?: number[];
 };
 
 export type Resource = {
@@ -404,7 +440,7 @@ export type HelmRelease = { name: string; namespace: string; revision: number; s
 export type HelmDetail = HelmRelease & { values: string; manifest: string; notes?: string; history: HelmRelease[] };
 
 export type SessionMode = "plan" | "ask" | "auto" | "full";
-export type SessionState = "idle" | "running" | "waiting_approval";
+export type SessionState = "idle" | "running" | "waiting_approval" | "waiting_input";
 export type Usage = { inputTokens: number; outputTokens: number };
 export type SessionInfo = {
   id: string;
@@ -416,14 +452,51 @@ export type SessionInfo = {
   created: string;
   updated: string;
   usage: Usage;
+  /** opsdeck run: nothing waits for an approval */
+  headless?: boolean;
+  forkedFrom?: string;
 };
 
-type EventBase = { id: string; ts: string };
+/** set on events of a subagent: the delegate call it runs in */
+type EventBase = { id: string; ts: string; parent?: string };
 /** workspace knowledge opsdeck found for a message and gave the agent with it */
 export type RecallItem = { kind: "skill" | "doc" | "report" | "script" | "memory"; ref: string; title?: string };
 
+export type QuestionOption = { label: string; description?: string };
+export type TodoItem = { text: string; status: "pending" | "in_progress" | "done" | "skipped" };
+export type TaskInfo = {
+  id: string;
+  callId: string;
+  tool: string;
+  target: string;
+  command: string;
+  notifyOn?: string;
+  started: string;
+  ended?: string;
+  state: "running" | "done" | "failed" | "stopped";
+  exitCode: number;
+  matched?: string;
+  error?: string;
+  lines: number;
+};
+
+/** structured data a tool attaches to its result for the chat (never sent to the model) */
+export type ToolView =
+  | { kind: "search"; query: string; backend: string; results: { title: string; url: string; snippet: string; domain: string }[] }
+  | { kind: "page"; url: string; final: string; title: string; status: number; contentType: string; total: number; offset: number; shown: number }
+  | { kind: "http"; method: string; url: string; status: number; durationMs: number; contentType: string; bytes: number }
+  | { kind: "timeseries"; query: string; step: string; total: number; series: { labels: string; points: [number, number][]; last: number; max: number }[] }
+  | { kind: "vector"; query: string; total: number; rows: { labels: string; value: string }[] }
+  | { kind: "alerts"; alerts: { name: string; state: string; since: string; severity?: string; summary?: string; labels: string }[] }
+  | { kind: "logs"; query: string; from: string; to: string; lines: { ts: string; labels?: string; line: string; level?: string }[] }
+  | { kind: "eol"; product: string; version: string; cycles: { cycle: string; release?: string; latest?: string; eol?: string | boolean; support?: string | boolean; lts?: boolean; match?: boolean }[] }
+  | { kind: "vulns"; package: string; vulns: { id: string; aliases?: string[]; summary: string; severity?: string; fixed?: string[]; published?: string }[] }
+  | { kind: "releases"; repo: string; releases: { tag: string; name?: string; published?: string; prerelease?: boolean; url: string }[] };
+
 export type AgentEvent =
-  | (EventBase & { type: "user"; text: string })
+  | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string })
+  | (EventBase & { type: "notification"; text: string })
+  | (EventBase & { type: "shell"; command: string; target: string; label: string; output: string; exitCode: number; durationMs: number })
   | (EventBase & { type: "recall"; items: RecallItem[]; preloaded?: string })
   | (EventBase & { type: "assistant_delta"; messageId: string; text: string })
   | (EventBase & { type: "assistant"; messageId: string; text: string })
@@ -435,8 +508,21 @@ export type AgentEvent =
       risk: Risk;
       target: string;
       environment: string;
+      reasons?: string[];
+      agent?: string;
     })
-  | (EventBase & { type: "tool_result"; callId: string; output: string; isError: boolean; durationMs: number })
+  | (EventBase & {
+      type: "tool_result";
+      callId: string;
+      output: string;
+      isError: boolean;
+      durationMs: number;
+      view?: ToolView;
+      /** the whole output is kept (it was cut for the model) */
+      outputId?: string;
+      outputSize?: number;
+    })
+  | (EventBase & { type: "tool_progress"; callId: string; text: string })
   | (EventBase & {
       type: "approval_request";
       approvalId: string;
@@ -447,15 +533,46 @@ export type AgentEvent =
       target: string;
       environment: string;
       reason: string;
+      reasons?: string[];
       preview: string;
       grantLabel?: string;
       /** set when the card asks the user for a password (an Ansible Vault password) */
       secret?: { label: string; rememberLabel?: string };
+      /** the hosts of a change over several hosts (a canary rollout can be chosen) */
+      hosts?: string[];
+      /** the agent asked for a canary rollout */
+      canary?: boolean;
+      /** "next": a further step of a running call (the rest of a canary rollout) */
+      stage?: string;
+      title?: string;
     })
-  | (EventBase & { type: "approval_resolved"; approvalId: string; decision: string; note?: string })
+  | (EventBase & { type: "approval_resolved"; approvalId: string; decision: string; note?: string; canary?: boolean })
+  | (EventBase & { type: "question"; questionId: string; callId: string; question: string; options: QuestionOption[]; multiple: boolean; allowText: boolean })
+  | (EventBase & { type: "question_answered"; questionId: string; choices?: string[]; text?: string; skipped?: boolean })
+  | (EventBase & { type: "todo"; callId: string; items: TodoItem[] })
+  | (EventBase & {
+      type: "subagent";
+      callId: string;
+      agent: string;
+      phase: "start" | "end";
+      model?: string;
+      readOnly?: boolean;
+      state?: string;
+      steps?: number;
+      toolCalls?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    })
+  | (EventBase & { type: "task"; task: TaskInfo })
+  | (EventBase & { type: "hook"; callId?: string; hook: string; event: string; outcome: "ok" | "deny" | "ask" | "allow" | "error"; message?: string })
   | (EventBase & { type: "status"; state: SessionState; usage?: Usage })
   | (EventBase & { type: "error"; message: string })
   | (EventBase & { type: "compaction"; summary: string });
+
+/** a workspace's slash commands, subagents and access, for the chat */
+export type WorkspaceCommand = { name: string; description: string; argumentHint?: string; prompt: string; path: string };
+export type SubagentDef = { name: string; description: string; readOnly: boolean; model?: string; tools?: string[]; path?: string };
+export type HarnessInfo = { commands: WorkspaceCommand[]; subagents: SubagentDef[]; web: "off" | "search" | "fetch"; search?: string; local: boolean; models: string[] };
 
 export type AuditEntry = {
   seq: number;

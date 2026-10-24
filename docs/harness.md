@@ -7,20 +7,22 @@ because the target is infrastructure.
 
 | Mechanic | In opsdeck |
 |---|---|
-| Agent loop | model → tool calls → results → model, streaming, interruptible (Esc) |
-| Multi-model | provider-agnostic gateway; per-agent model choice; local models (Ollama) for sensitive infra |
+| Agent loop | model → tool calls → results → model, streaming, interruptible (Esc); the reads of one step run in parallel ([below](#tool-calls-outputs-and-the-tool-set)) |
+| Multi-model | provider-agnostic gateway; per-agent model choice; local models (Ollama) for sensitive infra; a workspace can limit its models ([model policy](#model-policy)) |
 | Project instructions (`CLAUDE.md` / `AGENTS.md`) | the **workspace**: `OPSDECK.md` + `docs/` + resource model are the agent's context |
 | Tools + MCP | built-in infra tools; external MCP servers attachable per workspace |
 | Permissions & modes | allow / ask / deny rules; modes: **plan**, **ask** (default), **auto**, **full** ([below](#modes)) |
-| Sessions | persisted transcripts, resume, fork, context compaction |
-| Slash commands | `/ssh app-1`, `/vault`, `/ws use acme`, `/logs`, user-defined commands |
-| `!` shell | run a command yourself; output goes into context |
-| Subagents | e.g. `investigator` (read-only, cheap model), `deployer` (write, needs approval) |
+| Sessions | persisted transcripts, resume, fork (from any of your messages), export as report / runbook / skill, context compaction ([sessions](#sessions)) |
+| Slash commands | `/plan` `/ask` `/auto` `/full` `/model` `/compact` `/fork` `/export` `/tasks`, plus the workspace's own prompt templates in `commands/*.md` ([sessions](#slash-commands)) |
+| `!` shell | `!uptime` runs on this computer, `!@app-1 uptime` on a host; the output goes into context with your next message |
+| Subagents | `delegate` to `investigator` (read-only, several in parallel), `deployer` (changes, with the usual approvals) or the workspace's `agents/*.md` ([subagents](#subagents)) |
 | Skills | packaged procedures: "deploy docker app", "rotate certificate", "add WireGuard peer"; the ones matching a message are attached to it ([knowledge](#knowledge)) |
-| Hooks | before/after tool call (e.g. post to Slack, block commands, extra logging) |
+| Hooks | commands before / after a tool call and at the end of a turn: block or review calls, audit logs, chat notifications ([hooks](#hooks)) |
 | Memory | per-workspace notes the agent learns ("app-1 uses podman, not docker") |
-| Headless | `opsdeck run -p "..." --ws acme` for CI/cron, JSON output |
-| Background tasks | long deploys, log tails, watchers that notify the session |
+| Headless | `opsdeck run -p "..." --ws acme` for CI/cron, text or JSON output ([headless runs](#headless-runs)) |
+| Background tasks | long commands and log tails that keep running after the turn and wake the session when they finish or print a matching line ([background tasks](#background-tasks)) |
+| Web access | `web_search`, `web_fetch`, `software_lookup` — docs, release notes, CVEs, end-of-life dates, with SSRF guard, consent per site and taint ([web access](#web-access)) |
+| Checklist and questions | `todo` keeps a live checklist above the chat; `ask_user` asks a multiple-choice question and waits |
 
 ## What is different for infrastructure
 
@@ -58,6 +60,16 @@ Built-in tools:
 | `ansible` — Ansible projects: projects, files, read, search, inventory, syntax, list_hosts/tasks/tags, runs, log / write, edit, delete ([ansible.md](ansible.md)) | read / change (one approval per project; a repository project shares the repository's) |
 | `ansible_run` — ansible-playbook, ad-hoc modules, galaxy, lint on this computer, with the log on the Ansible page; `inventory=workspace` reaches the workspace's hosts through their VPNs and jump hosts | change; check runs and read-only ad-hoc modules are reads that ask once; protected environments always ask |
 | `ansible_vault` — view, edit, set (generate), encrypt, decrypt, encrypt_string | view always asks (decrypted content reaches the model); changes like files; decrypt is destructive. A missing vault password is typed into the approval card |
+| `http_request` — the HTTP API of a workspace Panel, Prometheus, Loki or Elasticsearch resource (Grafana, Alertmanager, Harbor, Proxmox, an admin API…) through its VPN or jump host, logged in with its vault login or token | GET/HEAD/OPTIONS read; POST/PUT/PATCH change; DELETE destructive |
+| `metrics_query` — PromQL on a workspace Prometheus (or VictoriaMetrics, Thanos, Mimir): instant or range (chart in the chat), series, labels, label values, alerts, rules, targets | read |
+| `logs_query` — LogQL on Loki or a query string on Elasticsearch/OpenSearch, newest first; Loki labels | read |
+| `web_search`, `web_fetch`, `software_lookup` (end-of-life dates, OSV vulnerabilities, GitHub releases) — see [Web access](#web-access) | read (a site outside the allowed list asks once) |
+| `wait_for` — until a port opens, a URL answers, a command succeeds or prints a match, or a Kubernetes rollout finishes; progress in the chat | read (a command is classified like `exec`) |
+| `ask_user` — a question with 2–6 options (and a free answer) that waits for the user | read |
+| `todo` — the session's checklist, shown live above the chat | read |
+| `delegate` — hand a task to a subagent ([Subagents](#subagents)) | read for read-only subagents; their calls are classified as usual |
+| `tasks` — the session's background tasks: list, output (tail or grep), wait, stop | read; stop is a change |
+| `read_output` — another part (offset/limit or grep) of a long tool output that was cut for the model | read |
 | `mcp__<server>__<tool>` — workspace MCP servers | read if the tool is annotated read-only, else change |
 
 ### 2. No undo
@@ -76,15 +88,15 @@ Code has git; production does not. So safety comes before execution, not after:
 - **Diffs before writes** for config files; automatic backup of a remote file before
   it is edited.
 - **Fan-out guard**: actions over a host group ask once with the full list, and can run
-  as canary (1 host → confirm → rest).
+  as canary (1 host → confirm → rest) — see [Canary rollouts](#canary-rollouts).
 
 ### 3. Secrets never reach the model
 - The agent references secrets by name; the vault **uses** them (SSH auth, login,
   tokens) but never returns them to the agent.
 - Every tool output passes through **redaction** before entering the context: known vault
   values, private keys, tokens and password patterns are masked.
-- Policy can force a local model for a workspace (`model.allowed: [ollama/*]`) so nothing
-  leaves the machine.
+- Policy can force a local model for a workspace (Allowed models: `ollama/*`) so nothing
+  leaves the machine ([Model policy](#model-policy)).
 
 ### Passwords on the approval card
 Some actions need a secret only the user has — an Ansible Vault password. The tool marks
@@ -100,8 +112,10 @@ time, workspace, target, exact command, who approved, exit code, output digest.
 A session can be exported as a report or as a reusable runbook/skill.
 
 ### 5. Long-running and live
-Deploys, rollouts and log tails take minutes. Tools can return a background handle;
-the session gets notified on completion or on a matching log line.
+Deploys, rollouts and log tails take minutes. `exec` and `local_exec` can start a command in
+the background and return a handle; the session is notified when it finishes or prints a
+matching line ([Background tasks](#background-tasks)). `wait_for` waits for a condition with
+progress in the chat instead of a sleep loop.
 
 ### 6. This computer is part of the job
 opsdeck runs on the engineer's own machine, so — like a coding harness — the agent can
@@ -186,11 +200,209 @@ prompt is easy to skip. So opsdeck looks them up itself, before the model starts
 ## The chat
 
 Consecutive tool calls are grouped into one line — the number of calls, the tools with their
-counts (`local_exec ×3`), approvals waiting, failures and the total time. A group opens by
-itself while it runs or waits for an approval; clicking it shows every call with its input,
-output and approval as before. **Grouped / Detailed** in the session header switches between
+counts (`local_exec ×3`), approvals and questions waiting, failures and the total time. A group
+opens by itself while it runs or waits for the user; clicking it shows every call with its
+input, output and approval. **Grouped / Detailed** in the session header switches between
 grouped and all calls open (remembered in the browser). Nothing is dropped: the session keeps
 every call, output and approval.
+
+Tools attach a **view** to their result for the chat (never sent to the model): a chart of a
+PromQL range with each series' last and max value, log lines coloured by level with a level
+filter, search results with their sites, the page read and its size, the HTTP status and
+timing of an API call, end-of-life cycles with the installed one marked, vulnerabilities with
+severity and fixed version. The text the model got stays one click away ("Text sent to the
+agent"). A long output that was cut for the model can be opened in full.
+
+- **Checklist** — the `todo` list is pinned above the message box with its progress and can be
+  folded.
+- **Questions** — `ask_user` shows a card with the options (one or several), a free answer and
+  Skip; the bar above the message box points to it.
+- **Subagents** — a `delegate` call shows the subagent's own steps, tool calls and approvals
+  inside the call, then its report.
+- **Live progress** — long calls (`wait_for`, fan-out over hosts, background output) show what
+  they are doing in their line.
+- **Background tasks** — the session header shows the running tasks; each can be opened
+  (command, state, output) or stopped. A finished task's notification is a message of its own.
+- **Canary** — the approval card of a change over several hosts names the hosts and offers to
+  run on one first; after it, a card asks to continue on the rest or stop.
+- **Composer** — `/` lists the slash commands (built-in and the workspace's, with their
+  argument hints); `!` switches to shell mode. The session menu (⋯) forks, compacts and
+  exports the session.
+
+## Tool calls, outputs and the tool set
+
+- **Parallel reads.** When the model asks for several calls in one step, the reads that are
+  allowed run at the same time (up to 6); changes run one after another, in order, each after
+  its own approval. A read that needs consent waits for it like a change.
+- **Long outputs.** The model gets up to 60,000 characters of a result. A longer one is kept in
+  full with the session (`<session>.outputs/`, up to 5 MB, already redacted); the model reads
+  other parts with `read_output` (offset/limit or grep) instead of running the command again,
+  and the chat can show the whole output.
+- **Only useful tools.** Tools that need a kind of resource are offered only when the workspace
+  has one (no `database` tool without databases, no `metrics_query` without Prometheus), the
+  web tools only with web access, `delegate` only when subagents are on. The model sees fewer
+  tools and spends fewer tokens on them.
+
+## Web access
+
+`web_search` searches the public web (DuckDuckGo without a key; SearXNG, Brave or Tavily with
+an instance URL or a key from the vault). `web_fetch` reads a page as Markdown (HTML is
+converted, JSON and text are returned as they are; long pages come in parts; GitHub file links
+are read as raw files). `software_lookup` asks endoflife.date (support and end-of-life dates),
+OSV.dev (known vulnerabilities of a package version, Debian/Ubuntu/Alpine packages and the
+language ecosystems) and GitHub releases.
+
+App settings → **Web access** sets the default (off, search only, search and read pages), the
+search backend, a proxy (`socks5://` or `http://`, for networks where sites are blocked) and the
+sites read without asking. A workspace can choose its own level and send its web requests
+through one of its VPNs or proxies (Workspace settings → Agent); a workspace that allows only
+local models has web access off unless it says otherwise.
+
+Safeguards, in every mode:
+
+- **Only public addresses.** URLs, every redirect and every resolved IP are checked: loopback,
+  private, link-local, CGNAT and cloud metadata addresses (and names like `localhost`,
+  `*.internal`) are refused, so a page cannot point the agent at opsdeck itself, this computer,
+  the office network or `169.254.169.254` (only the SearXNG instance you configured may be on
+  the local network). Workspace panels and APIs are reached with `http_request`, which goes
+  through the workspace's own paths and logins.
+- **Consent per site.** In Plan and Ask mode, reading a site that is not on the allowed list
+  (the built-in documentation sites — kubernetes.io, docs.docker.com, nginx.org, github.com,
+  postgresql.org … — plus your own) asks once; "always" covers the site and its subdomains for
+  the session.
+- **Untrusted content.** Pages reach the model inside `<untrusted-web-content>` with an
+  instruction never to follow what they say. After web content is read, the next change asks
+  — in every mode — until the user approves something or sends a new message.
+- **Nothing leaks out.** Queries and URLs are redacted like everything else; a query that names
+  an address or host name of the workspace asks first. Every request is in the audit journal,
+  like any other tool call.
+
+## Subagents
+
+`delegate` hands a self-contained task to a subagent with its own context, model and tool set,
+and returns its report:
+
+| Subagent | Tools | Use |
+|---|---|---|
+| `investigator` | the session's tools without the ones that change things; it runs in Plan mode, so a change is refused | diagnostics, logs, audits; several `delegate` calls in one step run **in parallel** (one per host group or symptom) |
+| `deployer` | the session's tools; changes ask like in the session | carrying out a planned change step by step |
+| `agents/<name>.md` | as the file says (`mode: read-only` works like the investigator) | the workspace's own: front matter `description`, `mode: read-only` or `changes`, optional `model` and `tools`; the body is its instructions |
+
+The subagent does not see the conversation, only the task (and `context`) the main agent gives
+it; it cannot delegate further. Its events are part of the session (with `parent` = the
+delegate call): the chat shows its steps inside the call, its approvals appear there and in the
+bar, and the audit journal records its calls with the subagent's name. App settings → Agent
+harness turns subagents off or gives them another model (e.g. a cheaper, faster one for
+investigators); local agent CLIs cannot run subagents, so then the first API model is used.
+
+## Hooks
+
+Hooks are commands on this computer that run around the agent's work, with the event as JSON on
+stdin (`event`, `workspace`, `session`, `mode`, `model`, `subagent`, `tool`, `callId`, `input`,
+`risk`, `target`, `environment`, and for later events `decision`, `output`, `isError`,
+`durationMs`, `message`):
+
+| Event | When | Can |
+|---|---|---|
+| `before_tool` | after the permission decision, before the call runs | exit 2 or print `{"decision":"deny","reason":"…"}` to block the call; `{"decision":"ask"}` makes it ask (in every mode); `{"decision":"allow"}` lets a call that would ask run (App settings hooks only) |
+| `after_tool` | after the call, with its result | logging, notifications; does not hold up the agent |
+| `turn_end` | the agent finished or stopped a turn, with its last message | e.g. post it to a chat channel |
+
+A hook matches tools by name patterns (`exec, local_*`; empty = any), a risk and environments;
+an App settings hook can be limited to one workspace. It runs in the workspace folder with
+`OPSDECK_HOOK_EVENT`, `OPSDECK_WORKSPACE`, `OPSDECK_SESSION` and `OPSDECK_TOOL` set, and times
+out after 30 seconds (`timeoutSec`); a `before_tool` hook that fails or times out does not
+block. What a hook did is shown on the call in the chat and recorded in the audit journal.
+
+```yaml
+# workspace.yaml
+hooks:
+  - name: change freeze
+    event: before_tool
+    risk: change
+    environment: [prod]
+    command: test "$(date +%u)" -lt 5 || { echo "change freeze on weekends" >&2; exit 2; }
+```
+
+Workspace hooks (in `workspace.yaml`) travel with the workspace, so — like MCP servers — hooks
+that came with the folder (a clone, a pull, an edit on disk) run only after the user trusts them
+on this machine (Workspace settings → Agent); the ones added in the UI are trusted. A workspace
+hook can block or ask, never allow.
+
+## Background tasks
+
+`exec` and `local_exec` with `background: true` start the command, return a task id at once
+and keep it running after the turn (a deploy, a migration, a log tail). With `notify_on` (a
+regular expression), the session is told when the output prints a matching line; it is always
+told when the task ends, with its exit code and the last lines. A notification arrives as a
+message of its own: an idle session starts a turn by itself so the agent can react, a busy one
+gets it when its turn ends. The `tasks` tool lists the tasks, reads their output (tail or grep),
+waits for one or stops it; the session header has the same list. A task keeps the latest
+megabyte of its output; tasks stop when opsdeck stops.
+
+## Canary rollouts
+
+A change over several hosts (`exec` or `run_script` on a group or a list) asks once with the
+whole list. The approval card can run it on **one host first**; when the agent asked for a
+canary (`canary: true`) that is the default button. After the first host, a second card shows
+its result and asks to **continue on the rest** or **stop here**; stopping returns what ran to
+the agent. Approving the whole list at once still works.
+
+## Sessions
+
+- **Fork** — copy a session into a new one: all of it (⋯ → Fork, `/fork`), or from one of your
+  messages (its fork button), which puts that message back into the composer to edit and send
+  again. Approvals given in the old session are not copied.
+- **Export** — save a session to the workspace as a report (the transcript, `reports/`), a
+  runbook (`docs/runbooks/`) or a skill (`skills/<name>/SKILL.md`); runbooks and skills are
+  written by the model from the transcript, so they need an API model.
+- **Compaction** — `/compact` (or ⋯ → Compact) summarizes the conversation so far to free
+  context; it also happens by itself near the model's limit.
+
+### Slash commands
+
+The built-in commands switch the mode (`/plan`, `/ask`, `/auto`, `/full`) or the model
+(`/model provider/model`), and run the session actions (`/compact`, `/fork`,
+`/export report|runbook|skill`, `/tasks`). A workspace adds its own as prompt templates:
+
+```markdown
+<!-- commands/health.md -->
+---
+description: Health check of a host
+argument-hint: <host>
+---
+Check the health of $ARGUMENTS: load, memory, disk, failed units, and the last errors in the journal.
+```
+
+`/health app-1` sends the template with `$ARGUMENTS` (and `$1`…`$9`) replaced; the chat shows
+`/health app-1` and the agent gets the prompt.
+
+## Headless runs
+
+```
+opsdeck run -p "Check disk on all prod hosts and report anything above 80%" --ws acme \
+            [--mode plan|ask|auto|full] [--model provider/model] [--session <id>] \
+            [--output text|json|stream-json] [--timeout 30m] [--wait-tasks=true]
+```
+
+`opsdeck run` talks to the running opsdeck (`--port`, default 7788) with its login token. It
+creates a headless session (or continues `--session`), sends the prompt (`-p -` reads stdin)
+and prints the agent's answer — as text, as one JSON object at the end (`session`,
+`workspace`, `result`, `toolCalls`, `denied`, `errors`, `usage`, `durationMs`) or as every event
+(`stream-json`). Nobody is there to approve, so whatever would ask is **denied** and the agent
+is told why; allow what the job needs with workspace permission rules or the mode. With
+`--wait-tasks` the run lasts while the session's background tasks run and their notifications
+are handled. Exit codes: 0 done, 1 the run ended with an error, 2 bad usage, 3 an action was
+denied.
+
+## Model policy
+
+Workspace settings → Agent → **Allowed models** limits the models a workspace's sessions may
+use (patterns like `ollama/*` or `anthropic/claude-*`): a new session starts with an allowed
+model, other models are refused (choosing one, or sending with one), and subagents follow the
+same list. When only local
+models are allowed (Ollama, LM Studio, a local OpenAI-compatible server), nothing leaves this
+computer, and web access defaults to off.
 
 ## How commands are classified
 

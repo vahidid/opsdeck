@@ -34,9 +34,10 @@ func (w *Workspace) docPath(rel string) (string, error) {
 	ok := rel == "OPSDECK.md" ||
 		(strings.HasPrefix(rel, "docs/") && strings.HasSuffix(rel, ".md")) ||
 		(strings.HasPrefix(rel, "reports/") && strings.HasSuffix(rel, ".md")) ||
-		(strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") <= 3)
+		(strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") <= 3) ||
+		((strings.HasPrefix(rel, "agents/") || strings.HasPrefix(rel, "commands/")) && strings.HasSuffix(rel, ".md") && strings.Count(rel, "/") == 1)
 	if !ok {
-		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md, skills/*.md or repo/<repository>/<path>.md")
+		return "", errors.New("docs must be OPSDECK.md, docs/**/*.md, reports/**/*.md, skills/*.md, agents/*.md, commands/*.md or repo/<repository>/<path>.md")
 	}
 	return w.contained(filepath.Join(w.Path, filepath.FromSlash(rel)))
 }
@@ -84,10 +85,12 @@ func (w *Workspace) Docs() []Doc {
 			return nil
 		})
 	}
-	matches, _ := filepath.Glob(filepath.Join(w.Path, "skills", "*.md"))
-	for _, m := range matches {
-		if info, err := os.Stat(m); err == nil {
-			add(m, info)
+	for _, dir := range []string{"skills", "agents", "commands"} {
+		matches, _ := filepath.Glob(filepath.Join(w.Path, dir, "*.md"))
+		for _, m := range matches {
+			if info, err := os.Stat(m); err == nil {
+				add(m, info)
+			}
 		}
 	}
 	out = append(out, w.repoDocs()...)

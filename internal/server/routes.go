@@ -101,6 +101,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/skills/library/{name}", u(s.skillLibraryFile))
 	mux.HandleFunc("GET /api/workspaces/{ws}/mcp", u(s.mcpStatus))
 	mux.HandleFunc("POST /api/workspaces/{ws}/mcp/{name}/trust", u(s.mcpTrust))
+	mux.HandleFunc("POST /api/workspaces/{ws}/hooks/trust", u(s.hooksTrust))
 
 	// networks & hosts
 	mux.HandleFunc("GET /api/workspaces/{ws}/networks", u(s.netList))
@@ -152,6 +153,16 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/messages", u(s.sessMessage))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/interrupt", u(s.sessInterrupt))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/approvals/{aid}", u(s.sessApproval))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/questions/{qid}", u(s.sessAnswer))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks", u(s.sessTasks))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks/{tid}", u(s.sessTask))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/tasks/{tid}/stop", u(s.sessTaskStop))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/outputs/{oid}", u(s.sessOutput))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/fork", u(s.sessFork))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/export", u(s.sessExport))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/shell", u(s.sessShell))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/compact", u(s.sessCompact))
+	mux.HandleFunc("GET /api/workspaces/{ws}/harness", u(s.wsHarness))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/stream", u(s.sessStream))
 
 	// git repositories
@@ -628,6 +639,14 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	if err := checkWeb(&in.Web); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.checkAgent(&in.Agent); err != nil {
+		fail(w, err)
+		return
+	}
 	if err := s.cfg.SetSettings(in); err != nil {
 		fail(w, err)
 		return
@@ -657,6 +676,10 @@ type wsFull struct {
 	Settings     workspace.Settings      `json:"settings"`
 	Permissions  workspace.Permissions   `json:"permissions"`
 	MCPServers   []workspace.MCPServer   `json:"mcpServers"`
+	Hooks        []workspace.Hook        `json:"hooks"`
+	// UntrustedHooks are the indexes of hooks that do not run until the
+	// user trusts them on this machine (they came from the folder).
+	UntrustedHooks []int `json:"untrustedHooks"`
 }
 
 func summary(w *workspace.Workspace) wsSummary {
@@ -681,6 +704,8 @@ func full(w *workspace.Workspace) wsFull {
 	if f.MCPServers == nil {
 		f.MCPServers = []workspace.MCPServer{}
 	}
+	f.Hooks = append([]workspace.Hook{}, w.Hooks...)
+	f.UntrustedHooks = []int{}
 	for i := range f.MCPServers {
 		if f.MCPServers[i].Args == nil {
 			f.MCPServers[i].Args = []string{}
@@ -780,7 +805,7 @@ func (s *Server) wsGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, 200, full(ws))
+	writeJSON(w, 200, s.fullWS(ws))
 }
 
 func (s *Server) wsPut(w http.ResponseWriter, r *http.Request) {
@@ -808,20 +833,36 @@ func (s *Server) wsPut(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ws.Permissions = in.Permissions
+	if err := checkWorkspaceAgent(ws, &ws.Settings, in.Hooks); err != nil {
+		fail(w, err)
+		return
+	}
 	before := map[string]bool{}
 	for _, m := range ws.MCPServers {
 		before[mcpx.Hash(ws.Name(), m)] = true
 	}
+	for _, h := range ws.Hooks {
+		before[agent.HookHash(ws.Name(), h)] = true
+	}
 	ws.MCPServers = in.MCPServers
+	if in.Hooks != nil {
+		ws.Hooks = in.Hooks
+	}
 	if err := ws.Save(); err != nil {
 		fail(w, err)
 		return
 	}
-	// Servers the user added or edited here are trusted; definitions that
-	// came from disk (import, git pull) need an explicit trust action.
+	// Servers and hooks the user added or edited here are trusted;
+	// definitions that came from disk (import, git pull) need an explicit
+	// trust action.
 	var hashes []string
 	for _, m := range ws.MCPServers {
 		if h := mcpx.Hash(ws.Name(), m); !before[h] {
+			hashes = append(hashes, h)
+		}
+	}
+	for _, hk := range ws.Hooks {
+		if h := agent.HookHash(ws.Name(), hk); !before[h] {
 			hashes = append(hashes, h)
 		}
 	}
@@ -830,7 +871,7 @@ func (s *Server) wsPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.record(r, ws.Name(), "workspace.update", "", nil, nil)
-	writeJSON(w, 200, full(ws))
+	writeJSON(w, 200, s.fullWS(ws))
 }
 
 func (s *Server) wsDelete(w http.ResponseWriter, r *http.Request) {
@@ -1400,7 +1441,12 @@ func (s *Server) panelOpen(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p := ws.Find("Panel", r.PathValue("name"))
+	var p *workspace.Resource
+	for _, kind := range []string{"Panel", "Prometheus", "Loki", "Elasticsearch"} {
+		if p = ws.Find(kind, r.PathValue("name")); p != nil {
+			break
+		}
+	}
 	if p == nil {
 		writeErr(w, 404, "panel not found")
 		return
@@ -1455,15 +1501,25 @@ func (s *Server) sessCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct{ Model, Mode string }
+	var in struct {
+		Model, Mode string
+		Headless    bool
+	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
+		return
+	}
+	if in.Model != "" && !agent.ModelAllowed(ws, in.Model) {
+		fail(w, fmt.Errorf("this workspace only allows the models %s", strings.Join(ws.Settings.Models, ", ")))
 		return
 	}
 	sess, err := s.agents.Create(ws, in.Model, in.Mode)
 	if err != nil {
 		fail(w, err)
 		return
+	}
+	if in.Headless {
+		sess.SetHeadless(true)
 	}
 	writeJSON(w, 201, sess.Info())
 }
@@ -1497,9 +1553,19 @@ func (s *Server) sessPut(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct{ Title, Model, Mode string }
+	var in struct {
+		Title, Model, Mode string
+		Headless           *bool
+	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
+		return
+	}
+	if in.Headless != nil {
+		sess.SetHeadless(*in.Headless)
+	}
+	if ws, err := s.ws.Get(r.PathValue("ws")); err == nil && in.Model != "" && !agent.ModelAllowed(ws, in.Model) {
+		fail(w, fmt.Errorf("this workspace only allows the models %s", strings.Join(ws.Settings.Models, ", ")))
 		return
 	}
 	if err := sess.Update(in.Title, in.Model, in.Mode); err != nil {
@@ -1550,16 +1616,36 @@ func (s *Server) sessApproval(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct{ Decision, Note, Secret string }
+	var in struct {
+		Decision, Note, Secret string
+		Canary                 bool
+	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
 		return
 	}
-	if err := sess.Resolve(r.PathValue("aid"), in.Decision, in.Note, in.Secret); err != nil {
+	if err := sess.Resolve(r.PathValue("aid"), in.Decision, in.Note, in.Secret, in.Canary); err != nil {
 		if errors.Is(err, agent.ErrSecretRequired) || errors.Is(err, ansible.ErrWrongPassword) {
 			writeJSON(w, http.StatusUnprocessableEntity, apiError{Error: err.Error(), Code: "bad_secret"})
 			return
 		}
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) sessAnswer(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.session(w, r)
+	if !ok {
+		return
+	}
+	var in agent.Answer
+	if err := readJSON(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := sess.Answer(r.PathValue("qid"), in); err != nil {
 		fail(w, err)
 		return
 	}

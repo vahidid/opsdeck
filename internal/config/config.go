@@ -35,6 +35,7 @@ type Settings struct {
 	Providers       []Provider  `yaml:"providers" json:"providers"`
 	LocalAccess     LocalAccess `yaml:"localAccess" json:"localAccess"`
 	Agent           Agent       `yaml:"agent" json:"agent"`
+	Web             Web         `yaml:"web" json:"web"`
 	VPN             VPN         `yaml:"vpn" json:"vpn"`
 	Git             Git         `yaml:"git" json:"git"`
 	Updates         Updates     `yaml:"updates" json:"updates"`
@@ -91,12 +92,57 @@ type LocalAccess struct {
 	AutoReadCommands bool `yaml:"autoReadCommands,omitempty" json:"autoReadCommands"`
 }
 
-// Agent is the agent's permission policy.
+// Agent is the agent's permission policy and harness settings.
 type Agent struct {
 	// AutoServerChanges lets the Auto and Full modes change servers (hosts,
 	// clusters, remote repositories) without asking. Off (the default):
 	// every change on a server asks, in every mode.
 	AutoServerChanges bool `yaml:"autoServerChanges,omitempty" json:"autoServerChanges"`
+	// SubagentModel is the model subagents use ("" = the session's model,
+	// when it is an API model).
+	SubagentModel string `yaml:"subagentModel,omitempty" json:"subagentModel"`
+	// NoSubagents hides the delegate tool.
+	NoSubagents bool `yaml:"noSubagents,omitempty" json:"noSubagents"`
+	// Hooks run commands on this computer around the agent's tool calls.
+	Hooks []Hook `yaml:"hooks,omitempty" json:"hooks"`
+}
+
+// Hook is a command run around agent tool calls or at the end of a turn.
+// It gets the event as JSON on stdin. A before_tool hook that exits with 2
+// (or prints {"decision":"deny"}) blocks the call; {"decision":"ask"} makes
+// it ask. after_tool and turn_end hooks are for logging and notifications.
+type Hook struct {
+	Name    string `yaml:"name" json:"name"`
+	Event   string `yaml:"event" json:"event"` // before_tool | after_tool | turn_end
+	Command string `yaml:"command" json:"command"`
+	// Matchers (empty = any): tool name pattern (* wildcard), risk, environment.
+	Tool        string   `yaml:"tool,omitempty" json:"tool"`
+	Risk        string   `yaml:"risk,omitempty" json:"risk"`
+	Environment []string `yaml:"environment,omitempty" json:"environment"`
+	Workspace   string   `yaml:"workspace,omitempty" json:"workspace"`
+	TimeoutSec  int      `yaml:"timeoutSec,omitempty" json:"timeoutSec"`
+	Disabled    bool     `yaml:"disabled,omitempty" json:"disabled"`
+}
+
+// Web is the agent's access to the internet (web_search, web_fetch,
+// software_lookup).
+type Web struct {
+	// Access is the default for workspaces: off, search (search only) or
+	// fetch (search and read pages). "" = fetch.
+	Access string `yaml:"access,omitempty" json:"access"`
+	// Search is the search backend: duckduckgo (no key, default), searxng
+	// (SearchURL), brave or tavily (KeyRef).
+	Search    string `yaml:"search,omitempty" json:"search"`
+	SearchURL string `yaml:"searchUrl,omitempty" json:"searchUrl"`
+	// KeyRef is the backend's API key, a vault:// reference.
+	KeyRef string `yaml:"keyRef,omitempty" json:"keyRef"`
+	// Proxy sends web requests through a proxy (socks5://host:port or
+	// http://host:port; "" = direct).
+	Proxy string `yaml:"proxy,omitempty" json:"proxy"`
+	// Domains are read without asking, besides the built-in documentation
+	// sites (unless NoDefaultDomains).
+	Domains          []string `yaml:"domains,omitempty" json:"domains"`
+	NoDefaultDomains bool     `yaml:"noDefaultDomains,omitempty" json:"noDefaultDomains"`
 }
 
 type file struct {
@@ -169,6 +215,8 @@ func (s *Store) Settings() Settings {
 	c := s.f.Settings
 	c.Providers = append([]Provider(nil), c.Providers...)
 	c.LocalAccess.AllowedDirs = append([]string{}, c.LocalAccess.AllowedDirs...)
+	c.Agent.Hooks = append([]Hook{}, c.Agent.Hooks...)
+	c.Web.Domains = append([]string{}, c.Web.Domains...)
 	return c
 }
 

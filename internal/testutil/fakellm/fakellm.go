@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 )
 
@@ -21,11 +22,14 @@ type ToolCall struct {
 }
 
 // Server answers the n-th assistant turn of a conversation with Script[n].
+// A conversation whose system prompt contains a key of ByMarker (a
+// subagent's) follows that script instead.
 type Server struct {
 	*httptest.Server
-	Script []Turn
+	Script   []Turn
+	ByMarker map[string][]Turn
 
-	mu       sync.Mutex
+	Mu       sync.Mutex
 	Requests []map[string]any
 }
 
@@ -38,9 +42,9 @@ func New(script []Turn) *Server {
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	var req map[string]any
 	json.NewDecoder(r.Body).Decode(&req)
-	s.mu.Lock()
+	s.Mu.Lock()
 	s.Requests = append(s.Requests, req)
-	s.mu.Unlock()
+	s.Mu.Unlock()
 	msgs, _ := req["messages"].([]any)
 	n := 0
 	for _, m := range msgs {
@@ -48,9 +52,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			n++
 		}
 	}
+	script := s.Script
+	for _, m := range msgs {
+		mm, _ := m.(map[string]any)
+		sys, _ := mm["content"].(string)
+		if mm["role"] != "system" {
+			continue
+		}
+		for marker, sc := range s.ByMarker {
+			if strings.Contains(sys, marker) {
+				script = sc
+			}
+		}
+	}
 	turn := Turn{Text: "(script exhausted)"}
-	if n < len(s.Script) {
-		turn = s.Script[n]
+	if n < len(script) {
+		turn = script[n]
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(v any) {
@@ -83,8 +100,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 // LastSystem returns the system prompt of the most recent request.
 func (s *Server) LastSystem() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	if len(s.Requests) == 0 {
 		return ""
 	}
@@ -100,8 +117,8 @@ func (s *Server) LastSystem() string {
 
 // AllToolResults returns the content of every tool message seen in the last request.
 func (s *Server) LastToolResults() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	var out []string
 	if len(s.Requests) == 0 {
 		return out

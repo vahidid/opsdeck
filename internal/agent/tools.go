@@ -51,6 +51,22 @@ type Env struct {
 	Model       string
 	Local       *LocalPolicy // nil = no access to this computer outside the workspace
 	Policy      Policy
+	// Outputs returns a saved full output of the session (read_output).
+	Outputs func(id string) (string, error)
+	// Tools are the names of the tools the agent has (nil = all), so the
+	// system prompt only explains those.
+	Tools map[string]bool
+	// Web reaches the internet (nil = no web access); WebLevel is search
+	// or fetch.
+	Web      *webClient
+	WebLevel string
+	// Redact masks secrets in text that leaves opsdeck (a search query).
+	Redact func(string) string
+	// Agents are the subagents delegate can start (none when unavailable).
+	Agents []workspace.AgentDef
+	// Tasks finds a background task of the session; AllTasks lists them.
+	Tasks    func(id string) *BgTask
+	AllTasks func() []*BgTask
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -90,7 +106,19 @@ type Call struct {
 	// the call needs (an Ansible Vault password). It always asks, also in
 	// Auto mode and for granted calls.
 	Secret *SecretPrompt
-	Run    func(ctx context.Context) (string, error)
+	// Hosts are the hosts a fan-out call runs on (shown on the approval
+	// card, which then offers a canary rollout).
+	Hosts []string
+	// Canary: the agent asked to roll out over Hosts one host first.
+	Canary bool
+	// Serial keeps a read from running alongside other reads.
+	Serial bool
+	// Tainting marks a call that brings content from outside (a web page):
+	// the next change of the turn then asks, whatever the mode.
+	Tainting string
+	Run      func(ctx context.Context) (string, error)
+
+	canary bool // the user approved a canary rollout: the first host, then ask
 }
 
 // SecretPrompt is a password the user types into the approval card. It is
@@ -269,6 +297,9 @@ func Tools() []Tool {
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 		toolScript(), toolRunScript(),
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
+		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
+		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(),
+		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(), toolTasks(),
 	}
 }
 
@@ -278,7 +309,7 @@ func toolInventory() Tool {
 	return Tool{
 		Def: llm.Tool{Name: "inventory", Description: "List the workspace's resources (hosts, groups, networks, panels, clusters, databases, git remotes) with addresses, environments, roles and how each is reached. Never contains secrets. Filter by kind, environment or a text query.",
 			Schema: obj(map[string]any{
-				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, GitRemote, Database, KubernetesCluster"),
+				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, Prometheus, Loki, Elasticsearch, GitRemote, Database, KubernetesCluster, AnsibleProject"),
 				"environment": str("Optional environment filter"),
 				"query":       str("Optional case-insensitive text to match in name, address, tags, roles or description"),
 			})},
@@ -550,17 +581,23 @@ func toolWriteDoc() Tool {
 
 func toolExec() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "exec", Description: "Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). target is a host name, group/<name>, or a comma-separated list. Commands run as the host's configured user; use 'sudo -n' when root is needed. Do not run interactive programs (vim, less, top without -b). Output is limited; filter with grep/head/tail.",
+		Def: llm.Tool{Name: "exec", Description: "Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). target is a host name, group/<name>, or a comma-separated list. Commands run as the host's configured user; use 'sudo -n' when root is needed. Do not run interactive programs (vim, less, top without -b). Output is limited; filter with grep/head/tail. A change on several hosts can roll out as a canary (canary=true: the first host, then the user decides on the rest). Long commands (a deploy, a build, a log tail) can run in the background on one host (background=true): you are told when they finish, or when a line matches notify_on.",
 			Schema: obj(map[string]any{
 				"target":      str("Host name, group/<name>, or comma-separated host names"),
 				"command":     str("Shell command"),
-				"timeout_sec": num("Timeout in seconds (default 120, max 1800)"),
+				"timeout_sec": num("Timeout in seconds (default 120, max 1800; background: default 4h, max 24h)"),
+				"canary":      map[string]any{"type": "boolean", "description": "Several hosts: run on the first one, then ask before the rest"},
+				"background":  map[string]any{"type": "boolean", "description": "Keep it running after this call returns (one host only)"},
+				"notify_on":   str("background: a regular expression; you are told when an output line matches it (e.g. 'Started|ERROR')"),
 			}, "target", "command")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
 			var in struct {
 				Target     string
 				Command    string
 				TimeoutSec int `json:"timeout_sec"`
+				Canary     bool
+				Background bool
+				NotifyOn   string `json:"notify_on"`
 			}
 			if err := decode(input, &in); err != nil {
 				return nil, err
@@ -572,12 +609,17 @@ func toolExec() Tool {
 			if err != nil {
 				return nil, err
 			}
-			timeout := time.Duration(in.TimeoutSec) * time.Second
-			if timeout <= 0 {
-				timeout = 120 * time.Second
+			if in.Background && len(hosts) > 1 {
+				return nil, errors.New("background runs on one host; start one background task per host")
 			}
-			if timeout > 30*time.Minute {
-				timeout = 30 * time.Minute
+			timeout := time.Duration(in.TimeoutSec) * time.Second
+			if in.Background {
+				timeout = min(timeout, 24*time.Hour)
+			} else {
+				if timeout <= 0 {
+					timeout = 120 * time.Second
+				}
+				timeout = min(timeout, 30*time.Minute)
 			}
 			an := AnalyzeCommand(in.Command)
 			risk, reasons := an.Risk, an.Reasons
@@ -593,15 +635,32 @@ func toolExec() Tool {
 					preview += "\nvia: " + strings.Join(path, " → ")
 				}
 			}
-			return &Call{Risk: risk, Target: target, Environment: envName, Protected: protected, Match: in.Command,
-				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...),
-				Run: func(ctx context.Context) (string, error) {
-					ctx, cancel := context.WithTimeout(ctx, timeout)
-					defer cancel()
-					if len(hosts) == 1 {
-						res, err := env.Hub.Exec(ctx, env.WS, hosts[0], in.Command, nil, 2<<20)
-						return formatExec(res, err), nil
-					}
+			if in.Background {
+				preview += "\nin the background"
+				if in.NotifyOn != "" {
+					preview += ", notify on /" + in.NotifyOn + "/"
+				}
+			}
+			if in.Canary && len(hosts) > 1 {
+				preview += "\ncanary: " + names[0] + " first, then the others after your OK"
+			}
+			c := &Call{Risk: risk, Target: target, Environment: envName, Protected: protected, Match: in.Command,
+				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...), Hosts: names,
+				Canary: in.Canary && len(hosts) > 1}
+			c.Run = func(ctx context.Context) (string, error) {
+				if in.Background {
+					h := hosts[0]
+					return startBg(ctx, "exec", h.Name, in.Command, in.NotifyOn, timeout, func(ctx context.Context, onLine func(string)) (int, error) {
+						return env.Hub.ExecWatch(ctx, env.WS, h, in.Command, onLine)
+					})
+				}
+				ctx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+				if len(hosts) == 1 {
+					res, err := env.Hub.Exec(ctx, env.WS, hosts[0], in.Command, nil, 2<<20)
+					return formatExec(res, err), nil
+				}
+				fan := func(hosts []*workspace.Resource) []string {
 					results := make([]string, len(hosts))
 					var wg sync.WaitGroup
 					sem := make(chan struct{}, 8)
@@ -616,8 +675,33 @@ func toolExec() Tool {
 						}(i, h)
 					}
 					wg.Wait()
-					return strings.Join(results, "\n"), nil
-				}}, nil
+					return results
+				}
+				if (in.Canary || c.canary) && risk != RiskRead {
+					first := hosts[0]
+					res, err := env.Hub.Exec(ctx, env.WS, first, in.Command, nil, 512<<10)
+					out := formatExec(res, err)
+					head := "=== " + first.Name + " (canary) ===\n" + truncate(out, 30000)
+					ok := err == nil && res.ExitCode == 0
+					reportProgress(ctx, "canary on %s: exit %d", first.Name, res.ExitCode)
+					reason := "the canary on " + first.Name + " succeeded (exit 0)"
+					if !ok {
+						reason = fmt.Sprintf("the canary on %s FAILED (exit %d)", first.Name, res.ExitCode)
+					}
+					approved, note, cerr := confirmStep(ctx, Step{Title: continueTitle(names[1:]), Reason: reason, Risk: risk,
+						Preview: "$ " + in.Command + "\n\non " + first.Name + ":\n" + strings.TrimSpace(truncate(out, 6000)) + "\n\nnext: " + strings.Join(names[1:], ", ")})
+					if cerr != nil || !approved {
+						msg := head + "\n\nThe rollout stopped after the canary host: the user did not continue on " + strings.Join(names[1:], ", ") + "."
+						if note != "" {
+							msg += " Their note: " + note
+						}
+						return msg, nil
+					}
+					return head + "\n" + strings.Join(fan(hosts[1:]), "\n"), nil
+				}
+				return strings.Join(fan(hosts), "\n"), nil
+			}
+			return c, nil
 		},
 	}
 }
@@ -710,6 +794,14 @@ func writeRemote(ctx context.Context, env *Env, h *workspace.Resource, path, bef
 		msg += " (backup: " + backup + ")"
 	}
 	return msg, nil
+}
+
+// continueTitle names the rest of a canary rollout.
+func continueTitle(rest []string) string {
+	if len(rest) <= 3 {
+		return "Continue on " + strings.Join(rest, ", ")
+	}
+	return fmt.Sprintf("Continue on the other %d hosts", len(rest))
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
@@ -820,22 +912,25 @@ func toolNetCheck() Tool {
 	}
 }
 
-func netCheck(ctx context.Context, env *Env, typ, target string, from, res *workspace.Resource) (string, error) {
-	// Where to dial from: a host (its SSH connection), the resource's path, or locally.
-	dialVia := func() (connect.DialFunc, error) {
-		if from != nil {
-			c, err := env.Hub.SSH(ctx, env.WS, from)
-			if err != nil {
-				return nil, err
-			}
-			return c.DialContext, nil
+// checkDialer is where a check dials from: a host (its SSH connection), the
+// way a workspace resource is reached, or this computer.
+func checkDialer(ctx context.Context, env *Env, from, res *workspace.Resource) (connect.DialFunc, error) {
+	if from != nil {
+		c, err := env.Hub.SSH(ctx, env.WS, from)
+		if err != nil {
+			return nil, err
 		}
-		if res != nil {
-			return env.Hub.Dialer(ctx, env.WS, res)
-		}
-		var d net.Dialer
-		return d.DialContext, nil
+		return c.DialContext, nil
 	}
+	if res != nil {
+		return env.Hub.Dialer(ctx, env.WS, res)
+	}
+	var d net.Dialer
+	return d.DialContext, nil
+}
+
+func netCheck(ctx context.Context, env *Env, typ, target string, from, res *workspace.Resource) (string, error) {
+	dialVia := func() (connect.DialFunc, error) { return checkDialer(ctx, env, from, res) }
 	switch typ {
 	case "tcp":
 		addr := target
@@ -1033,9 +1128,10 @@ func toolWriteReport() Tool {
 
 func toolSaveArtifact() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "save_artifact", Description: "Keep a file as evidence in the workspace (artifacts/<date>/...): source=file copies a text file from a host (e.g. a config snapshot before changing it); source=command saves the FULL output of a command run on a host (it is not sent back to you, only a short preview); source=text saves content you produced (a generated config, a diff, a CSV). Secrets are redacted before saving. Text only, up to 5 MB. Reference saved artifacts from your reports.",
+		Def: llm.Tool{Name: "save_artifact", Description: "Keep a file as evidence in the workspace (artifacts/<date>/...): source=file copies a text file from a host (e.g. a config snapshot before changing it); source=command saves the FULL output of a command run on a host (it is not sent back to you, only a short preview); source=text saves content you produced (a generated config, a diff, a CSV); source=url keeps a public web page you relied on (as Markdown, with its address and the time). Secrets are redacted before saving. Text only, up to 5 MB. Read parts of a saved artifact with read_output. Reference saved artifacts from your reports.",
 			Schema: obj(map[string]any{
-				"source":  enum("What to save", "file", "command", "text"),
+				"source":  enum("What to save", "file", "command", "text", "url"),
+				"url":     str("Web page address (for url)"),
 				"host":    str("Host name (for file and command)"),
 				"path":    str("Absolute remote path (for file)"),
 				"command": str("Shell command whose output to save (for command)"),
@@ -1044,7 +1140,7 @@ func toolSaveArtifact() Tool {
 				"note":    str("Short note for the artifacts index: why this was saved"),
 			}, "source")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
-			var in struct{ Source, Host, Path, Command, Content, Name, Note string }
+			var in struct{ Source, Host, Path, Command, Content, Name, Note, URL string }
 			if err := decode(input, &in); err != nil {
 				return nil, err
 			}
@@ -1064,6 +1160,39 @@ func toolSaveArtifact() Tool {
 			}
 			name := in.Name
 			switch in.Source {
+			case "url":
+				wc, err := env.web(WebFetch)
+				if err != nil {
+					return nil, err
+				}
+				u, err := fetchURL(env.redact(in.URL), wc.cfg.AllowPrivate)
+				if err != nil {
+					return nil, err
+				}
+				if name == "" {
+					name = strings.Trim(slugRe.ReplaceAllString(strings.ToLower(u.Hostname()+u.Path), "-"), "-")
+					if len(name) > 60 {
+						name = name[:60]
+					}
+					name += ".md"
+				}
+				c := &Call{Risk: RiskRead, Target: "web/" + u.Hostname(), Environment: "internet", Match: u.String(), Tainting: u.Hostname(),
+					Preview: "GET " + u.String() + " → artifacts/…/" + name}
+				webConsent(c, wc.cfg, u.Hostname())
+				c.Run = func(ctx context.Context) (string, error) {
+					ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+					defer cancel()
+					p, err := wc.fetch(ctx, u.String(), false)
+					if err != nil {
+						return "", err
+					}
+					head := fmt.Sprintf("<!-- saved from %s on %s -->\n", p.Final, now.Format(time.RFC3339))
+					if p.Title != "" {
+						head += "# " + p.Title + "\n\n"
+					}
+					return save(workspace.ArtifactPath(now, "web", name), head+p.Text, "url "+p.Final)
+				}
+				return c, nil
 			case "text":
 				if name == "" {
 					return nil, errors.New("name is required for text artifacts")

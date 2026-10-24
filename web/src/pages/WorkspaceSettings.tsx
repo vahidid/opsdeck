@@ -1,15 +1,30 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, Plus, Plug, Save, Settings, ShieldAlert, Trash2 } from "lucide-react";
+import { Bot, Download, Plus, Plug, Save, ScrollText, Settings, ShieldAlert, Trash2, Webhook } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { McpServer, PermissionRule, Workspace } from "../api/types";
 import { useApp, useWs } from "../context/app";
 import { Badge, Button, Card, ChipInput, FormField, IconButton, Input, PageHeader, Select, Textarea, Toggle, cx } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { SecretRefPicker } from "../components/VaultItemForm";
+import { HooksEditor } from "../components/HooksEditor";
 import { useAsync } from "../hooks";
 import { WORKSPACE_COLORS } from "../lib/format";
 import { saveFile } from "../lib/desktop";
+
+function normWorkspace(workspace: Workspace): Workspace {
+  const st = workspace.settings ?? { defaultUser: "", defaultAuth: "", defaultModel: "" };
+  return {
+    ...structuredClone(workspace),
+    environments: workspace.environments ?? [],
+    tags: workspace.tags ?? [],
+    settings: { ...st, web: st.web ?? "", webVia: st.webVia ?? "", models: st.models ?? [] },
+    permissions: { rules: workspace.permissions?.rules ?? [] },
+    mcpServers: workspace.mcpServers ?? [],
+    hooks: (workspace.hooks ?? []).map((h) => ({ ...h, tool: h.tool ?? "", risk: h.risk ?? "", environment: h.environment ?? [] })),
+    untrustedHooks: workspace.untrustedHooks ?? [],
+  };
+}
 
 export function WorkspaceSettingsPage() {
   const { name: ws, workspace, reload } = useWs();
@@ -22,21 +37,16 @@ export function WorkspaceSettingsPage() {
   const models = useAsync(() => api.models(), []);
   const mcp = useAsync(() => api.mcp(ws), [ws]);
 
+  const harness = useAsync(() => api.harness(ws), [ws, workspace]);
+  const { resources } = useWs();
+  const networks = resources.filter((r) => ["WireGuard", "Tailscale", "NetBird", "OpenVPN", "OpenConnect", "OpenFortiVPN", "SocksProxy"].includes(r.kind));
+
   useEffect(() => {
-    if (workspace) {
-      setW({
-        ...structuredClone(workspace),
-        environments: workspace.environments ?? [],
-        tags: workspace.tags ?? [],
-        settings: workspace.settings ?? { defaultUser: "", defaultAuth: "", defaultModel: "" },
-        permissions: { rules: workspace.permissions?.rules ?? [] },
-        mcpServers: workspace.mcpServers ?? [],
-      });
-    }
+    if (workspace) setW(normWorkspace(workspace));
   }, [workspace]);
 
   if (!w) return null;
-  const dirty = JSON.stringify(w) !== JSON.stringify({ ...workspace, environments: workspace?.environments ?? [], tags: workspace?.tags ?? [], settings: workspace?.settings ?? { defaultUser: "", defaultAuth: "", defaultModel: "" }, permissions: { rules: workspace?.permissions?.rules ?? [] }, mcpServers: workspace?.mcpServers ?? [] });
+  const dirty = !!workspace && JSON.stringify(w) !== JSON.stringify(normWorkspace(workspace));
 
   async function save() {
     if (!w) return;
@@ -176,6 +186,112 @@ export function WorkspaceSettingsPage() {
           <div className="mt-3">
             <div className="text-xs font-medium text-muted mb-1">Default credential (used by hosts without their own)</div>
             <SecretRefPicker value={w.settings.defaultAuth} onChange={(v) => setW({ ...w, settings: { ...w.settings, defaultAuth: v } })} ws={ws} itemTypes={["ssh-key", "login"]} />
+          </div>
+        </Card>
+
+        <Card
+          title={
+            <>
+              <Bot className="size-4 text-muted" /> Agent
+            </>
+          }
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Web access" help="Search the web and read pages (vendor docs, CVEs, release notes). Default: App settings → Web access; off when only local models are allowed.">
+              <Select value={w.settings.web ?? ""} onChange={(e) => setW({ ...w, settings: { ...w.settings, web: e.target.value as Workspace["settings"]["web"] } })}>
+                <option value="">App default{harness.data ? ` (now ${harness.data.web === "fetch" ? "search & read" : harness.data.web})` : ""}</option>
+                <option value="off">Off</option>
+                <option value="search">Search only</option>
+                <option value="fetch">Search & read pages</option>
+              </Select>
+            </FormField>
+            <FormField label="Web requests through" help="One of this workspace's VPNs or proxies, e.g. where sites are only reachable from the office network.">
+              <Select value={w.settings.webVia ?? ""} onChange={(e) => setW({ ...w, settings: { ...w.settings, webVia: e.target.value } })} disabled={w.settings.web === "off"}>
+                <option value="">— direct (or the App settings proxy) —</option>
+                {networks.map((n) => (
+                  <option key={n.name} value={`network/${n.name}`}>
+                    {n.name} ({n.kind})
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+          <FormField label="Allowed models" className="mt-3" help="Sessions of this workspace may only use these (patterns like ollama/* or anthropic/claude-*). Only local models: nothing leaves this computer, and web access defaults to off.">
+            <ChipInput mono value={w.settings.models ?? []} onChange={(v) => setW({ ...w, settings: { ...w.settings, models: v } })} placeholder="any model" />
+          </FormField>
+          {harness.data && (harness.data.subagents.length > 0 || harness.data.commands.length > 0) && (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-line bg-panel-2 p-3">
+                <div className="text-xs font-medium text-muted mb-1.5 flex items-center gap-1.5">
+                  <Bot className="size-3.5" /> Subagents
+                </div>
+                {harness.data.subagents.map((a) => (
+                  <div key={a.name} className="text-[12px] flex items-baseline gap-1.5">
+                    <span className="font-mono font-medium shrink-0">{a.name}</span>
+                    <span className={cx("text-[10.5px] whitespace-nowrap shrink-0", a.readOnly ? "text-info" : "text-warn")}>{a.readOnly ? "read-only" : "changes"}</span>
+                    <span className="text-muted truncate min-w-0" title={a.description}>
+                      {a.description}
+                    </span>
+                  </div>
+                ))}
+                <div className="text-[11px] text-faint mt-1.5">
+                  Add your own as <span className="font-mono">agents/&lt;name&gt;.md</span> (Docs page).
+                </div>
+              </div>
+              <div className="rounded-lg border border-line bg-panel-2 p-3">
+                <div className="text-xs font-medium text-muted mb-1.5 flex items-center gap-1.5">
+                  <ScrollText className="size-3.5" /> Slash commands
+                </div>
+                {harness.data.commands.length === 0 && <div className="text-[12px] text-faint">None yet.</div>}
+                {harness.data.commands.map((c) => (
+                  <div key={c.name} className="text-[12px] flex items-baseline gap-1.5">
+                    <span className="font-mono font-medium shrink-0">/{c.name}</span>
+                    {c.argumentHint && <span className="font-mono text-faint whitespace-nowrap shrink-0">{c.argumentHint}</span>}
+                    <span className="text-muted truncate min-w-0" title={c.description}>
+                      {c.description}
+                    </span>
+                  </div>
+                ))}
+                <div className="text-[11px] text-faint mt-1.5">
+                  Prompt templates in <span className="font-mono">commands/&lt;name&gt;.md</span>; <span className="font-mono">$ARGUMENTS</span> is what follows the command.
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="border-t border-line mt-4 pt-4">
+            <div className="text-[13px] font-medium mb-1 flex items-center gap-1.5">
+              <Webhook className="size-3.5 text-muted" /> Workspace hooks
+            </div>
+            <div className="text-xs text-muted mb-3">
+              Commands around the agent&apos;s tool calls, shared with the workspace (they are in <span className="font-mono">workspace.yaml</span>). Hooks that came with the
+              folder — a clone, a pull — run only after you trust them on this machine; the ones you add here are trusted.
+            </div>
+            {(w.untrustedHooks ?? []).length > 0 && (
+              <div className="mb-3 flex items-center gap-2 rounded-md border border-warn/40 bg-warn/10 p-2 text-[12px]">
+                <span className="flex-1">
+                  {w.untrustedHooks!.length > 1
+                    ? `${w.untrustedHooks!.length} hooks came from the workspace files and do not run. Trusting them lets opsdeck run their commands on this machine.`
+                    : "1 hook came from the workspace files and does not run. Trusting it lets opsdeck run its command on this machine."}
+                </span>
+                <Button
+                  size="xs"
+                  disabled={dirty}
+                  title={dirty ? "Save your changes first" : undefined}
+                  onClick={async () => {
+                    try {
+                      await api.trustHooks(ws);
+                      await reload();
+                      toast.success("Hooks trusted");
+                    } catch (err) {
+                      toast.error("Trust failed", errMsg(err));
+                    }
+                  }}
+                >
+                  Trust hooks
+                </Button>
+              </div>
+            )}
+            <HooksEditor hooks={w.hooks ?? []} onChange={(hooks) => setW({ ...w, hooks })} untrusted={w.untrustedHooks} environments={w.environments.map((e) => e.name)} />
           </div>
         </Card>
 

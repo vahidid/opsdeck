@@ -142,10 +142,7 @@ func (m *Manager) bridgeCall(b *bridge, name string, args []byte) (string, bool)
 	if err != nil {
 		return err.Error(), true
 	}
-	env := m.env(w)
-	s.mu.Lock()
-	env.SessionID, env.Model = s.info.ID, s.info.Model
-	s.mu.Unlock()
+	env := m.sessionEnv(s, w)
 	_, toolMap := m.toolset(w)
 	if len(args) == 0 {
 		args = []byte("{}")

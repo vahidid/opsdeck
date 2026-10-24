@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"opsdeck/internal/llm"
@@ -528,16 +529,20 @@ func toolLocalEditFile() Tool {
 
 func toolLocalExec() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "local_exec", Description: "Run a non-interactive shell command on THIS computer (sh -c; cmd /C on Windows), e.g. ssh-keygen -lf, ssh -G <host>, git status in a local project, docker compose config, kubectl config get-contexts. Use it for local tooling, not for workspace hosts (use exec for those). stdin is empty; output is limited. In Ask mode every command waits for the user's approval; in Auto mode only destructive ones; in Full mode none.",
+		Def: llm.Tool{Name: "local_exec", Description: "Run a non-interactive shell command on THIS computer (sh -c; cmd /C on Windows), e.g. ssh-keygen -lf, ssh -G <host>, git status in a local project, docker compose config, kubectl config get-contexts. Use it for local tooling, not for workspace hosts (use exec for those). stdin is empty; output is limited. In Ask mode every command waits for the user's approval; in Auto mode only destructive ones; in Full mode none. Long commands (a build, a port-forward, a watch) can run in the background (background=true): you are told when they finish or when a line matches notify_on.",
 			Schema: obj(map[string]any{
 				"command":     str("Shell command"),
 				"cwd":         str("Working directory, absolute or ~/... (default: home)"),
-				"timeout_sec": num("Timeout in seconds (default 120, max 1800)"),
+				"timeout_sec": num("Timeout in seconds (default 120, max 1800; background: default 4h, max 24h)"),
+				"background":  map[string]any{"type": "boolean", "description": "Keep it running after this call returns"},
+				"notify_on":   str("background: a regular expression; you are told when an output line matches it"),
 			}, "command")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
 			var in struct {
 				Command, Cwd string
 				TimeoutSec   int `json:"timeout_sec"`
+				Background   bool
+				NotifyOn     string `json:"notify_on"`
 			}
 			if err := decode(input, &in); err != nil {
 				return nil, err
@@ -557,21 +562,31 @@ func toolLocalExec() Tool {
 				return nil, err
 			}
 			timeout := time.Duration(in.TimeoutSec) * time.Second
-			if timeout <= 0 {
-				timeout = 120 * time.Second
-			}
-			if timeout > 30*time.Minute {
-				timeout = 30 * time.Minute
+			if in.Background {
+				timeout = min(timeout, 24*time.Hour)
+			} else {
+				if timeout <= 0 {
+					timeout = 120 * time.Second
+				}
+				timeout = min(timeout, 30*time.Minute)
 			}
 			an := AnalyzeCommand(in.Command)
 			risk := an.Risk
+			preview := "$ " + in.Command + "\n\non: this computer (" + runtime.GOOS + ")\nin: " + cwd
+			if in.Background {
+				preview += "\nin the background"
+			}
 			c := &Call{Risk: risk, Target: "local", Environment: "local", Protected: true, Match: in.Command, Reasons: an.Reasons,
-				Shell: true, Commands: an.Parts,
-				Preview: "$ " + in.Command + "\n\non: this computer (" + runtime.GOOS + ")\nin: " + cwd}
+				Shell: true, Commands: an.Parts, Preview: preview}
 			if risk == RiskRead && (!lp.AutoReadCommands || strings.Contains(strings.ToLower(in.Command), "opsdeck")) {
 				c.Consent = "runs a command on this computer"
 			}
 			c.Run = func(ctx context.Context) (string, error) {
+				if in.Background {
+					return startBg(ctx, "local_exec", "this computer", in.Command, in.NotifyOn, timeout, func(ctx context.Context, onLine func(string)) (int, error) {
+						return runLocalWatch(ctx, in.Command, cwd, onLine)
+					})
+				}
 				ctx, cancel := context.WithTimeout(ctx, timeout)
 				defer cancel()
 				return runLocal(ctx, in.Command, cwd), nil
@@ -643,6 +658,64 @@ func runLocal(ctx context.Context, command, cwd string) string {
 		b.WriteString("(no output)\n")
 	}
 	return b.String()
+}
+
+// runLocalWatch runs a command on this computer and passes every line it
+// prints to onLine; it returns the exit code (-1 when stopped).
+func runLocalWatch(ctx context.Context, command, cwd string, onLine func(string)) (int, error) {
+	cmd := shellCommand(ctx, command)
+	cmd.Dir = cwd
+	cmd.Env = localEnv()
+	cmd.WaitDelay = 3 * time.Second
+	lw := &lineWriter{onLine: onLine}
+	cmd.Stdout, cmd.Stderr = lw, lw
+	err := cmd.Run()
+	lw.flush()
+	var exitErr *exec.ExitError
+	switch {
+	case ctx.Err() != nil:
+		return -1, nil
+	case errors.As(err, &exitErr):
+		return exitErr.ExitCode(), nil
+	case err != nil:
+		return -1, err
+	}
+	return 0, nil
+}
+
+// lineWriter splits what is written into lines.
+type lineWriter struct {
+	mu     sync.Mutex
+	buf    []byte
+	onLine func(string)
+}
+
+func (l *lineWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buf = append(l.buf, p...)
+	for {
+		i := bytes.IndexByte(l.buf, '\n')
+		if i < 0 {
+			break
+		}
+		l.onLine(strings.TrimRight(string(l.buf[:i]), "\r"))
+		l.buf = l.buf[i+1:]
+	}
+	if len(l.buf) > 64<<10 {
+		l.onLine(string(l.buf))
+		l.buf = nil
+	}
+	return len(p), nil
+}
+
+func (l *lineWriter) flush() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.buf) > 0 {
+		l.onLine(string(l.buf))
+		l.buf = nil
+	}
 }
 
 // localEnv is opsdeck's environment without its own secrets.

@@ -386,7 +386,9 @@ the pod, the container, or `pod/container` when several stream together). `sourc
 ## Agent
 
 `approval_request` events carry `grantLabel` when "always allow" covers more than the exact
-call (e.g. every read in a folder).
+call (e.g. every read in a folder). For a change over several hosts (`hosts`), approving with
+`canary: true` runs it on the first host and then asks again (`stage: "next"`: approve continues
+on the rest, deny stops).
 
 | Method | Path | |
 |---|---|---|
@@ -397,22 +399,52 @@ call (e.g. every read in a folder).
 | DELETE | `/api/workspaces/{ws}/sessions/{id}` | |
 | POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text}` → 202 |
 | POST | `/api/workspaces/{ws}/sessions/{id}/interrupt` | |
-| POST | `/api/workspaces/{ws}/sessions/{id}/approvals/{approvalId}` | `{decision: "approve"\|"deny"\|"always", note?, secret?}` — `secret` answers a card that asks for a password (`approval_request.secret`); a missing or wrong one is 422 `bad_secret` and the card stays open |
+| POST | `/api/workspaces/{ws}/sessions/{id}/approvals/{approvalId}` | `{decision: "approve"\|"deny"\|"always", note?, secret?, canary?}` — `secret` answers a card that asks for a password (`approval_request.secret`); a missing or wrong one is 422 `bad_secret` and the card stays open |
 | GET | `/api/workspaces/{ws}/sessions/{id}/stream` | SSE: every new `Event` as `data: <json>` |
+| POST | `/api/workspaces/{ws}/sessions/{id}/questions/{questionId}` | `{choices?: [label], text?, skipped?}` answers an `ask_user` question |
+| GET | `/api/workspaces/{ws}/sessions/{id}/tasks` | → `[TaskInfo]` background tasks |
+| GET | `/api/workspaces/{ws}/sessions/{id}/tasks/{taskId}` | → `{task: TaskInfo, output}` (the latest megabyte) |
+| POST | `/api/workspaces/{ws}/sessions/{id}/tasks/{taskId}/stop` | |
+| GET | `/api/workspaces/{ws}/sessions/{id}/outputs/{outputId}` | the full text of a long tool output (`tool_result.outputId`) |
+| POST | `/api/workspaces/{ws}/sessions/{id}/fork` | `{at?: eventId}` → 201 `{session: SessionInfo, text}` — `at`: copy everything before that user message, whose text is returned |
+| POST | `/api/workspaces/{ws}/sessions/{id}/export` | `{as: "report"\|"runbook"\|"skill", title?}` → `{path}` |
+| POST | `/api/workspaces/{ws}/sessions/{id}/shell` | `{command, target?}` → the `shell` event; no target = this computer |
+| POST | `/api/workspaces/{ws}/sessions/{id}/compact` | summarize the conversation now |
+| GET | `/api/workspaces/{ws}/harness` | → `{commands, subagents, web, search, local, models}` for the chat |
+| POST | `/api/workspaces/{ws}/hooks/trust` | trust the workspace's hooks on this machine → `Workspace` |
+
+`POST /sessions` also takes `headless: true` (used by `opsdeck run`): what would ask is denied.
+A message starting with `/<command>` of the workspace is sent as that command's prompt.
 
 ```ts
-type SessionInfo = { id; workspace; title; model; mode: "plan"|"ask"|"auto"|"full"; state: "idle"|"running"|"waiting_approval";
-                     created; updated; usage: {inputTokens: number; outputTokens: number} }
-type Event = { id: string; ts: string; type: string; ... }
-// user              {text}
+type SessionInfo = { id; workspace; title; model; mode: "plan"|"ask"|"auto"|"full";
+                     state: "idle"|"running"|"waiting_approval"|"waiting_input";
+                     created; updated; usage: {inputTokens: number; outputTokens: number}; headless?; forkedFrom? }
+type TaskInfo = { id; callId; tool; target; command; notifyOn?; started; ended?; state: "running"|"done"|"failed"|"stopped";
+                  exitCode; matched?; error?; lines }
+type Event = { id: string; ts: string; type: string; parent?: string; ... }
+// parent: set on the events of a subagent — the callId of its delegate call
+// user              {text, command?, prompt?}     command: a workspace slash command, prompt: what the agent got
+// notification      {text}                        a background task finished or matched (starts a turn)
+// shell             {command, target, label, output, exitCode, durationMs}   the user's ! command
 // recall            {items: [{kind: "skill"|"doc"|"report"|"script", ref, title}], preloaded}
 //                   workspace knowledge attached to the message above; preloaded = skill included in full
 // assistant_delta   {messageId, text}            streaming chunk (not persisted)
 // assistant         {messageId, text}            final text of a message
-// tool_call         {callId, tool, input, risk, target, environment}
-// tool_result       {callId, output, isError, durationMs}
-// approval_request  {approvalId, callId, tool, input, risk, target, environment, reason, preview}   preview: diff/command text
-// approval_resolved {approvalId, decision, note}
+// tool_call         {callId, tool, input, risk, target, environment, agent?}
+// tool_result       {callId, output, isError, durationMs, view?, outputId?, outputSize?}
+//                   view: structured data for the chat (search, page, http, timeseries, vector, alerts, logs, eol, vulns, releases)
+//                   outputId: the whole output is kept (the model got the first 60,000 characters)
+// tool_progress     {callId, text}                what a running call is doing (not persisted)
+// approval_request  {approvalId, callId, tool, input, risk, target, environment, reason, preview, hosts?, canary?, stage?, title?}
+//                   preview: diff/command text; hosts: a change over several hosts; stage "next": the rest of a canary rollout
+// approval_resolved {approvalId, decision, note, canary?}
+// question          {questionId, callId, question, options: [{label, description?}], multiple, allowText}
+// question_answered {questionId, choices?, text?, skipped?}
+// todo              {callId, items: [{text, status: "pending"|"in_progress"|"done"|"skipped"}]}
+// subagent          {callId, agent, phase: "start"|"end", model?, readOnly?, state?, steps?, toolCalls?, inputTokens?, outputTokens?}
+// task              {task: TaskInfo}              a background task started or changed
+// hook              {callId?, hook, event, outcome: "ok"|"deny"|"ask"|"allow"|"error", message?}
 // status            {state, usage}
 // error             {message}
 // compaction        {summary}

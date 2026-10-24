@@ -38,7 +38,7 @@ import (
 	"opsdeck/internal/server"
 )
 
-var version = "0.1.0-dev"
+var version = "0.2.0-dev"
 
 // defaultPort is the port of `opsdeck serve`: the UI keeps its settings
 // (theme, tabs) per address, so the app and the browser share them.

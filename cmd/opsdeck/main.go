@@ -20,7 +20,7 @@ import (
 	"opsdeck/internal/sysproc"
 )
 
-var version = "0.1.0-dev"
+var version = "0.2.0-dev"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `opsdeck %s — local workbench and AI agent harness for infrastructure

@@ -52,7 +52,9 @@ func toolSoftwareLookup() Tool {
 					return nil, fmt.Errorf("product %q is not an endoflife.date id (e.g. ubuntu, postgresql, nginx)", in.Product)
 				}
 				c.Target, c.Match = "web/endoflife.date", "eol "+p
-				c.Run = func(ctx context.Context) (string, error) { return eolLookup(ctx, wc, cfg.endpoint("endoflife", "https://endoflife.date"), p, in.Version) }
+				c.Run = func(ctx context.Context) (string, error) {
+					return eolLookup(ctx, wc, cfg.endpoint("endoflife", "https://endoflife.date"), p, in.Version)
+				}
 			case "vulns":
 				if in.Package == "" || in.Ecosystem == "" {
 					return nil, errors.New("vulns needs package and ecosystem (and version)")

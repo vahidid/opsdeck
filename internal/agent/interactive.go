@@ -331,7 +331,9 @@ type askKey struct{}
 // askFunc asks the user a question and waits for the answer.
 type askFunc func(ctx context.Context, q Question) (Answer, error)
 
-func withAsk(ctx context.Context, f askFunc) context.Context { return context.WithValue(ctx, askKey{}, f) }
+func withAsk(ctx context.Context, f askFunc) context.Context {
+	return context.WithValue(ctx, askKey{}, f)
+}
 
 func toolAskUser() Tool {
 	return Tool{

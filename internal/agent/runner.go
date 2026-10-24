@@ -300,6 +300,9 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 	runCtx = withTodo(runCtx, func(items []TodoItem) {
 		r.emit("todo", map[string]any{"callId": c.ID, "items": items}, true)
 	})
+	runCtx = context.WithValue(runCtx, delegateKey{}, delegateFunc(func(ctx context.Context, def workspace.AgentDef, task string) (string, error) {
+		return r.delegate(ctx, c.ID, def, task)
+	}))
 	start := time.Now()
 	out, err := call.Run(runCtx)
 	dur := time.Since(start).Milliseconds()

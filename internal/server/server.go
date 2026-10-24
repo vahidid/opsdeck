@@ -146,6 +146,16 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		Policy:      func() agent.Policy { return agent.Policy{AutoServerChanges: s.cfg.Settings().Agent.AutoServerChanges} },
 		Web:         s.webConfig,
 		Hooks:       s.agentHooks,
+		Subagents: func() agent.SubagentConfig {
+			st := s.cfg.Settings()
+			var models []string
+			for _, m := range llm.ListModels(st.Providers) {
+				if p, _, ok := s.router().Lookup(m.ID); ok && (p.Type == "anthropic" || p.Type == "openai") {
+					models = append(models, m.ID)
+				}
+			}
+			return agent.SubagentConfig{Model: st.Agent.SubagentModel, Disabled: st.Agent.NoSubagents, Models: models}
+		},
 	})
 	v.OnLock(func() {
 		// Locking ends all live access: agents, MCP servers, terminals and

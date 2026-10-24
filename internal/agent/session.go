@@ -133,6 +133,8 @@ type Deps struct {
 	// Hooks returns the hooks that apply to a workspace: App settings hooks
 	// and the workspace's own hooks the user trusted on this machine.
 	Hooks func(w *workspace.Workspace) []Hook
+	// Subagents returns the subagent settings.
+	Subagents func() SubagentConfig
 }
 
 // Manager owns sessions.

@@ -3,15 +3,20 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"opsdeck/internal/audit"
+	"opsdeck/internal/config"
+	"opsdeck/internal/connect"
 	"opsdeck/internal/llm"
+	"opsdeck/internal/testutil/fakellm"
 	"opsdeck/internal/workspace"
 )
 
@@ -33,7 +38,7 @@ func testRunner(t *testing.T, mode string, tools ...Tool) (*runner, *Session) {
 	for _, tl := range tools {
 		byName[tl.Def.Name] = tl
 	}
-	env := &Env{WS: w, Outputs: s.Output}
+	env := &Env{WS: w, Outputs: s.Output, Hub: connect.NewHub(nil, func(string) string { return dir })}
 	return &runner{m: m, s: s, env: env, w: w, tools: byName}, s
 }
 
@@ -300,5 +305,70 @@ func TestHooks(t *testing.T) {
 			t.Fatal("after_tool hook did not run")
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestSubagentsRunInParallelAndReadOnly(t *testing.T) {
+	fake := fakellm.New([]fakellm.Turn{
+		{Text: "Checking.", Tools: []fakellm.ToolCall{{Name: "probe", Args: map[string]any{}}, {Name: "write", Args: map[string]any{}}}},
+		{Text: "disk on db-1 is 95% full"},
+	})
+	defer fake.Close()
+	var probes atomic.Int32
+	wrote := false
+	r, s := testRunner(t, ModeFull,
+		fakeTool("probe", RiskRead, func(ctx context.Context) (string, error) {
+			probes.Add(1)
+			time.Sleep(400 * time.Millisecond)
+			return "Filesystem 95%", nil
+		}),
+		fakeTool("write", RiskChange, func(ctx context.Context) (string, error) { wrote = true; return "ok", nil }),
+		toolDelegate(),
+	)
+	providers := []config.Provider{{ID: "fake", Type: "openai", BaseURL: fake.URL, Models: []string{"m1"}}}
+	r.m.deps.Router = func() *llm.Router { return llm.NewRouter(providers, nil) }
+	r.m.deps.Subagents = func() SubagentConfig { return SubagentConfig{Models: []string{"fake/m1"}} }
+	s.info.Model = "fake/m1"
+	if !r.m.subagentsAvailable(r.w) {
+		t.Fatal("subagents not available")
+	}
+	r.env.Agents = subagentDefs(r.w)
+	call := func(id, task string) llm.Block {
+		in, _ := json.Marshal(map[string]any{"agent": "investigator", "task": task})
+		return llm.Block{Type: "tool_use", ID: id, Name: "delegate", Input: in}
+	}
+	start := time.Now()
+	res := r.runCalls(context.Background(), []llm.Block{call("d1", "check db hosts"), call("d2", "check app hosts")}, false)
+	took := time.Since(start)
+	for _, x := range res {
+		if x.IsError || !strings.Contains(x.Content, "Report of subagent investigator (2 tool calls)") || !strings.Contains(x.Content, "95% full") {
+			t.Fatalf("report: %q", x.Content)
+		}
+	}
+	if probes.Load() != 2 || took > 800*time.Millisecond {
+		t.Fatalf("subagents did not run in parallel: %d probes in %v", probes.Load(), took)
+	}
+	if wrote {
+		t.Fatal("a read-only subagent changed something")
+	}
+	nested, denied := 0, false
+	for _, ev := range s.Events() {
+		if ev["parent"] == "d1" || ev["parent"] == "d2" {
+			nested++
+			if ev["type"] == "tool_result" && strings.Contains(fmt.Sprint(ev["output"]), "plan mode is read-only") {
+				denied = true
+			}
+		}
+	}
+	if nested < 6 || !denied {
+		t.Fatalf("nested events %d, write denied %v", nested, denied)
+	}
+	// the subagent's system prompt tells it its role and has no delegate tool
+	fake.Mu.Lock()
+	req := fake.Requests[0]
+	fake.Mu.Unlock()
+	b, _ := json.Marshal(req)
+	if !strings.Contains(string(b), `subagent \"investigator\"`) || strings.Contains(string(b), `"name":"delegate"`) {
+		t.Fatalf("subagent request: %.400s", b)
 	}
 }

@@ -62,6 +62,8 @@ type Env struct {
 	WebLevel string
 	// Redact masks secrets in text that leaves opsdeck (a search query).
 	Redact func(string) string
+	// Agents are the subagents delegate can start (none when unavailable).
+	Agents []workspace.AgentDef
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -292,7 +294,7 @@ func Tools() []Tool {
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
 		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(),
-		toolWaitFor(), toolAskUser(), toolTodo(),
+		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(),
 	}
 }
 

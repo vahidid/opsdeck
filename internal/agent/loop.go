@@ -54,7 +54,14 @@ func (m *Manager) Send(ws, id, text string) error {
 func (m *Manager) env(w *workspace.Workspace) *Env {
 	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, DB: m.deps.DB, Git: m.deps.Git, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
 		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local(), Policy: m.policy(),
-		Web: m.webClientFor(w), WebLevel: m.webAccess(w), Redact: m.redactor.Redact}
+		Web: m.webClientFor(w), WebLevel: m.webAccess(w), Redact: m.redactor.Redact, Agents: m.agents(w)}
+}
+
+func (m *Manager) agents(w *workspace.Workspace) []workspace.AgentDef {
+	if !m.subagentsAvailable(w) {
+		return nil
+	}
+	return subagentDefs(w)
 }
 
 // recallFor attaches the workspace knowledge matching the user's message to

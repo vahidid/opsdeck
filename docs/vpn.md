@@ -58,7 +58,8 @@ Several system VPNs can conflict on routes and DNS; userspace VPNs cannot.
 Secrets are passed on stdin, through the management socket or in 0600 files inside the
 workspace's `.opsdeck/vpn/<name>/run/` (removed on disconnect), never on the command line.
 A TOTP secret on the login item answers OTP prompts (`openconnect --token-mode=totp`,
-OpenVPN static challenge, `openfortivpn --otp`). Self-signed
+OpenVPN static challenge, FortiGate code requests); codes a FortiGate sends by SMS or email
+are asked for in the app (see [One-time codes](#one-time-codes-sms-email)). Self-signed
 gateways are pinned (`serverCert`); the exact pin is shown in the log after the first
 attempt. Tailscale and NetBird keep their node keys in `.opsdeck/vpn/<name>/` so the
 device keeps its identity. OpenVPN config scripts (`up`/`down`) are disabled unless the
@@ -96,6 +97,67 @@ The browser is detected (or set in App settings → *Browser for VPN single sign
 signing in the profile shows *signing in…*; the agent tells the user to finish the login.
 Only one AnyConnect and one FortiGate login can run at a time (fixed callback ports).
 
+## One-time codes (SMS, email)
+
+Many FortiGates send a new code for every login, by SMS or email (FortiToken SMS/email
+two-factor), so there is no TOTP secret to store. opsdeck handles this for both FortiGate
+profile kinds (OpenConnect `protocol: fortinet` and OpenFortiVPN) that log in with a vault
+login (username and password):
+
+1. opsdeck logs in to the gateway itself, with the requests openfortivpn and openconnect
+   make (`POST /remote/logincheck`). When the answer asks for a code (`tokeninfo=`), a TOTP
+   secret on the login answers it; otherwise the profile shows *waiting for code* and
+   opsdeck asks for it with the gateway's message (*"Please enter the code sent to
+   +98912\*\*\*4567"*): in a prompt on whatever page is open, and on the VPN page. Persian
+   or Arabic digits, spaces and dashes are fine. A wrong code is asked for again (up to 3
+   times); opsdeck waits 5 minutes, though the gateway may let a code expire sooner
+   (FortiOS: 60 s by default).
+2. The client then starts with the session cookie (`--cookie-on-stdin`); no password or
+   code is on its command line or in its config.
+3. The session is kept in memory while opsdeck runs. When a tunnel drops (sleep, Wi-Fi
+   change) and is needed again, opsdeck connects with the same session first, without a new
+   login or code, as long as the gateway keeps it (FortiOS `idle-timeout` and
+   `auth-timeout`); if the gateway has ended it, opsdeck logs in again. *Disconnect*,
+   editing the profile and locking the vault end the session (the client logs out).
+
+openfortivpn needs `--cookie-on-stdin` (newer releases, e.g. 1.21 in Ubuntu 24.04);
+an older one logs in itself and cannot hand the code request to opsdeck: use a FortiGate
+profile with OpenConnect, or install a newer openfortivpn.
+
+When the agent connects a VPN, or a connection through `via: network/…` brings it up, the
+same prompt appears; the agent asks you to enter the code there (not in the chat).
+
+### Codes from your phone
+
+To have the code filled in by itself, forward the gateway's SMS from your phone to an
+[ntfy](https://ntfy.sh) topic and set it in **App settings → One-time VPN codes**. opsdeck
+reads the topic only while a login waits for a code, and takes a code only from a message
+that arrived after the gateway was asked for one. The prompt still shows, so typing works too.
+
+- **Topic**: *New topic* makes `https://ntfy.sh/opsdeck-<random>`. Anyone who knows a topic's
+  name can read it, so keep it secret, or run your own ntfy server with a protected topic and
+  store its access token in the global vault (*Access token*).
+- **Android**: an SMS forwarding app (for example *SMS Forwarder* or *SMS to URL Forwarder*)
+  with a rule for the VPN's sender: a webhook, method POST, to the topic URL, with the
+  message as the body (JSON such as `{"from": …, "text": …}` is fine).
+- **iPhone**: Shortcuts → Automation → *Message*, for the VPN's sender (or a word of its
+  SMS), *Run immediately*, with *Get Contents of URL*: the topic URL, method POST, the
+  message's content as the request body.
+- **Test** in the settings waits up to 90 s for a message with a code, with the values in
+  the form (saved or not): send yourself one, or forward one of the gateway's.
+
+The code is the first 4 to 8 digit number after a word like *code*, *token*, *رمز* or *کد*,
+or else the first such number (not a phone number such as `+98…`). *Code pattern* sets a
+regular expression instead; its first group is the code.
+
+**Command**: instead of (or besides) the phone, a command on this computer can print the
+code, e.g. one that reads the newest SMS from a USB modem (`mmcli`), KDE Connect or the
+Messages database of a Mac. It runs every few seconds while a code is awaited, with
+`OPSDECK_CODE_SINCE` (Unix time the code was requested: print only codes of newer
+messages, or nothing yet), `OPSDECK_CODE_MESSAGE` (the gateway's message) and `OPSDECK_VPN`
+(the profile) in its environment. It is an app setting, so a cloned workspace cannot run
+commands on your computer.
+
 ## Lifecycle
 
 - *Connect* returns within ~20 s; slower connects continue in the background and show as
@@ -119,6 +181,12 @@ route there, and to hand the user the login link when one is needed.
 
 ## Testing
 
+`internal/vpn/fortinet_test.go` logs in to an emulated FortiGate that sends a code by SMS
+(wrong code then the right one, TOTP, untrusted certificate, the kept session), and
+`codes_test.go` covers finding codes in messages, the ntfy topic (with this computer's
+clock off) and the command. `internal/server/vpncodes_test.go` connects a FortiGate profile
+through the API with openconnect: the prompt, a code typed with Persian digits, then the
+code forwarded from the phone (skipped without openconnect and ocproxy).
 `internal/vpn/sso_test.go` emulates the gateways' SSO (an ASA in external-browser mode with
 real STRAP/HPKE, and in embedded mode; GlobalProtect with headers and the callback URL;
 FortiGate with the 8020 redirect and the cookie) with an identity provider that signs in

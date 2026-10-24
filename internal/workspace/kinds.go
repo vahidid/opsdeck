@@ -83,7 +83,7 @@ var Kinds = []KindSchema{
 		{Key: "protocol", Label: "Protocol", Type: "select", Options: []string{"anyconnect", "fortinet", "gp", "pulse", "nc", "f5", "array"}, Default: "anyconnect",
 			Help: "anyconnect = Cisco ASA/AnyConnect and ocserv; fortinet = FortiGate; gp = Palo Alto GlobalProtect; pulse = Pulse/Ivanti; nc = Juniper"},
 		{Key: "server", Label: "Server", Type: "string", Required: true, Placeholder: "vpn.example.com or https://vpn.example.com/group"},
-		{Key: "auth", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "Username/password; a TOTP secret on the item answers OTP prompts"},
+		{Key: "auth", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "Username/password; a TOTP secret on the item answers OTP prompts. FortiGate codes sent by SMS or email are asked for in opsdeck (or come from your phone, see App settings)"},
 		{Key: "authGroup", Label: "Group / realm", Type: "string"},
 		{Key: "serverCert", Label: "Server certificate pin", Type: "string", Placeholder: "pin-sha256:…", Help: "Only for self-signed gateways; the exact value is shown in the log after the first attempt"},
 		fieldSSO, fieldSSOBrowser,
@@ -92,7 +92,7 @@ var Kinds = []KindSchema{
 	}},
 	{Kind: "OpenFortiVPN", Label: "FortiGate (openfortivpn)", Category: "network", Icon: "shield", Fields: []FieldSchema{
 		{Key: "server", Label: "Gateway", Type: "string", Required: true, Placeholder: "vpn.example.com:443"},
-		{Key: "auth", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}},
+		{Key: "auth", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "Username/password; a TOTP secret on the item answers the code request. Codes sent by SMS or email are asked for in opsdeck (or come from your phone, see App settings)"},
 		fieldSSO, fieldSSOBrowser,
 		{Key: "authGroup", Label: "Realm", Type: "string"},
 		{Key: "serverCert", Label: "Trusted certificate (sha256)", Type: "string", Help: "Only for self-signed gateways; the value is shown in the log after the first attempt"},

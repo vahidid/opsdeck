@@ -57,7 +57,7 @@ export type Settings = {
   providers: ProviderConfig[];
   localAccess: LocalAccess;
   agent?: { autoServerChanges: boolean };
-  vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string };
+  vpn: { elevate: "" | "auto" | "sudo" | "pkexec" | "none"; browser: string; codes: VpnCodes };
   git: { name: string; email: string };
   updates?: { noCheck: boolean };
 };
@@ -228,6 +228,7 @@ export type NetworkStatus = {
   error?: string;
   authUrl?: string;
   authWindow?: boolean;
+  code?: CodeWait;
   since?: string;
   address?: string;
   interface?: string;
@@ -240,6 +241,11 @@ export type NetworkStatus = {
   missing?: string;
   usedBy: string[];
 };
+
+// A one-time code (SMS, email) a VPN login waits for.
+export type CodeWait = { message?: string; retry?: boolean; since: string; expires: string; sources?: string[] };
+export type PendingCode = CodeWait & { workspace: string; name: string; kind: string };
+export type VpnCodes = { ntfyUrl: string; ntfyTokenRef: string; command: string; pattern: string };
 
 export const NETWORK_KINDS = ["WireGuard", "Tailscale", "NetBird", "OpenVPN", "OpenConnect", "OpenFortiVPN", "SocksProxy"];
 export type VpnDriver = { kind: string; label: string; modes: string[]; missing: Record<string, string> };

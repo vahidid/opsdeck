@@ -104,6 +104,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.hub = connect.NewHub(v, s.stateDir)
 	s.hub.Elevate = s.elevation
 	s.hub.Browser = func() string { return s.cfg.Settings().VPN.Browser }
+	s.hub.CodeSources = func() ([]vpn.CodeSource, error) { return codeSources(s.cfg.Settings().VPN.Codes, s.providerKey) }
 	s.docker = docker.New(s.hub)
 	s.kube = kube.New(s.hub, v)
 	s.db = dbx.New(s.hub, v)

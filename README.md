@@ -103,7 +103,9 @@ You can turn the check off, or check now, under *App settings → Updates*.
   **system** mode (TUN with system routes, through sudo/pkexec). A VPN page per workspace
   with connect/disconnect, login links, logs and live status. **Single sign-on** (SAML via
   Entra ID, Okta, …) for AnyConnect, GlobalProtect and FortiGate without copying cookies:
-  opsdeck shows the login and takes the session itself — see [docs/vpn.md](docs/vpn.md).
+  opsdeck shows the login and takes the session itself. **One-time codes by SMS or email**
+  (FortiGate) are asked for in the app, or forwarded from your phone, and a dropped tunnel
+  reconnects without a new code — see [docs/vpn.md](docs/vpn.md).
 - **Git repositories** — connect your GitHub / GitLab account once under **Connectors**
   (github.com, GitHub Enterprise, gitlab.com, self-hosted GitLab; your `gh`/`glab` login,
   browser sign-in or a token from a pre-filled page), then add the repositories that hold

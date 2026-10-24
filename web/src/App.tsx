@@ -12,6 +12,7 @@ import { installDesktop, isDesktop } from "./lib/desktop";
 import { Button, EmptyState, ErrorBox, Loading, cx } from "./components/ui";
 import { Boot } from "./pages/Boot";
 import { CreateWorkspaceModal, Shell } from "./pages/Shell";
+import { VPNCodePrompts } from "./components/VPNCode";
 import { OverviewPage } from "./pages/Overview";
 import { ResourcesPage } from "./pages/Resources";
 import { VPNPage } from "./pages/VPN";
@@ -42,6 +43,7 @@ export function App() {
         <Boot>
           {(lock) => (
             <AppProvider onLock={lock}>
+              <VPNCodePrompts />
               <UpdateProvider>
               <TerminalProvider>
                 <BrowserRouter>

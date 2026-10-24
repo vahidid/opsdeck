@@ -2,7 +2,12 @@
 
 package vpn
 
-import "os/exec"
+import (
+	"context"
+	"os/exec"
+
+	"opsdeck/internal/sysproc"
+)
 
 func setProcAttrs(cmd *exec.Cmd, elevated bool) {}
 
@@ -19,3 +24,7 @@ func kill(cmd *exec.Cmd) {
 }
 
 func hasNetAdmin() bool { return false }
+
+func shellCommand(ctx context.Context, command string) *exec.Cmd {
+	return sysproc.CommandContext(ctx, "cmd", "/C", command)
+}

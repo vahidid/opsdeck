@@ -55,6 +55,12 @@ type Config struct {
 	Browser string
 	// Auth is called when the user has to log in through a browser.
 	Auth func(AuthPrompt)
+	// Code asks the user for a one-time code the gateway sent (SMS, email,
+	// token) and waits for it; nil = codes cannot be asked for.
+	Code func(ctx context.Context, p CodePrompt) (string, error)
+	// Session keeps the gateway session between connection attempts of the
+	// profile (FortiGate password logins); nil = log in every time.
+	Session *Session
 }
 
 // AuthPrompt tells the user how to finish a login: open URL in their

@@ -279,7 +279,7 @@ export type NetworkStatus = {
 };
 
 // A one-time code (SMS, email) a VPN login waits for.
-export type CodeWait = { message?: string; retry?: boolean; since: string; expires: string; sources?: string[] };
+export type CodeWait = { message?: string; label?: string; choices?: string[]; retry?: boolean; since: string; expires: string; sources?: string[] };
 export type PendingCode = CodeWait & { workspace: string; name: string; kind: string };
 export type VpnCodes = { ntfyUrl: string; ntfyTokenRef: string; command: string; pattern: string };
 

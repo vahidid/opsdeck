@@ -27,6 +27,8 @@ import (
 type CodePrompt struct {
 	Network string    // the VPN profile
 	Message string    // the gateway's prompt, e.g. "Please enter the code sent to +98912***4567"
+	Label   string    // the field the gateway asks for, e.g. "Answer" ("" = a code)
+	Choices []string  // the user picks one of these (e.g. the gateway's groups) instead of entering a code
 	Retry   bool      // the code entered before was not accepted
 	Since   time.Time // when the code was requested: codes in earlier messages are stale
 }

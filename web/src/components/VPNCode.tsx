@@ -7,8 +7,10 @@ import { Modal } from "./overlay";
 import { Button, Input } from "./ui";
 
 // One-time codes that a VPN gateway sends for each login (FortiGate by SMS
-// or email): typed in here, or filled in by themselves when they arrive from
-// the phone (App settings → VPN).
+// or email, a second password or challenge on AnyConnect): typed in here, or
+// filled in by themselves when they arrive from the phone (App settings →
+// VPN). A gateway can also ask to pick one of its choices (the GROUP of a
+// Cisco ASA), which is answered here too.
 
 function useSecondsLeft(until: string): number {
   const [now, setNow] = useState(Date.now());
@@ -30,13 +32,13 @@ export function CodeEntry({ ws, name, wait, autoFocus, onSent }: { ws: string; n
     setErr("");
   }, [wait.since]);
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
-    if (!code.trim()) return;
+  const [picked, setPicked] = useState("");
+
+  async function answer(value: string) {
     setBusy(true);
     setErr("");
     try {
-      await api.networkCode(ws, name, code);
+      await api.networkCode(ws, name, value);
       onSent?.();
     } catch (e) {
       setErr(errMsg(e));
@@ -45,11 +47,54 @@ export function CodeEntry({ ws, name, wait, autoFocus, onSent }: { ws: string; n
     }
   }
 
+  function send(e: React.FormEvent) {
+    e.preventDefault();
+    if (code.trim()) void answer(code);
+  }
+
+  const timeLeft = (
+    <span className="text-faint tabular-nums" title="opsdeck waits this long; the gateway may let the code expire sooner">
+      {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")} left
+    </span>
+  );
+
+  if (wait.choices?.length) {
+    const what = wait.label || "option";
+    return (
+      <div className="space-y-2 text-xs">
+        <div dir="auto">
+          {wait.message ? `${wait.message} ` : ""}Choose the {what} to log in to:
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {wait.choices.map((c) => (
+            <Button
+              key={c}
+              size="sm"
+              variant="secondary"
+              loading={busy && picked === c}
+              disabled={busy}
+              onClick={() => {
+                setPicked(c);
+                void answer(c);
+              }}
+            >
+              {c}
+            </Button>
+          ))}
+          {timeLeft}
+        </div>
+        <div className="text-faint">Set it as the profile's group (Edit profile → Group / realm) to skip this question next time.</div>
+        {err && <div className="text-err">{err}</div>}
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={send} className="space-y-2 text-xs">
       {wait.retry && <div className="text-err">The gateway did not accept the code. Check it and enter it again.</div>}
       <div dir="auto">{wait.message || "The gateway sent a one-time code (by SMS or email). Enter it to finish connecting."}</div>
       <div className="flex items-center gap-2">
+        {wait.label && <span className="text-muted">{wait.label}</span>}
         <Input
           autoFocus={autoFocus}
           value={code}
@@ -63,9 +108,7 @@ export function CodeEntry({ ws, name, wait, autoFocus, onSent }: { ws: string; n
         <Button type="submit" variant="primary" size="sm" loading={busy} disabled={!code.trim()}>
           Connect
         </Button>
-        <span className="text-faint tabular-nums" title="opsdeck waits this long; the gateway may let the code expire sooner">
-          {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")} left
-        </span>
+        {timeLeft}
       </div>
       {!!wait.sources?.length && (
         <div className="flex items-center gap-1.5 text-faint">
@@ -97,7 +140,7 @@ export function VPNCodePrompts() {
   useEffect(() => {
     if (!cur) return;
     const title = document.title;
-    document.title = `Code for ${cur.name} · ${title}`;
+    document.title = `${cur.choices?.length ? "Choice" : "Code"} for ${cur.name} · ${title}`;
     return () => {
       document.title = title;
     };
@@ -105,7 +148,13 @@ export function VPNCodePrompts() {
   if (!cur) return null;
   const k = promptKey(cur);
   return (
-    <Modal open onClose={() => setClosed((c) => [...c, k])} title={`One-time code for ${cur.name}`} icon={<MessageSquareText />} width={460}>
+    <Modal
+      open
+      onClose={() => setClosed((c) => [...c, k])}
+      title={cur.choices?.length ? `${cur.label || "Choice"} for ${cur.name}` : `One-time code for ${cur.name}`}
+      icon={<MessageSquareText />}
+      width={460}
+    >
       <div className="text-[11px] text-faint mb-3">
         VPN <span className="font-mono">{cur.name}</span> in workspace <span className="font-mono">{cur.workspace}</span> is waiting for it.
       </div>
@@ -119,7 +168,9 @@ export function VPNCodePrompts() {
           setTimeout(() => void load(), 1500);
         }}
       />
-      <div className="text-[11px] text-faint mt-3">Closing this keeps the VPN waiting: the code can also be entered on the VPN page.</div>
+      <div className="text-[11px] text-faint mt-3">
+        Closing this keeps the VPN waiting: the {cur.choices?.length ? "choice" : "code"} can also be made on the VPN page.
+      </div>
     </Modal>
   );
 }

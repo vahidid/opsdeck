@@ -24,9 +24,10 @@ import (
 // F5 and Array. In userspace mode openconnect hands packets to ocproxy
 // (--script-tun), which serves a SOCKS5 proxy on 127.0.0.1: no root and no
 // system change. In system mode it creates a TUN interface configured by
-// vpnc-script. Credentials go through stdin, never the command line; a TOTP
-// secret in the login item answers OTP prompts (--token-mode=totp); SAML/SSO
-// gateways use a session cookie obtained with `openconnect --authenticate`.
+// vpnc-script. Credentials go through stdin, never the command line, and
+// opsdeck answers what the gateway asks after the password (a group, a
+// one-time code: see ocprompt.go); SAML/SSO gateways use a session cookie
+// opsdeck obtains itself (sso.go).
 
 var ocProtocols = []string{"anyconnect", "fortinet", "gp", "pulse", "nc", "f5", "array"}
 
@@ -76,6 +77,13 @@ func (t *cliTunnel) setHint(h string) {
 	if t.hint == "" {
 		t.hint = h
 	}
+	t.mu.Unlock()
+}
+
+// failWith sets the reason the connection fails, over any hint ("" = none).
+func (t *cliTunnel) failWith(reason string) {
+	t.mu.Lock()
+	t.hint = reason
 	t.mu.Unlock()
 }
 
@@ -151,12 +159,13 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 	pin := r.Str("serverCert")
 	if protocol == "fortinet" && fortiPasswordLogin(cfg) {
 		return withFortiSession(ctx, cfg, func(cookie string) (Tunnel, error) {
-			return runOpenConnect(ctx, cfg, protocol, server, pin, []string{"--cookie-on-stdin"}, cookie+"\n")
+			return runOpenConnect(ctx, cfg, protocol, server, pin, []string{"--cookie-on-stdin"}, cookie+"\n", nil)
 		})
 	}
 	auth := cfg.Items["auth"]
 	var args []string
 	stdin := ""
+	var answers *ocAnswers
 	switch {
 	case r.Bool("sso", false):
 		res, err := ssoLogin(ctx, cfg, protocol)
@@ -181,32 +190,45 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 		args = append(args, "--cookie-on-stdin")
 		stdin = cfg.Value("cookie", "token") + "\n"
 	default:
-		if u := auth.Get("username"); u != "" {
-			args = append(args, "--user="+u)
+		user, pw, secret := auth.Get("username"), auth.Get("password"), totpSecret(auth.Get("totp"))
+		if user != "" {
+			args = append(args, "--user="+user)
 		}
-		if pw := auth.Get("password"); pw != "" {
+		switch {
+		case pw != "":
+			// openconnect reads its further answers from stdin too
 			args = append(args, "--passwd-on-stdin")
 			stdin = pw + "\n"
-		}
-		if s := totpSecret(auth.Get("totp")); s != "" {
-			args = append(args, "--token-mode=totp", "--token-secret=base32:"+s)
+			answers = &ocAnswers{cfg: cfg, ctx: ctx, user: user, password: pw, group: r.Str("authGroup"), totp: secret}
+		case secret != "":
+			// no password to answer with: openconnect answers OTP fields itself
+			// (in a file, not on the command line)
+			if err := os.MkdirAll(cfg.RunDir, 0o700); err != nil {
+				return nil, err
+			}
+			path := filepath.Join(cfg.RunDir, "totp")
+			if err := writePrivate(path, "base32:"+secret); err != nil {
+				return nil, err
+			}
+			args = append(args, "--token-mode=totp", "--token-secret=@"+path)
 		}
 	}
 	if g := r.Str("authGroup"); g != "" && !r.Bool("sso", false) {
 		args = append(args, "--authgroup="+g)
 	}
-	return runOpenConnect(ctx, cfg, protocol, server, pin, args, stdin)
+	return runOpenConnect(ctx, cfg, protocol, server, pin, args, stdin, answers)
 }
 
 // runOpenConnect starts openconnect with the given authentication arguments
-// and stdin, and waits until the tunnel is up.
-func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin string, auth []string, stdin string) (Tunnel, error) {
+// and stdin, and waits until the tunnel is up. With answers, opsdeck answers
+// the gateway's further questions on stdin.
+func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin string, auth []string, stdin string, answers *ocAnswers) (Tunnel, error) {
 	r := cfg.Res
 	argv := append([]string{"openconnect", "--protocol=" + protocol, "--non-inter"}, auth...)
 	if pin != "" {
 		argv = append(argv, "--servercert="+pin)
 	}
-	t := &cliTunnel{cfg: cfg, up: make(chan struct{}), started: make(chan struct{})}
+	t := &cliTunnel{cfg: cfg, up: make(chan struct{}), started: make(chan struct{}), cleanup: func() { removeAll(cfg.RunDir) }}
 	t.info.Server = server
 	elevate := cfg.Elevate
 	if cfg.Mode == ModeUserspace {
@@ -233,8 +255,16 @@ func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin stri
 		t.dial = direct
 	}
 	argv = append(argv, server)
+	var onPrompt func(string)
+	if answers != nil {
+		answers.t = t
+		onPrompt = answers.question
+	}
 	var err error
-	t.p, err = startProc(argv, elevate, stdin, cfg.Log, func(line string) {
+	t.p, err = startProcPrompts(argv, elevate, stdin, cfg.Log, func(line string) {
+		if answers != nil {
+			answers.line(line)
+		}
 		switch {
 		case ocConnectedRe.MatchString(line):
 			t.mu.Lock()
@@ -249,6 +279,8 @@ func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin stri
 			t.setHint("the server certificate is not trusted. If it is the right server, set the profile's server certificate to " + ocPinRe.FindStringSubmatch(line)[1])
 		case strings.Contains(line, "Login failed") || strings.Contains(line, "authentication failed") || strings.Contains(line, "Invalid password"):
 			t.setHint("login failed: check the username/password (and OTP secret) of the profile's login")
+		case strings.Contains(line, "User input required in non-interactive mode"):
+			t.setHint("the gateway asks for more than the profile gives (see the log): check its group and login (a password lets opsdeck answer the gateway's questions)")
 		case strings.Contains(line, "Cookie was rejected") || strings.Contains(line, "Cookie is no longer valid"):
 			t.setHint("the gateway did not accept the session: " + strings.TrimSpace(line))
 		case strings.Contains(line, "SAML") || strings.Contains(line, "single sign-on") || strings.Contains(line, "SSO"):
@@ -258,7 +290,7 @@ func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin stri
 			t.info.Detail = strings.TrimSpace(line)
 			t.mu.Unlock()
 		}
-	})
+	}, onPrompt)
 	if err != nil {
 		return nil, err
 	}

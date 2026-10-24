@@ -57,9 +57,10 @@ Several system VPNs can conflict on routes and DNS; userspace VPNs cannot.
 
 Secrets are passed on stdin, through the management socket or in 0600 files inside the
 workspace's `.opsdeck/vpn/<name>/run/` (removed on disconnect), never on the command line.
-A TOTP secret on the login item answers OTP prompts (`openconnect --token-mode=totp`,
-OpenVPN static challenge, FortiGate code requests); codes a FortiGate sends by SMS or email
-are asked for in the app (see [One-time codes](#one-time-codes-sms-email)). Self-signed
+A TOTP secret on the login item answers code requests (AnyConnect second passwords and
+challenges, OpenVPN static challenge, FortiGate code requests); opsdeck computes the code
+itself, so the secret is not on a client's command line. Other codes (SMS, email, a hardware
+token) are asked for in the app (see [One-time codes](#one-time-codes-sms-email)). Self-signed
 gateways are pinned (`serverCert`); the exact pin is shown in the log after the first
 attempt. Tailscale and NetBird keep their node keys in `.opsdeck/vpn/<name>/` so the
 device keeps its identity. OpenVPN config scripts (`up`/`down`) are disabled unless the
@@ -124,8 +125,31 @@ openfortivpn needs `--cookie-on-stdin` (newer releases, e.g. 1.21 in Ubuntu 24.0
 an older one logs in itself and cannot hand the code request to opsdeck: use a FortiGate
 profile with OpenConnect, or install a newer openfortivpn.
 
+### AnyConnect and other openconnect gateways: group and second factor
+
+openconnect logs in to Cisco ASA/FTD, ocserv, GlobalProtect, Pulse and F5 itself, including
+ASAs with the old `/+webvpn+/` login form (`Unexpected 404 result from server` in the log is
+openconnect trying the newer one first). For a profile whose vault login has a password,
+opsdeck keeps openconnect's input open and answers what the gateway asks after it:
+
+- **Group** (`GROUP: [3rd-Party|CallCenter|IT-Staff]`): the profile's *Group / realm* (case
+  does not matter, a unique beginning is enough). Without one, or when the gateway does not
+  offer it, the same prompt as for codes shows the gateway's groups to choose from; set the
+  group in the profile to skip the question.
+- **Second factor** (a *Second Password* field, a RADIUS challenge such as *Answer:* or
+  *Response:*): the login's TOTP code the first time, otherwise the code you enter (or that
+  comes from your phone, below). A wrong code is asked for again, up to 3 times; when the
+  gateway starts the login over after it, opsdeck sends the password again.
+- A wrong password fails right away (*login failed*), without asking for a code.
+
+While openconnect runs it keeps the session through short drops (it reconnects by itself);
+connecting again logs in again. Without a password on the login, openconnect gets the TOTP
+secret in a 0600 file and answers code fields itself, and other questions fail with what the
+gateway asked.
+
 When the agent connects a VPN, or a connection through `via: network/…` brings it up, the
-same prompt appears; the agent asks you to enter the code there (not in the chat).
+same prompt appears; the agent asks you to enter the code (or choose the group) there, not in
+the chat.
 
 ### Codes from your phone
 
@@ -182,11 +206,15 @@ route there, and to hand the user the login link when one is needed.
 ## Testing
 
 `internal/vpn/fortinet_test.go` logs in to an emulated FortiGate that sends a code by SMS
-(wrong code then the right one, TOTP, untrusted certificate, the kept session), and
+(wrong code then the right one, TOTP, untrusted certificate, the kept session),
+`ocprompt_test.go` runs openconnect against an emulated ASA with the old login form, a GROUP
+list and a code challenge (the group chosen, TOTP, a wrong code then the right one, a wrong
+password), and
 `codes_test.go` covers finding codes in messages, the ntfy topic (with this computer's
 clock off) and the command. `internal/server/vpncodes_test.go` connects a FortiGate profile
 through the API with openconnect: the prompt, a code typed with Persian digits, then the
-code forwarded from the phone (skipped without openconnect and ocproxy).
+code forwarded from the phone; and an AnyConnect profile: the group chosen, then the code
+(skipped without openconnect and ocproxy).
 `internal/vpn/sso_test.go` emulates the gateways' SSO (an ASA in external-browser mode with
 real STRAP/HPKE, and in embedded mode; GlobalProtect with headers and the callback URL;
 FortiGate with the 8020 redirect and the cookie) with an identity provider that signs in

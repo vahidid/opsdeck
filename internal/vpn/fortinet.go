@@ -36,11 +36,11 @@ import (
 
 const fortiUA = "Mozilla/5.0 SV1" // what openfortivpn and FortiClient send
 
-// MayAskForCode reports whether connecting a profile can wait for a one-time
-// code from the user: FortiGate logins with a username and password.
+// MayAskForCode reports whether connecting a profile can wait for the user
+// to enter a one-time code (or pick a group): logins with a vault login on
+// FortiGate and the gateways of openconnect.
 func MayAskForCode(r *workspace.Resource) bool {
-	forti := r.Kind == "OpenFortiVPN" || (r.Kind == "OpenConnect" && r.Str("protocol") == "fortinet")
-	return forti && !r.Bool("sso", false) && r.Str("cookie") == "" && r.Str("auth") != ""
+	return (r.Kind == "OpenFortiVPN" || r.Kind == "OpenConnect") && !r.Bool("sso", false) && r.Str("cookie") == "" && r.Str("auth") != ""
 }
 
 // fortiPasswordLogin reports whether opsdeck logs in to a FortiGate with the

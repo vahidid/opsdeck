@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -105,9 +106,11 @@ func connectTimeout(r *workspace.Resource) time.Duration {
 // most).
 const codeTimeout = 5 * time.Minute
 
-// CodeWait is a one-time code a network waits for.
+// CodeWait is a one-time code a network waits for, or a choice (a group).
 type CodeWait struct {
 	Message string    `json:"message,omitempty"` // the gateway's prompt, e.g. "Please enter the code sent to +98912***4567"
+	Label   string    `json:"label,omitempty"`   // the field the gateway asks for, e.g. "Answer" or "GROUP"
+	Choices []string  `json:"choices,omitempty"` // pick one of these instead of entering a code
 	Retry   bool      `json:"retry,omitempty"`   // the code entered before was not accepted
 	Since   time.Time `json:"since"`
 	Expires time.Time `json:"expires"`
@@ -161,6 +164,9 @@ func (h *Hub) networkUp(ctx context.Context, w *workspace.Workspace, r *workspac
 		auth, window, code := n.authURL, n.authWindow, n.code
 		h.mu.Unlock()
 		if code != nil {
+			if len(code.Choices) > 0 {
+				return nil, fmt.Errorf("network %s: %w — waiting for the user to choose the %s (%s) in opsdeck", r.Name, ErrConnecting, firstNonEmpty(code.Label, "choice"), strings.Join(code.Choices, ", "))
+			}
 			msg := ""
 			if code.Message != "" {
 				msg = " (" + code.Message + ")"
@@ -408,14 +414,14 @@ func (h *Hub) waitCode(ctx context.Context, n *network, log *vpn.Log, p vpn.Code
 	ctx, cancel := context.WithTimeout(ctx, codeTimeout)
 	defer cancel()
 	var sources []vpn.CodeSource
-	if h.CodeSources != nil {
+	if h.CodeSources != nil && len(p.Choices) == 0 {
 		var err error
 		if sources, err = h.CodeSources(); err != nil {
 			log.Printf("one-time codes: %v", err)
 		}
 	}
 	now := time.Now()
-	w := &codeWait{CodeWait: CodeWait{Message: p.Message, Retry: p.Retry, Since: now, Expires: now.Add(codeTimeout)}, codes: make(chan string, 1)}
+	w := &codeWait{CodeWait: CodeWait{Message: p.Message, Label: p.Label, Choices: p.Choices, Retry: p.Retry, Since: now, Expires: now.Add(codeTimeout)}, codes: make(chan string, 1)}
 	for _, s := range sources {
 		w.Sources = append(w.Sources, s.Name())
 	}
@@ -429,9 +435,12 @@ func (h *Hub) waitCode(ctx context.Context, n *network, log *vpn.Log, p vpn.Code
 		}
 		h.mu.Unlock()
 	}()
-	if len(sources) > 0 {
+	switch {
+	case len(p.Choices) > 0:
+		log.Printf("waiting for the %s to be chosen in opsdeck", firstNonEmpty(p.Label, "choice"))
+	case len(sources) > 0:
 		log.Printf("waiting for the one-time code: enter it in opsdeck, or it comes from %s", strings.Join(w.Sources, " or "))
-	} else {
+	default:
 		log.Printf("waiting for the one-time code: enter it in opsdeck")
 	}
 	for _, s := range sources {
@@ -455,16 +464,16 @@ func (h *Hub) waitCode(ctx context.Context, n *network, log *vpn.Log, p vpn.Code
 		if parent.Err() != nil {
 			return "", parent.Err()
 		}
+		if len(p.Choices) > 0 {
+			return "", fmt.Errorf("no %s was chosen within %d minutes; set it as the profile's group, or connect again", firstNonEmpty(p.Label, "choice"), int(codeTimeout.Minutes()))
+		}
 		return "", fmt.Errorf("no one-time code was entered within %d minutes; connect again for a new one", int(codeTimeout.Minutes()))
 	}
 }
 
-// NetworkCode answers a network's request for a one-time code.
+// NetworkCode answers a network's request for a one-time code, or its
+// choice (one of the choices, as is).
 func (h *Hub) NetworkCode(ws, name, code string) error {
-	code = vpn.NormalizeCode(code)
-	if code == "" {
-		return errors.New("enter the code")
-	}
 	key := netKey(ws, name)
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -472,9 +481,20 @@ func (h *Hub) NetworkCode(ws, name, code string) error {
 	if n == nil || n.code == nil {
 		return fmt.Errorf("network %s is not waiting for a one-time code", name)
 	}
+	what := "one-time code entered"
+	if choices := n.code.Choices; len(choices) > 0 {
+		i := slices.IndexFunc(choices, func(c string) bool { return strings.EqualFold(c, strings.TrimSpace(code)) })
+		if i < 0 {
+			return fmt.Errorf("choose one of %s", strings.Join(choices, ", "))
+		}
+		code = choices[i]
+		what = firstNonEmpty(n.code.Label, "choice") + " chosen: " + code
+	} else if code = vpn.NormalizeCode(code); code == "" {
+		return errors.New("enter the code")
+	}
 	select {
 	case n.code.codes <- code:
-		h.netLog(key).Printf("one-time code entered")
+		h.netLog(key).Printf("%s", what)
 	default: // one is on its way already
 	}
 	return nil

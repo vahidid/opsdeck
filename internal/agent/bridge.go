@@ -146,6 +146,7 @@ func (m *Manager) bridgeCall(b *bridge, name string, args []byte) (string, bool)
 	s.mu.Lock()
 	env.SessionID, env.Model = s.info.ID, s.info.Model
 	s.mu.Unlock()
+	env.Outputs = s.Output
 	_, toolMap := m.toolset(w)
 	if len(args) == 0 {
 		args = []byte("{}")

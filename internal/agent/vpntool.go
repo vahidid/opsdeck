@@ -71,7 +71,7 @@ func toolVPN() Tool {
 			case "connect":
 				// A userspace tunnel only affects opsdeck itself (like opening an
 				// SSH connection); a system tunnel changes the machine.
-				c.Risk = RiskRead
+				c.Risk, c.Serial = RiskRead, true
 				if system {
 					c.Risk = RiskChange
 				}

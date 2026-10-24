@@ -51,6 +51,17 @@ type Env struct {
 	Model       string
 	Local       *LocalPolicy // nil = no access to this computer outside the workspace
 	Policy      Policy
+	// Outputs returns a saved full output of the session (read_output).
+	Outputs func(id string) (string, error)
+	// Tools are the names of the tools the agent has (nil = all), so the
+	// system prompt only explains those.
+	Tools map[string]bool
+	// Web reaches the internet (nil = no web access); WebLevel is search
+	// or fetch.
+	Web      *webClient
+	WebLevel string
+	// Redact masks secrets in text that leaves opsdeck (a search query).
+	Redact func(string) string
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -90,7 +101,17 @@ type Call struct {
 	// the call needs (an Ansible Vault password). It always asks, also in
 	// Auto mode and for granted calls.
 	Secret *SecretPrompt
-	Run    func(ctx context.Context) (string, error)
+	// Hosts are the hosts a fan-out call runs on (shown on the approval
+	// card, which then offers a canary rollout).
+	Hosts []string
+	// Serial keeps a read from running alongside other reads.
+	Serial bool
+	// Tainting marks a call that brings content from outside (a web page):
+	// the next change of the turn then asks, whatever the mode.
+	Tainting string
+	Run      func(ctx context.Context) (string, error)
+
+	canary bool // the user approved a canary rollout: the first host, then ask
 }
 
 // SecretPrompt is a password the user types into the approval card. It is
@@ -269,6 +290,7 @@ func Tools() []Tool {
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 		toolScript(), toolRunScript(),
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
+		toolReadOutput(), toolWebSearch(), toolWebFetch(),
 	}
 }
 
@@ -1033,9 +1055,10 @@ func toolWriteReport() Tool {
 
 func toolSaveArtifact() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "save_artifact", Description: "Keep a file as evidence in the workspace (artifacts/<date>/...): source=file copies a text file from a host (e.g. a config snapshot before changing it); source=command saves the FULL output of a command run on a host (it is not sent back to you, only a short preview); source=text saves content you produced (a generated config, a diff, a CSV). Secrets are redacted before saving. Text only, up to 5 MB. Reference saved artifacts from your reports.",
+		Def: llm.Tool{Name: "save_artifact", Description: "Keep a file as evidence in the workspace (artifacts/<date>/...): source=file copies a text file from a host (e.g. a config snapshot before changing it); source=command saves the FULL output of a command run on a host (it is not sent back to you, only a short preview); source=text saves content you produced (a generated config, a diff, a CSV); source=url keeps a public web page you relied on (as Markdown, with its address and the time). Secrets are redacted before saving. Text only, up to 5 MB. Read parts of a saved artifact with read_output. Reference saved artifacts from your reports.",
 			Schema: obj(map[string]any{
-				"source":  enum("What to save", "file", "command", "text"),
+				"source":  enum("What to save", "file", "command", "text", "url"),
+				"url":     str("Web page address (for url)"),
 				"host":    str("Host name (for file and command)"),
 				"path":    str("Absolute remote path (for file)"),
 				"command": str("Shell command whose output to save (for command)"),
@@ -1044,7 +1067,7 @@ func toolSaveArtifact() Tool {
 				"note":    str("Short note for the artifacts index: why this was saved"),
 			}, "source")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
-			var in struct{ Source, Host, Path, Command, Content, Name, Note string }
+			var in struct{ Source, Host, Path, Command, Content, Name, Note, URL string }
 			if err := decode(input, &in); err != nil {
 				return nil, err
 			}
@@ -1064,6 +1087,39 @@ func toolSaveArtifact() Tool {
 			}
 			name := in.Name
 			switch in.Source {
+			case "url":
+				wc, err := env.web(WebFetch)
+				if err != nil {
+					return nil, err
+				}
+				u, err := fetchURL(env.redact(in.URL))
+				if err != nil {
+					return nil, err
+				}
+				if name == "" {
+					name = strings.Trim(slugRe.ReplaceAllString(strings.ToLower(u.Hostname()+u.Path), "-"), "-")
+					if len(name) > 60 {
+						name = name[:60]
+					}
+					name += ".md"
+				}
+				c := &Call{Risk: RiskRead, Target: "web/" + u.Hostname(), Environment: "internet", Match: u.String(), Tainting: u.Hostname(),
+					Preview: "GET " + u.String() + " → artifacts/…/" + name}
+				webConsent(c, wc.cfg, u.Hostname())
+				c.Run = func(ctx context.Context) (string, error) {
+					ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+					defer cancel()
+					p, err := wc.fetch(ctx, u.String(), false)
+					if err != nil {
+						return "", err
+					}
+					head := fmt.Sprintf("<!-- saved from %s on %s -->\n", p.Final, now.Format(time.RFC3339))
+					if p.Title != "" {
+						head += "# " + p.Title + "\n\n"
+					}
+					return save(workspace.ArtifactPath(now, "web", name), head+p.Text, "url "+p.Final)
+				}
+				return c, nil
 			case "text":
 				if name == "" {
 					return nil, errors.New("name is required for text artifacts")

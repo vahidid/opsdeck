@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
-	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/extagent"
 	"opsdeck/internal/llm"
@@ -55,7 +53,8 @@ func (m *Manager) Send(ws, id, text string) error {
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
 	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, DB: m.deps.DB, Git: m.deps.Git, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
-		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local(), Policy: m.policy()}
+		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local(), Policy: m.policy(),
+		Web: m.webClientFor(w), WebLevel: m.webAccess(w), Redact: m.redactor.Redact}
 }
 
 // recallFor attaches the workspace knowledge matching the user's message to
@@ -109,12 +108,15 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		s.mu.Unlock()
 		s.setState("idle")
 		s.save()
+		msg, errMsg := s.lastOutcome()
+		m.turnEndHooks(s, w, msg, errMsg)
 	}()
 
 	text = m.redactor.Redact(text)
 	s.mu.Lock()
 	first := len(s.messages) == 0
 	s.messages = append(s.messages, llm.Message{Role: "user", Content: []llm.Block{{Type: "text", Text: text}}})
+	s.taint = "" // a new message from the user: they are back in the loop
 	if first {
 		title := strings.Join(strings.Fields(text), " ")
 		if r := []rune(title); len(r) > 70 {
@@ -140,14 +142,15 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 	}
 	env := m.env(w)
 	env.SessionID, env.Model = s.info.ID, modelID
+	env.Outputs = s.Output
 	m.recallFor(s, env, text)
 	m.deps.MCP.Ensure(ctx, w)
-	tools, toolMap := m.toolset(w)
 
 	if err := m.maybeCompact(ctx, s, provider, model); err != nil && ctx.Err() == nil {
 		s.emit("error", map[string]any{"message": "compaction failed: " + err.Error()}, true)
 	}
 
+	r := &runner{m: m, s: s, env: env, w: w}
 	for step := 0; step < maxSteps; step++ {
 		if ctx.Err() != nil {
 			return
@@ -157,6 +160,9 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		mode = s.info.Mode // the user may switch mode mid-run
 		history := append([]llm.Message(nil), s.messages...)
 		s.mu.Unlock()
+		// per step: a resource added by the agent brings its tools along
+		tools, toolMap := m.toolset(w)
+		r.tools, env.Tools = toolMap, toolNames(toolMap)
 
 		msgID := uuid.NewString()[:8]
 		req := llm.Request{Model: model, System: m.redactor.Redact(buildSystemPrompt(env, mode)), Messages: history, Tools: tools}
@@ -206,14 +212,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 			return
 		}
 
-		results := make([]llm.Block, 0, len(calls))
-		for _, c := range calls {
-			if ctx.Err() != nil {
-				results = append(results, llm.Block{Type: "tool_result", ToolUseID: c.ID, Content: "Interrupted by the user before running.", IsError: true})
-				continue
-			}
-			results = append(results, m.runTool(ctx, s, env, w, toolMap, c, resp.StopReason == "max_tokens"))
-		}
+		results := r.runCalls(ctx, calls, resp.StopReason == "max_tokens")
 		s.mu.Lock()
 		s.messages = append(s.messages, llm.Message{Role: "user", Content: results})
 		s.mu.Unlock()
@@ -222,9 +221,11 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 	s.emit("error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps; send a message to continue.", maxSteps)}, true)
 }
 
-// toolset returns built-in tools plus the workspace's MCP tools.
+// toolset returns the tools the workspace can use: built-in ones for what
+// it has (no database tool without databases), this computer's when local
+// access is on, the web's when allowed, and its MCP servers' tools.
 func (m *Manager) toolset(w *workspace.Workspace) ([]llm.Tool, map[string]Tool) {
-	all := Tools()
+	all := availableTools(w, m.webAccess(w), m.subagentsAvailable(w))
 	if m.local() != nil {
 		all = append(all, LocalTools()...)
 	}
@@ -259,153 +260,19 @@ func (m *Manager) toolset(w *workspace.Workspace) ([]llm.Tool, map[string]Tool) 
 	return defs, byName
 }
 
+func toolNames(m map[string]Tool) map[string]bool {
+	out := make(map[string]bool, len(m))
+	for n := range m {
+		out[n] = true
+	}
+	return out
+}
+
+// runTool runs one call outside a model turn of opsdeck's own loop (the MCP
+// bridge of an external agent).
 func (m *Manager) runTool(ctx context.Context, s *Session, env *Env, w *workspace.Workspace, toolMap map[string]Tool, c llm.Block, truncatedTurn bool) llm.Block {
-	result := func(out string, isErr bool) llm.Block {
-		return llm.Block{Type: "tool_result", ToolUseID: c.ID, Content: truncate(m.redactor.Redact(out), toolOutputToModel), IsError: isErr}
-	}
-	var inputView any
-	json.Unmarshal([]byte(m.redactor.Redact(string(c.Input))), &inputView)
-	base := map[string]any{"callId": c.ID, "tool": c.Name, "input": inputView}
-
-	t, ok := toolMap[c.Name]
-	if !ok {
-		s.emit("tool_call", merge(base, map[string]any{"risk": RiskRead}), true)
-		s.emit("tool_result", map[string]any{"callId": c.ID, "output": "unknown tool", "isError": true, "durationMs": 0}, true)
-		return result("Unknown tool "+c.Name, true)
-	}
-	if truncatedTurn {
-		s.emit("tool_call", merge(base, map[string]any{"risk": RiskRead}), true)
-		msg := "The response hit the output limit before this tool call was complete; it was not run. Retry with smaller input (e.g. edit_file instead of write_file)."
-		s.emit("tool_result", map[string]any{"callId": c.ID, "output": msg, "isError": true, "durationMs": 0}, true)
-		return result(msg, true)
-	}
-	call, err := t.Prepare(ctx, env, c.Input)
-	if err != nil {
-		s.emit("tool_call", merge(base, map[string]any{"risk": RiskRead}), true)
-		s.emit("tool_result", map[string]any{"callId": c.ID, "output": m.redactor.Redact(err.Error()), "isError": true, "durationMs": 0}, true)
-		return result(err.Error(), true)
-	}
-	s.emit("tool_call", merge(base, map[string]any{"risk": call.Risk, "target": call.Target, "environment": call.Environment, "reasons": call.Reasons}), true)
-
-	s.mu.Lock()
-	mode := s.info.Mode
-	granted := map[string]bool{}
-	for k := range s.granted {
-		granted[k] = true
-	}
-	s.mu.Unlock()
-	d := Decide(mode, w, c.Name, call, granted, m.deps.Vault, m.policy())
-	if call.Secret != nil && d.Effect == "allow" {
-		// the tool needs a password only the user can give
-		d = Decision{"ask", firstNonEmpty(call.Secret.Reason, "needs a password from you")}
-	}
-	actor := "agent:" + s.info.ID
-	auditBase := audit.Entry{Workspace: w.Name(), Actor: actor, Action: "tool." + c.Name, Target: call.Target,
-		Detail: map[string]any{"risk": call.Risk, "match": m.redactor.Redact(call.Match), "session": s.info.ID}}
-
-	approvedBy := "policy (" + d.Reason + ")"
-	switch d.Effect {
-	case "deny":
-		e := auditBase
-		e.Result = "denied"
-		e.Detail["reason"] = d.Reason
-		m.deps.Audit.Record(e)
-		msg := "Denied: " + d.Reason
-		s.emit("tool_result", map[string]any{"callId": c.ID, "output": msg, "isError": true, "durationMs": 0}, true)
-		return result(msg, true)
-	case "ask":
-		approvalID := uuid.NewString()[:8]
-		ch := make(chan approval, 1)
-		pa := &pendingApproval{ch: ch}
-		req := map[string]any{"approvalId": approvalID, "callId": c.ID, "tool": c.Name, "input": inputView,
-			"risk": call.Risk, "target": call.Target, "environment": call.Environment, "reason": d.Reason,
-			"reasons": call.Reasons, "preview": m.redactor.Redact(call.Preview), "grantLabel": call.GrantLabel}
-		if call.Secret != nil {
-			pa.check = call.Secret.Check
-			if pa.check == nil {
-				pa.check = func(string) error { return nil }
-			}
-			req["secret"] = map[string]any{"label": call.Secret.Label, "rememberLabel": call.Secret.RememberLabel}
-		}
-		s.mu.Lock()
-		s.pending[approvalID] = pa
-		s.mu.Unlock()
-		s.setState("waiting_approval")
-		s.emit("approval_request", req, true)
-		s.save()
-		var a approval
-		var answered bool
-		select {
-		case a, answered = <-ch:
-		case <-ctx.Done():
-		}
-		s.mu.Lock()
-		delete(s.pending, approvalID)
-		s.mu.Unlock()
-		if !answered {
-			a = approval{decision: "deny", note: "interrupted"}
-		}
-		s.emit("approval_resolved", map[string]any{"approvalId": approvalID, "decision": a.decision, "note": a.note}, true)
-		if ctx.Err() == nil {
-			s.setState("running")
-		}
-		if a.decision == "deny" {
-			e := auditBase
-			e.Result = "denied"
-			e.Detail["reason"] = "user denied"
-			if a.note != "" {
-				e.Detail["note"] = a.note
-			}
-			m.deps.Audit.Record(e)
-			msg := "The user denied this action."
-			if a.note != "" {
-				msg += " Their note: " + a.note
-			}
-			s.emit("tool_result", map[string]any{"callId": c.ID, "output": msg, "isError": true, "durationMs": 0}, true)
-			return result(msg, true)
-		}
-		if a.decision == "always" {
-			s.mu.Lock()
-			s.granted[grantKey(c.Name, call)] = true
-			s.mu.Unlock()
-		}
-		if call.Secret != nil && call.Secret.Use != nil && a.secret != "" {
-			call.Secret.Use(a.secret, a.decision == "always")
-			e := auditBase
-			e.Action, e.Result = "secret.entered", "ok"
-			e.Detail = map[string]any{"for": c.Name, "label": call.Secret.Label, "remembered": a.decision == "always", "session": s.info.ID}
-			m.deps.Audit.Record(e)
-		}
-		approvedBy = "user"
-	}
-
-	start := time.Now()
-	out, err := call.Run(ctx)
-	dur := time.Since(start).Milliseconds()
-	isErr := err != nil
-	if err != nil {
-		if out != "" {
-			out += "\n"
-		}
-		out += "error: " + err.Error()
-	}
-	out = m.redactor.Redact(out)
-	e := auditBase
-	e.Detail["approvedBy"] = approvedBy
-	e.Detail["durationMs"] = dur
-	e.Result = "ok"
-	if isErr {
-		e.Result = "error"
-		e.Detail["error"] = m.redactor.Redact(err.Error())
-	}
-	if strings.HasPrefix(out, "exit code: ") {
-		var code int
-		fmt.Sscanf(out, "exit code: %d", &code)
-		e.Detail["exitCode"] = code
-	}
-	m.deps.Audit.Record(e)
-	s.emit("tool_result", map[string]any{"callId": c.ID, "output": truncate(out, 200000), "isError": isErr, "durationMs": dur}, true)
-	return result(out, isErr)
+	r := &runner{m: m, s: s, env: env, w: w, tools: toolMap}
+	return r.execute(ctx, r.prepare(ctx, c, truncatedTurn))
 }
 
 func merge(a, b map[string]any) map[string]any {

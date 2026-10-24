@@ -44,6 +44,11 @@ type Info struct {
 	// External agent conversation ("<provider>:<id>") when the model is a
 	// local agent CLI; it keeps the agent's own context between turns.
 	External string `json:"external,omitempty"`
+	// Headless sessions (opsdeck run) have nobody to approve: what would
+	// ask is denied, and questions to the user fail.
+	Headless bool `json:"headless,omitempty"`
+	// ForkedFrom is the session this one was forked from.
+	ForkedFrom string `json:"forkedFrom,omitempty"`
 }
 
 // Session is one conversation with the agent inside a workspace.
@@ -59,17 +64,35 @@ type Session struct {
 	pending  map[string]*pendingApproval
 	path     string
 	nextID   int
+	// taint is the web source read in the current turn: the next change
+	// asks even when the mode would run it.
+	taint string
+	// questions the agent asked the user (ask_user) and waits for.
+	questions map[string]*pendingQuestion
 }
 
 type approval struct {
 	decision string
 	note     string
 	secret   string // what the user typed into a password prompt; never stored
+	canary   bool   // run on the first host, then ask again for the rest
 }
 
 type pendingApproval struct {
 	ch    chan approval
 	check func(secret string) error // set when the card asks for a secret
+}
+
+// Answer is the user's reply to a question of the agent (ask_user).
+type Answer struct {
+	Choices []string `json:"choices"`
+	Text    string   `json:"text"`
+	Skipped bool     `json:"skipped"`
+}
+
+type pendingQuestion struct {
+	ch      chan Answer
+	options []string
 }
 
 // ErrSecretRequired is returned when an approval that needs a password is
@@ -105,6 +128,11 @@ type Deps struct {
 	Local func() *LocalPolicy
 	// Policy returns the user's agent policy.
 	Policy func() Policy
+	// Web returns the agent's web access settings (nil = no web tools).
+	Web func() WebConfig
+	// Hooks returns the hooks that apply to a workspace: App settings hooks
+	// and the workspace's own hooks the user trusted on this machine.
+	Hooks func(w *workspace.Workspace) []Hook
 }
 
 // Manager owns sessions.
@@ -114,6 +142,7 @@ type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session // ws/id
 	bridges  bridges
+	pages    pageCache // web pages read recently
 }
 
 func NewManager(d Deps) *Manager {
@@ -166,7 +195,7 @@ func (m *Manager) Create(w *workspace.Workspace, model, mode string) (*Session, 
 	now := time.Now().UTC()
 	s := &Session{
 		info:    Info{ID: uuid.NewString()[:13], Workspace: w.Name(), Title: "New session", Model: model, Mode: mode, State: "idle", Created: now, Updated: now},
-		granted: map[string]bool{}, subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{},
+		granted: map[string]bool{}, subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{},
 	}
 	s.path = filepath.Join(m.dir(w.Name()), s.info.ID+".json")
 	if err := s.save(); err != nil {
@@ -199,7 +228,7 @@ func (m *Manager) Get(ws, id string) (*Session, error) {
 		return nil, err
 	}
 	s := &Session{info: st.Info, messages: st.Messages, events: st.Events, granted: map[string]bool{},
-		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, path: path, nextID: len(st.Events)}
+		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{}, path: path, nextID: len(st.Events)}
 	for _, g := range st.Granted {
 		s.granted[g] = true
 	}
@@ -222,6 +251,7 @@ func (m *Manager) Delete(ws, id string) error {
 	m.mu.Lock()
 	delete(m.sessions, ws+"/"+id)
 	m.mu.Unlock()
+	os.RemoveAll(s.outputDir())
 	return os.Remove(s.path)
 }
 
@@ -333,7 +363,7 @@ func (s *Session) Interrupt() {
 // Resolve answers a pending approval. When the card asks for a secret (an
 // Ansible Vault password), approving needs it and it is checked first: a
 // wrong one returns an error and the card stays open.
-func (s *Session) Resolve(approvalID, decision, note, secret string) error {
+func (s *Session) Resolve(approvalID, decision, note, secret string, canary bool) error {
 	if decision != "approve" && decision != "deny" && decision != "always" {
 		return fmt.Errorf("invalid decision %q", decision)
 	}
@@ -352,7 +382,7 @@ func (s *Session) Resolve(approvalID, decision, note, secret string) error {
 		}
 	}
 	if decision == "deny" {
-		secret = ""
+		secret, canary = "", false
 	}
 	s.mu.Lock()
 	if s.pending[approvalID] != p {
@@ -361,8 +391,52 @@ func (s *Session) Resolve(approvalID, decision, note, secret string) error {
 	}
 	delete(s.pending, approvalID)
 	s.mu.Unlock()
-	p.ch <- approval{decision, note, secret}
+	p.ch <- approval{decision: decision, note: note, secret: secret, canary: canary}
 	return nil
+}
+
+// lastOutcome is the agent's last message and the error the turn ended
+// with, if any.
+func (s *Session) lastOutcome() (message, errMsg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := len(s.events) - 1; i >= 0; i-- {
+		e := s.events[i]
+		if e["type"] == "user" {
+			break
+		}
+		if _, nested := e["parent"]; nested {
+			continue
+		}
+		switch e["type"] {
+		case "assistant":
+			if message == "" {
+				message, _ = e["text"].(string)
+			}
+		case "error":
+			if errMsg == "" && message == "" {
+				errMsg, _ = e["message"].(string)
+			}
+		}
+	}
+	return message, errMsg
+}
+
+// refreshState shows whether the running turn waits for the user.
+func (s *Session) refreshState() {
+	s.mu.Lock()
+	if s.cancel == nil && s.info.State == "idle" {
+		s.mu.Unlock()
+		return
+	}
+	state := "running"
+	if len(s.pending) > 0 {
+		state = "waiting_approval"
+	} else if len(s.questions) > 0 {
+		state = "waiting_input"
+	}
+	s.mu.Unlock()
+	s.setState(state)
 }
 
 func (s *Session) save() error {

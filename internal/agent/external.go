@@ -53,7 +53,8 @@ func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Work
 	base := mcpBase.url
 	mcpBase.Unlock()
 
-	defs, _ := m.toolset(w)
+	defs, toolMap := m.toolset(w)
+	env.Tools = toolNames(toolMap)
 	var names []string
 	for _, d := range defs {
 		names = append(names, d.Name)

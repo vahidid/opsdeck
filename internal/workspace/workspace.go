@@ -35,6 +35,15 @@ type Settings struct {
 	DefaultModel string `yaml:"defaultModel,omitempty" json:"defaultModel"`
 	// NoBuiltinSkills hides opsdeck's built-in skill library from the agent.
 	NoBuiltinSkills bool `yaml:"noBuiltinSkills,omitempty" json:"noBuiltinSkills"`
+	// Web is the agent's web access in this workspace: off, search or
+	// fetch ("" = the app default; off when only local models are allowed).
+	Web string `yaml:"web,omitempty" json:"web"`
+	// WebVia routes the agent's web requests through one of the
+	// workspace's networks (network/<name>), e.g. a SOCKS proxy or VPN.
+	WebVia string `yaml:"webVia,omitempty" json:"webVia"`
+	// Models limits the models sessions of this workspace may use
+	// (patterns like ollama/*; empty = any).
+	Models []string `yaml:"models,omitempty" json:"models"`
 }
 
 // Rule is a permission rule for agent tool calls. First matching rule wins.
@@ -48,6 +57,19 @@ type Rule struct {
 
 type Permissions struct {
 	Rules []Rule `yaml:"rules,omitempty" json:"rules"`
+}
+
+// Hook is a workspace hook (see config.Hook): a command that gets the event
+// as JSON on stdin.
+type Hook struct {
+	Name        string   `yaml:"name" json:"name"`
+	Event       string   `yaml:"event" json:"event"` // before_tool | after_tool | turn_end
+	Command     string   `yaml:"command" json:"command"`
+	Tool        string   `yaml:"tool,omitempty" json:"tool"`
+	Risk        string   `yaml:"risk,omitempty" json:"risk"`
+	Environment []string `yaml:"environment,omitempty" json:"environment"`
+	TimeoutSec  int      `yaml:"timeoutSec,omitempty" json:"timeoutSec"`
+	Disabled    bool     `yaml:"disabled,omitempty" json:"disabled"`
 }
 
 type MCPServer struct {
@@ -66,6 +88,9 @@ type Workspace struct {
 	Settings     Settings      `yaml:"settings,omitempty" json:"settings"`
 	Permissions  Permissions   `yaml:"permissions,omitempty" json:"permissions"`
 	MCPServers   []MCPServer   `yaml:"mcpServers,omitempty" json:"mcpServers"`
+	// Hooks run on this computer around agent tool calls; like MCP servers
+	// they need the user's trust on this machine before they run.
+	Hooks []Hook `yaml:"hooks,omitempty" json:"hooks"`
 
 	Path      string      `yaml:"-" json:"path"`
 	Resources []*Resource `yaml:"-" json:"-"`

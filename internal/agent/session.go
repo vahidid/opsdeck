@@ -238,7 +238,7 @@ func (m *Manager) Get(ws, id string) (*Session, error) {
 		return nil, err
 	}
 	s := &Session{info: st.Info, messages: st.Messages, events: st.Events, granted: map[string]bool{},
-		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{}, path: path, nextID: len(st.Events),
+		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{}, path: path, nextID: maxEventID(st.Events),
 		context: st.Context}
 	for _, g := range st.Granted {
 		s.granted[g] = true
@@ -315,6 +315,15 @@ func (s *Session) Update(title, model, mode string) error {
 	}
 	s.info.Updated = time.Now().UTC()
 	return s.saveLocked()
+}
+
+// SetHeadless marks a session run without a person (opsdeck run): what
+// would ask is denied.
+func (s *Session) SetHeadless(on bool) {
+	s.mu.Lock()
+	s.info.Headless = on
+	s.saveLocked()
+	s.mu.Unlock()
 }
 
 // Subscribe returns a channel of new events and an unsubscribe func.

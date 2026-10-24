@@ -315,7 +315,7 @@ func (m *Manager) notify(s *Session, w *workspace.Workspace, text string) {
 		return
 	}
 	s.mu.Unlock()
-	if err := m.start(s, w, text, true); errors.Is(err, ErrBusy) {
+	if err := m.start(s, w, turnInput{Text: text, Notification: true}); errors.Is(err, ErrBusy) {
 		s.mu.Lock()
 		s.inbox = append(s.inbox, text)
 		s.mu.Unlock()
@@ -332,7 +332,7 @@ func (m *Manager) deliverInbox(s *Session, w *workspace.Workspace) {
 	if len(inbox) == 0 {
 		return
 	}
-	if err := m.start(s, w, strings.Join(inbox, "\n\n"), true); err != nil {
+	if err := m.start(s, w, turnInput{Text: strings.Join(inbox, "\n\n"), Notification: true}); err != nil {
 		s.mu.Lock()
 		s.inbox = append(inbox, s.inbox...)
 		s.mu.Unlock()

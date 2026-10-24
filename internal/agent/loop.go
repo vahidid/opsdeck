@@ -42,12 +42,24 @@ func (m *Manager) Send(ws, id, text string) error {
 	if err := checkModel(w, s.Info().Model); err != nil {
 		return err
 	}
-	return m.start(s, w, text, false)
+	in := turnInput{Text: text, Display: text}
+	if prompt, name, ok := expandCommand(w, text); ok {
+		in.Text, in.Command = prompt, name
+	}
+	return m.start(s, w, in)
+}
+
+// turnInput is what starts a turn.
+type turnInput struct {
+	Text         string // for the model
+	Display      string // shown in the chat (the command as typed)
+	Command      string // the workspace command it came from
+	Notification bool   // from opsdeck (a background task), not the user
 }
 
 // start runs a turn in the background: for a message of the user, or for a
 // notification the agent should act on (a background task finished).
-func (m *Manager) start(s *Session, w *workspace.Workspace, text string, notification bool) error {
+func (m *Manager) start(s *Session, w *workspace.Workspace, in turnInput) error {
 	s.mu.Lock()
 	if s.cancel != nil {
 		s.mu.Unlock()
@@ -56,7 +68,7 @@ func (m *Manager) start(s *Session, w *workspace.Workspace, text string, notific
 	ctx, cancel := context.WithCancel(connect.WithActor(context.Background(), connect.Actor{Kind: "agent", Session: s.info.ID}))
 	s.cancel, s.runCtx = cancel, ctx
 	s.mu.Unlock()
-	go m.run(ctx, s, w, text, notification)
+	go m.run(ctx, s, w, in)
 	return nil
 }
 
@@ -118,7 +130,9 @@ func (m *Manager) local() *LocalPolicy {
 	return m.deps.Local()
 }
 
-func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, text string, notification bool) {
+func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, in turnInput) {
+	text, notification := in.Text, in.Notification
+	display := m.redactor.Redact(firstNonEmpty(in.Display, in.Text))
 	defer func() {
 		if r := recover(); r != nil {
 			s.emit("error", map[string]any{"message": fmt.Sprintf("internal error: %v", r)}, true)
@@ -156,7 +170,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		s.taint = "" // a new message from the user: they are back in the loop
 	}
 	if first && !notification {
-		title := strings.Join(strings.Fields(text), " ")
+		title := strings.Join(strings.Fields(display), " ")
 		if r := []rune(title); len(r) > 70 {
 			title = string(r[:70]) + "…"
 		}
@@ -168,7 +182,11 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 	if notification {
 		s.emit("notification", map[string]any{"text": text}, true)
 	} else {
-		s.emit("user", map[string]any{"text": text, "msgIndex": msgIndex}, true)
+		ev := map[string]any{"text": display, "msgIndex": msgIndex}
+		if in.Command != "" {
+			ev["command"], ev["prompt"] = in.Command, text
+		}
+		s.emit("user", ev, true)
 	}
 	s.setState("running")
 	s.save()
@@ -348,10 +366,15 @@ func estimateTokens(msgs []llm.Message) int {
 // conversation grows too large. It only runs between user turns, so no tool
 // loop is in flight, and it drops thinking blocks from the history it keeps.
 func (m *Manager) maybeCompact(ctx context.Context, s *Session, p llm.Provider, model string) error {
+	return m.compact(ctx, s, p, model, false)
+}
+
+// compact summarizes older history; force does it whatever the size.
+func (m *Manager) compact(ctx context.Context, s *Session, p llm.Provider, model string, force bool) error {
 	s.mu.Lock()
 	msgs := append([]llm.Message(nil), s.messages...)
 	s.mu.Unlock()
-	if estimateTokens(msgs) < compactThreshold || len(msgs) < 6 {
+	if !force && (estimateTokens(msgs) < compactThreshold || len(msgs) < 6) {
 		return nil
 	}
 	// Keep the last few turns, starting at a user message that carries text.

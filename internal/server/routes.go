@@ -158,6 +158,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks/{tid}", u(s.sessTask))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/tasks/{tid}/stop", u(s.sessTaskStop))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/outputs/{oid}", u(s.sessOutput))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/fork", u(s.sessFork))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/export", u(s.sessExport))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/shell", u(s.sessShell))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/compact", u(s.sessCompact))
+	mux.HandleFunc("GET /api/workspaces/{ws}/harness", u(s.wsHarness))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/stream", u(s.sessStream))
 
 	// git repositories
@@ -1491,15 +1496,25 @@ func (s *Server) sessCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct{ Model, Mode string }
+	var in struct {
+		Model, Mode string
+		Headless    bool
+	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
+		return
+	}
+	if in.Model != "" && !agent.ModelAllowed(ws, in.Model) {
+		fail(w, fmt.Errorf("this workspace only allows the models %s", strings.Join(ws.Settings.Models, ", ")))
 		return
 	}
 	sess, err := s.agents.Create(ws, in.Model, in.Mode)
 	if err != nil {
 		fail(w, err)
 		return
+	}
+	if in.Headless {
+		sess.SetHeadless(true)
 	}
 	writeJSON(w, 201, sess.Info())
 }
@@ -1533,9 +1548,19 @@ func (s *Server) sessPut(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct{ Title, Model, Mode string }
+	var in struct {
+		Title, Model, Mode string
+		Headless           *bool
+	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
+		return
+	}
+	if in.Headless != nil {
+		sess.SetHeadless(*in.Headless)
+	}
+	if ws, err := s.ws.Get(r.PathValue("ws")); err == nil && in.Model != "" && !agent.ModelAllowed(ws, in.Model) {
+		fail(w, fmt.Errorf("this workspace only allows the models %s", strings.Join(ws.Settings.Models, ", ")))
 		return
 	}
 	if err := sess.Update(in.Title, in.Model, in.Mode); err != nil {

@@ -116,7 +116,8 @@ Files holding private keys are never shown to you. To use the user's SSH key, im
 	if len(docs) > 1 {
 		b.WriteString("\n## Documentation (read with read_doc)\n")
 		for _, d := range docs {
-			if d.Path != "OPSDECK.md" && !strings.HasPrefix(d.Path, "skills/") && !strings.HasPrefix(d.Path, "reports/") {
+			if d.Path != "OPSDECK.md" && !strings.HasPrefix(d.Path, "skills/") && !strings.HasPrefix(d.Path, "reports/") &&
+				!strings.HasPrefix(d.Path, "agents/") && !strings.HasPrefix(d.Path, "commands/") {
 				fmt.Fprintf(&b, "- %s — %s\n", d.Path, d.Title)
 			}
 		}

@@ -27,6 +27,7 @@ func usage() {
 
 Usage:
   opsdeck [serve] [flags]   start the server and open the UI (default)
+  opsdeck run -p "…" --ws <workspace>  run the agent headless (CI, cron); opsdeck run -h for flags
   opsdeck url               print the login URL
   opsdeck paths             show where data is stored
   opsdeck mcp-stdio --url URL stdio relay to a session's MCP bridge (used by external agents)
@@ -55,6 +56,9 @@ func main() {
 	cmd := "serve"
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]
+	}
+	if cmd == "run" {
+		os.Exit(runCommand(args))
 	}
 	flag.CommandLine.Parse(args)
 	dirs := paths.Default()

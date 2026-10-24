@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -82,6 +83,9 @@ func toolVPN() Tool {
 					err := env.Hub.NetworkUp(ctx, env.WS, r.Name)
 					status := renderNetworks(pick(env.Hub.Networks(env.WS), r.Name))
 					if errors.Is(err, connect.ErrConnecting) {
+						if strings.Contains(err.Error(), "to choose the") {
+							return status, fmt.Errorf("%v. Ask the user to choose it in the prompt opsdeck shows, also on the VPN page (setting it as the profile's group skips this question next time); it connects as soon as they do. Check again with vpn status", err)
+						}
 						if strings.Contains(err.Error(), "one-time code") {
 							return status, fmt.Errorf("%v. Ask the user to enter the code they received (by SMS or email) in the prompt opsdeck shows, also on the VPN page — not in this chat; it connects as soon as they do. Check again with vpn status", err)
 						}
@@ -145,7 +149,9 @@ func renderNetworks(nets []connect.NetStatus) string {
 		if n.Proxy != "" {
 			fmt.Fprintf(&b, ", SOCKS5 proxy for other apps on %s", n.Proxy)
 		}
-		if n.Code != nil {
+		if n.Code != nil && len(n.Code.Choices) > 0 {
+			fmt.Fprintf(&b, ", waiting for the user to choose the %s (%s)", cmp.Or(n.Code.Label, "choice"), strings.Join(n.Code.Choices, ", "))
+		} else if n.Code != nil {
 			b.WriteString(", waiting for the user to enter the one-time code the gateway sent")
 			if n.Code.Message != "" {
 				fmt.Fprintf(&b, " (%s)", n.Code.Message)

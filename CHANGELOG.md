@@ -62,6 +62,13 @@ each release's section becomes its notes on GitHub.
   again with the same session, without a new code, while the gateway keeps it. The agent
   asks you for the code instead of failing. Untrusted FortiGate certificates now show the
   pin to set before anything else runs.
+- **AnyConnect groups and second factors** — Cisco ASA/FTD gateways (and the other
+  openconnect gateways) that ask for a GROUP or a code after the password now connect,
+  also those with the old `/+webvpn+/` login: opsdeck answers openconnect's questions itself.
+  The group comes from the profile, or you pick it from the gateway's list in the same prompt
+  as codes; a second password or challenge (*Answer:*, *Response:*) gets the login's TOTP
+  code, or the code you enter or forward from your phone, and is asked for again when wrong.
+  The TOTP secret is no longer on openconnect's command line (nor in the VPN log).
 
 ## [0.2.0] — 2026-10-24
 

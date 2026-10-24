@@ -23,7 +23,7 @@ export const VPN_PRESETS: Preset[] = [
   { id: "headscale", label: "Headscale", kind: "Tailscale", spec: { controlUrl: "https://" }, hint: "self-hosted control server" },
   { id: "netbird", label: "NetBird", kind: "NetBird", spec: { mode: "userspace" }, hint: "cloud or self-hosted" },
   { id: "openvpn", label: "OpenVPN", kind: "OpenVPN", spec: {}, hint: ".ovpn · system mode" },
-  { id: "anyconnect", label: "Cisco AnyConnect", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "ASA / Firepower" },
+  { id: "anyconnect", label: "Cisco AnyConnect", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "ASA / Firepower · group, 2FA" },
   { id: "anyconnect-sso", label: "Cisco AnyConnect · SSO", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace", sso: true }, hint: "Entra ID, Okta, ADFS…" },
   { id: "ocserv", label: "ocserv", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "OpenConnect server" },
   { id: "fortinet", label: "FortiGate", kind: "OpenConnect", spec: { protocol: "fortinet", mode: "userspace" }, hint: "FortiClient SSL VPN · codes by SMS" },
@@ -67,7 +67,7 @@ export function netTone(s: NetworkStatus["status"]): Tone {
 export function netStateLabel(n: NetworkStatus): string {
   switch (n.status) {
     case "auth":
-      return n.code ? "waiting for code" : n.authWindow ? "signing in…" : "waiting for login";
+      return n.code ? (n.code.choices?.length ? "waiting for choice" : "waiting for code") : n.authWindow ? "signing in…" : "waiting for login";
     case "connecting":
       return "connecting…";
   }

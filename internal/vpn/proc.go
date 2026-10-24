@@ -1,8 +1,9 @@
 package vpn
 
 import (
-	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,43 +19,114 @@ import (
 // onLine; it is stopped with SIGINT/SIGTERM (relayed by sudo to the client)
 // and killed if it does not exit.
 type proc struct {
-	cmd  *exec.Cmd
-	done *doneOnce
-	log  *Log
-	mu   sync.Mutex
-	tail []string // last lines, for error messages
+	cmd   *exec.Cmd
+	done  *doneOnce
+	log   *Log
+	stdin io.WriteCloser // open for answers (startProcPrompts)
+	mu    sync.Mutex
+	tail  []string // last lines, for error messages
 }
+
+// promptIdle is how long output waits without a newline before it counts as
+// a question (openconnect's prompts end without one).
+const promptIdle = 300 * time.Millisecond
 
 // startProc runs argv (prefixed with elevate when non-empty) with stdin.
 func startProc(argv, elevate []string, stdin string, log *Log, onLine func(string)) (*proc, error) {
+	return startProcPrompts(argv, elevate, stdin, log, onLine, nil)
+}
+
+// startProcPrompts is startProc for a client that asks questions when
+// onPrompt is set: stdin stays open after stdin for the answers
+// (proc.answer), and output that then waits without a newline is a
+// question, which goes to the log and to onPrompt (not to onLine).
+func startProcPrompts(argv, elevate []string, stdin string, log *Log, onLine, onPrompt func(string)) (*proc, error) {
 	full := append(append([]string{}, elevate...), argv...)
 	cmd := sysproc.Command(full[0], full[1:]...)
 	setProcAttrs(cmd, len(elevate) > 0)
-	if stdin != "" {
+	p := &proc{cmd: cmd, done: newDone(), log: log}
+	if onPrompt != nil {
+		w, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, err
+		}
+		p.stdin = w
+	} else if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	pr, pw := io.Pipe()
 	cmd.Stdout, cmd.Stderr = pw, pw
-	p := &proc{cmd: cmd, done: newDone(), log: log}
 	log.Printf("$ %s", strings.Join(full, " "))
 	if err := cmd.Start(); err != nil {
 		pw.Close()
 		return nil, err
 	}
+	if p.stdin != nil && stdin != "" {
+		io.WriteString(p.stdin, stdin) // small: fits in the pipe
+	}
+	emit := func(line string, prompt bool) {
+		log.add(line)
+		p.mu.Lock()
+		p.tail = append(p.tail, line)
+		if len(p.tail) > 8 {
+			p.tail = p.tail[1:]
+		}
+		p.mu.Unlock()
+		switch {
+		case prompt:
+			onPrompt(strings.TrimSpace(line))
+		case onLine != nil:
+			onLine(line)
+		}
+	}
+	chunks := make(chan []byte)
 	go func() {
-		sc := bufio.NewScanner(pr)
-		sc.Buffer(make([]byte, 64*1024), 1<<20)
-		for sc.Scan() {
-			line := sc.Text()
-			log.add(line)
-			p.mu.Lock()
-			p.tail = append(p.tail, line)
-			if len(p.tail) > 8 {
-				p.tail = p.tail[1:]
+		defer close(chunks)
+		for {
+			buf := make([]byte, 32*1024)
+			n, err := pr.Read(buf)
+			if n > 0 {
+				chunks <- buf[:n]
 			}
-			p.mu.Unlock()
-			if onLine != nil {
-				onLine(line)
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		var part []byte
+		var idle <-chan time.Time
+		for {
+			select {
+			case b, ok := <-chunks:
+				if !ok {
+					if len(part) > 0 {
+						emit(string(part), false)
+					}
+					return
+				}
+				part = append(part, b...)
+				for {
+					i := bytes.IndexByte(part, '\n')
+					if i < 0 {
+						break
+					}
+					emit(strings.TrimRight(string(part[:i]), "\r"), false)
+					part = part[i+1:]
+				}
+				if len(part) > 1<<20 {
+					emit(string(part), false)
+					part = nil
+				}
+				idle = nil
+				if len(part) > 0 && onPrompt != nil {
+					idle = time.After(promptIdle)
+				}
+			case <-idle:
+				idle = nil
+				q := string(part)
+				part = nil
+				emit(q, true)
 			}
 		}
 	}()
@@ -72,6 +144,22 @@ func startProc(argv, elevate []string, stdin string, log *Log, onLine func(strin
 		p.done.finish(err)
 	}()
 	return p, nil
+}
+
+// answer writes an answer to a question of the client.
+func (p *proc) answer(s string) error {
+	if p.stdin == nil {
+		return errors.New("the client takes no answers")
+	}
+	_, err := io.WriteString(p.stdin, s+"\n")
+	return err
+}
+
+// noAnswer closes the client's stdin: it gives up on its question.
+func (p *proc) noAnswer() {
+	if p.stdin != nil {
+		p.stdin.Close()
+	}
 }
 
 func (p *proc) lastLines() string {

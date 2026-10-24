@@ -217,3 +217,131 @@ func TestFortiGateSMS(t *testing.T) {
 		t.Fatalf("log: %s", b)
 	}
 }
+
+// oldASA is a Cisco ASA with the old login form (no XML POST): a GROUP list,
+// then a one-time code challenge.
+type oldASA struct {
+	*httptest.Server
+	mu        sync.Mutex
+	presented string // Cookie of the tunnel request
+}
+
+func newOldASA(t *testing.T) *oldASA {
+	g := &oldASA{}
+	form := `<?xml version="1.0" encoding="UTF-8"?>
+<auth id="main"><title>Login</title><message>Please enter your username and password.</message>
+<form method="post" action="/+webvpn+/index.html"><input type="text" name="username" label="Username:" /><input type="password" name="password" label="Password:" />
+<select name="group_list" label="GROUP:"><option value="3rd-Party">3rd-Party</option><option value="IT-Opration">IT-Opration</option><option value="Simotech">Simotech</option></select></form></auth>`
+	g.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		r.ParseForm()
+		w.Header().Set("Content-Type", "text/xml")
+		switch {
+		case r.Method == "CONNECT":
+			g.presented = r.Header.Get("Cookie")
+			http.Error(w, "this test gateway has no tunnel", http.StatusUnauthorized)
+		case r.URL.Path == "/" && r.Method == "POST":
+			http.NotFound(w, r)
+		case r.URL.Path == "/":
+			http.Redirect(w, r, "/+webvpn+/index.html", http.StatusFound)
+		case r.URL.Path == "/+webvpn+/index.html" && r.Method == "POST" && r.Form.Get("username") == "alice" && r.Form.Get("password") == "s3cret" && r.Form.Get("group_list") == "3rd-Party":
+			fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><auth id="challenge"><message>Enter the code sent to your phone</message>
+<form method="post" action="/+webvpn+/login/challenge.html"><input type="password" name="password" label="Answer:" /></form></auth>`)
+		case r.URL.Path == "/+webvpn+/login/challenge.html" && r.Form.Get("password") == "482913":
+			http.SetCookie(w, &http.Cookie{Name: "webvpn", Value: "asa-session", Path: "/", Secure: true})
+			fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><auth id="success"><title>SSL VPN Service</title></auth>`)
+		default:
+			fmt.Fprint(w, form)
+		}
+	}))
+	t.Cleanup(g.Close)
+	return g
+}
+
+// TestAnyConnectGroupAndCode: an AnyConnect profile without a group stops
+// for the gateway's GROUP list (a choice in the app, not filled in from the
+// phone), then for the one-time code of the challenge.
+func TestAnyConnectGroupAndCode(t *testing.T) {
+	for _, bin := range []string{"openconnect", "ocproxy"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skip(bin + " not installed")
+		}
+	}
+	for _, k := range []string{"https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"} {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OPSDECK_HOME", t.TempDir())
+	srv, err := New(paths.Default(), Options{Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	jar, _ := cookiejar.New(nil)
+	hc := &http.Client{Jar: jar, Timeout: 60 * time.Second}
+	c := &client{t: t, base: ts.URL, http: hc}
+	c.must("POST", "/api/auth/login", map[string]string{"token": srv.token}, nil)
+	c.must("POST", "/api/vault/init", map[string]string{"password": "correct horse battery"}, nil)
+	c.must("POST", "/api/workspaces", map[string]string{"name": "acme"}, nil)
+	// a phone forwarding codes, which never sends one here
+	ntfy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"event": "open", "time": time.Now().Unix()})
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer ntfy.Close()
+	var settings map[string]any
+	c.must("GET", "/api/settings", nil, &settings)
+	settings["vpn"] = map[string]any{"codes": map[string]any{"ntfyUrl": ntfy.URL + "/opsdeck-k3y"}}
+	c.must("PUT", "/api/settings", settings, nil)
+
+	gw := newOldASA(t)
+	h := sha256.Sum256(gw.Certificate().RawSubjectPublicKeyInfo)
+	c.must("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "login", "name": "asa",
+		"fields": []map[string]any{{"name": "username", "value": "alice"}, {"name": "password", "value": "s3cret", "secret": true}}}, nil)
+	c.must("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "OpenConnect", "name": "office",
+		"spec": map[string]any{"protocol": "anyconnect", "server": gw.URL, "auth": "vault://acme/asa", "mode": "userspace",
+			"serverCert": "pin-sha256:" + base64.StdEncoding.EncodeToString(h[:])}}, nil)
+	go func() {
+		if res, err := hc.Post(ts.URL+"/api/workspaces/acme/networks/office/up", "application/json", strings.NewReader("{}")); err == nil {
+			res.Body.Close()
+		}
+	}()
+	pending := func() []map[string]any {
+		var l []map[string]any
+		c.must("GET", "/api/vpn/codes", nil, &l)
+		return l
+	}
+	eventually(t, "the group prompt", 20*time.Second, func() bool { return len(pending()) == 1 })
+	p := pending()[0]
+	if fmt.Sprint(p["choices"]) != "[3rd-Party IT-Opration Simotech]" || p["label"] != "GROUP" || p["sources"] != nil {
+		t.Fatalf("prompt %v", p)
+	}
+	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": "Sales"}, nil); code != 400 {
+		t.Fatalf("a group the gateway does not offer: %d", code)
+	}
+	c.must("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": " 3rd-party"}, nil)
+	eventually(t, "the code prompt", 20*time.Second, func() bool {
+		l := pending()
+		return len(l) == 1 && l[0]["label"] == "Answer" && l[0]["choices"] == nil
+	})
+	if p := pending()[0]; p["message"] != "Enter the code sent to your phone" || fmt.Sprint(p["sources"]) != "[your phone (ntfy)]" {
+		t.Fatalf("prompt %v", p)
+	}
+	c.must("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": "482 913"}, nil)
+	eventually(t, "openconnect presenting the session", 20*time.Second, func() bool {
+		gw.mu.Lock()
+		defer gw.mu.Unlock()
+		return strings.Contains(gw.presented, "webvpn=asa-session")
+	})
+	var log []map[string]any
+	c.must("GET", "/api/workspaces/acme/networks/office/log", nil, &log)
+	b, _ := json.Marshal(log)
+	if strings.Contains(string(b), "482913") || strings.Contains(string(b), "s3cret") || !strings.Contains(string(b), "GROUP chosen: 3rd-Party") {
+		t.Fatalf("log: %s", b)
+	}
+}

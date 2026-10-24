@@ -292,6 +292,7 @@ func Tools() []Tool {
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
 		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(),
+		toolWaitFor(), toolAskUser(), toolTodo(),
 	}
 }
 
@@ -843,22 +844,25 @@ func toolNetCheck() Tool {
 	}
 }
 
-func netCheck(ctx context.Context, env *Env, typ, target string, from, res *workspace.Resource) (string, error) {
-	// Where to dial from: a host (its SSH connection), the resource's path, or locally.
-	dialVia := func() (connect.DialFunc, error) {
-		if from != nil {
-			c, err := env.Hub.SSH(ctx, env.WS, from)
-			if err != nil {
-				return nil, err
-			}
-			return c.DialContext, nil
+// checkDialer is where a check dials from: a host (its SSH connection), the
+// way a workspace resource is reached, or this computer.
+func checkDialer(ctx context.Context, env *Env, from, res *workspace.Resource) (connect.DialFunc, error) {
+	if from != nil {
+		c, err := env.Hub.SSH(ctx, env.WS, from)
+		if err != nil {
+			return nil, err
 		}
-		if res != nil {
-			return env.Hub.Dialer(ctx, env.WS, res)
-		}
-		var d net.Dialer
-		return d.DialContext, nil
+		return c.DialContext, nil
 	}
+	if res != nil {
+		return env.Hub.Dialer(ctx, env.WS, res)
+	}
+	var d net.Dialer
+	return d.DialContext, nil
+}
+
+func netCheck(ctx context.Context, env *Env, typ, target string, from, res *workspace.Resource) (string, error) {
+	dialVia := func() (connect.DialFunc, error) { return checkDialer(ctx, env, from, res) }
 	switch typ {
 	case "tcp":
 		addr := target

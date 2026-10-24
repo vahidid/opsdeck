@@ -35,7 +35,7 @@ const (
 )
 
 var localEnvironments = map[string]bool{"local": true, "working copy": true, "workspace files": true, "this computer": true, "vault": true, "workspace topology": true}
-var localTargets = []string{"local", "docs/", "skill/", "memory", "workspace/", "script/", "scripts", "reports", "artifacts", "topology", "network/", "knowledge"}
+var localTargets = []string{"local", "docs/", "skill/", "memory", "workspace/", "script/", "scripts", "reports", "artifacts", "topology", "network/", "knowledge", "session", "user"}
 
 // scopeOf says where a call has its effect: what the tool set, else what
 // its environment and target say; anything unknown counts as a server.

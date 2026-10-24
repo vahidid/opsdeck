@@ -153,6 +153,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/messages", u(s.sessMessage))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/interrupt", u(s.sessInterrupt))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/approvals/{aid}", u(s.sessApproval))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/questions/{qid}", u(s.sessAnswer))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/stream", u(s.sessStream))
 
 	// git repositories
@@ -1594,6 +1595,23 @@ func (s *Server) sessApproval(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnprocessableEntity, apiError{Error: err.Error(), Code: "bad_secret"})
 			return
 		}
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) sessAnswer(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.session(w, r)
+	if !ok {
+		return
+	}
+	var in agent.Answer
+	if err := readJSON(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := sess.Answer(r.PathValue("qid"), in); err != nil {
 		fail(w, err)
 		return
 	}

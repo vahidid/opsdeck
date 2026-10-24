@@ -295,8 +295,13 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 		m.deps.Audit.Record(e)
 		return a.decision != "deny", a.note
 	}
+	runCtx := withCallScope(ctx, sc)
+	runCtx = withAsk(runCtx, func(ctx context.Context, q Question) (Answer, error) { return r.ask(ctx, c.ID, q) })
+	runCtx = withTodo(runCtx, func(items []TodoItem) {
+		r.emit("todo", map[string]any{"callId": c.ID, "items": items}, true)
+	})
 	start := time.Now()
-	out, err := call.Run(withCallScope(ctx, sc))
+	out, err := call.Run(runCtx)
 	dur := time.Since(start).Milliseconds()
 	isErr := err != nil
 	if err != nil {

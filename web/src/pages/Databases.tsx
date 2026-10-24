@@ -1,23 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, ChevronDown, ChevronRight, Copy, Database, Eye, Info, Play, RefreshCw, ShieldAlert, Table2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Database, Eye, Info, KeyRound, Layers, Play, RefreshCw, ShieldAlert, Table2 } from "lucide-react";
 import { ApiError, api, errMsg } from "../api/client";
-import type { DbAnswer, DbNotRead, DbResult, DbTable, Resource } from "../api/types";
+import type { DbAnswer, DbEngine, DbNotRead, DbResult, DbTable, Resource } from "../api/types";
 import { useWs } from "../context/app";
 import { useTabTitle } from "../context/tabs";
 import { Badge, Button, EmptyState, ErrorBox, IconButton, Input, Kbd, Loading, PageHeader, SearchInput, Select, cx, riskTone } from "../components/ui";
 import { Drawer, Modal, useToast } from "../components/overlay";
 import { useAsync, useLocalStorage } from "../hooks";
 import CodeEditor from "./ansible/editor/CodeEditor";
+import type { Language } from "./ansible/editor/CodeEditor";
+import { ResultGrid } from "./databases/ResultGrid";
 
-const ENGINES = new Set(["postgres", "postgresql", "mysql", "mariadb"]);
-const engineOf = (r?: Resource) => String(r?.spec.engine ?? "").toLowerCase();
-const isPg = (r?: Resource) => engineOf(r).startsWith("postgres");
+const ENGINES: Record<string, DbEngine> = { postgres: "postgres", postgresql: "postgres", mysql: "mysql", mariadb: "mysql", mongodb: "mongodb", mongo: "mongodb", redis: "redis", valkey: "redis" };
+const engineOf = (r?: Resource): DbEngine | undefined => ENGINES[String(r?.spec.engine ?? "").toLowerCase()];
 
-// Databases of the workspace (PostgreSQL, MySQL, MariaDB): tables and views,
-// their structure, and a SQL editor. Reads run in a read-only transaction;
-// a script that is not a read is shown for confirmation first and runs as
-// one transaction.
+// what each engine calls things, and how its scripts look
+const ENGINE: Record<DbEngine, { language: Language; tables: string; table: string; start: string; hint: string }> = {
+  postgres: { language: "pgsql", tables: "Tables", table: "table", start: "select now();", hint: "write SQL above" },
+  mysql: { language: "mysql", tables: "Tables", table: "table", start: "select now();", hint: "write SQL above" },
+  mongodb: { language: "mongo", tables: "Collections", table: "collection", start: "show collections", hint: "write a query like db.orders.find({status: \"open\"}).limit(20) above" },
+  redis: { language: "redis", tables: "Keys", table: "key", start: "INFO server", hint: "write commands above, one per line (GET k, HGETALL k, SCAN 0 MATCH user:*)" },
+};
+
+// Databases of the workspace (PostgreSQL, MySQL, MariaDB, MongoDB, Redis):
+// tables, collections or keys, their structure, and a query editor. Reads
+// run so they cannot change data; a script that is not a read is shown for
+// confirmation first.
 export function DatabasesPage() {
   const { name: ws, byKind } = useWs();
   const all = byKind("Database");
@@ -46,18 +56,25 @@ export function DatabasesPage() {
   }, [db, setSaved]);
   useTabTitle(db ? `${database || db} · DB` : "Databases");
 
-  const supported = !!res && ENGINES.has(engineOf(res));
+  const engine = engineOf(res);
+  const supported = !!engine;
+  // Redis keys are listed by a SCAN pattern on the server
+  const [match, setMatch] = useState("");
+  useEffect(() => setMatch(""), [db]);
   const info = useAsync(() => (supported ? api.dbInfo(ws, db, database || undefined) : Promise.resolve(undefined)), [ws, db, database, supported]);
   const dbs = useAsync(() => (supported ? api.dbDatabases(ws, db) : Promise.resolve([] as string[])), [ws, db, supported]);
-  const tables = useAsync(() => (supported ? api.dbTables(ws, db, database || undefined) : Promise.resolve([] as DbTable[])), [ws, db, database, supported]);
+  const tables = useAsync(
+    () => (supported ? api.dbTables(ws, db, database || undefined, engine === "redis" ? match || undefined : undefined) : Promise.resolve([] as DbTable[])),
+    [ws, db, database, supported, engine === "redis" ? match : ""],
+  );
 
   if (!all.length) {
     return (
       <div className="flex flex-col h-full">
         <PageHeader icon={<Database />} title="Databases" />
         <EmptyState icon={<Database />} title="No databases in this workspace">
-          Add a <span className="font-mono">Database</span> resource (PostgreSQL, MySQL or MariaDB) under Resources, with its login stored in the vault. opsdeck reaches it through the workspace&apos;s VPNs
-          and jump hosts, or through an SSH tunnel to the host it runs on.
+          Add a <span className="font-mono">Database</span> resource (PostgreSQL, MySQL, MariaDB, MongoDB or Redis) under Resources, with its login stored in the vault. opsdeck reaches it through the
+          workspace&apos;s VPNs and jump hosts, or through an SSH tunnel to the host it runs on.
         </EmptyState>
       </div>
     );
@@ -84,17 +101,17 @@ export function DatabasesPage() {
               {info.data.environment && <Badge tone={info.data.protected ? "err" : "neutral"}>{info.data.environment + (info.data.protected ? " · protected" : "")}</Badge>}
             </span>
           ) : (
-            "Tables, structure and SQL — reads run in a read-only transaction"
+            "Tables, collections and keys — reads run without changing data"
           )
         }
         actions={
           <>
             {supported && (
               <Select value={current} onChange={(e) => set({ database: e.target.value })} className="w-44" title="Database on the server">
-                {current && !(dbs.data ?? []).includes(current) && <option value={current}>{current}</option>}
+                {current && !(dbs.data ?? []).includes(current) && <option value={current}>{engine === "redis" ? `db ${current}` : current}</option>}
                 {(dbs.data ?? []).map((d) => (
                   <option key={d} value={d}>
-                    {d}
+                    {engine === "redis" ? `db ${d}` : d}
                   </option>
                 ))}
               </Select>
@@ -111,10 +128,25 @@ export function DatabasesPage() {
       />
       {!supported ? (
         <EmptyState icon={<Database />} title={`${String(res?.spec.engine || "This engine")} is not supported yet`}>
-          The Databases page opens PostgreSQL, MySQL and MariaDB databases. The agent can still work with this one through <span className="font-mono">exec</span> on its host.
+          The Databases page opens PostgreSQL, MySQL, MariaDB, MongoDB and Redis databases. The agent can still work with this one through <span className="font-mono">exec</span> on its host.
         </EmptyState>
       ) : (
-        <Workbench key={`${db}/${database}`} ws={ws} db={db} res={res!} database={database || undefined} tables={tables.data} tablesLoading={tables.loading} tablesError={tables.error} reloadTables={tables.reload} connError={info.error} />
+        <Workbench
+          key={`${db}/${database}`}
+          ws={ws}
+          db={db}
+          res={res!}
+          engine={engine}
+          atomic={info.data?.atomic ?? (engine === "postgres" || engine === "mysql")}
+          database={database || undefined}
+          tables={tables.data}
+          tablesLoading={tables.loading}
+          tablesError={tables.error}
+          reloadTables={tables.reload}
+          match={match}
+          onMatch={setMatch}
+          connError={info.error}
+        />
       )}
     </div>
   );
@@ -122,6 +154,7 @@ export function DatabasesPage() {
 
 function shortVersion(v?: string) {
   if (!v) return "";
+  if (/^(mongodb|redis|valkey) /i.test(v)) return v;
   if (/mariadb/i.test(v)) return `MariaDB ${v.split("-")[0]}`;
   if (/^postgresql/i.test(v)) return v.split(" on ")[0].split(",")[0];
   return `MySQL ${v.split("-")[0]}`;
@@ -133,27 +166,36 @@ function Workbench({
   ws,
   db,
   res,
+  engine,
+  atomic,
   database,
   tables,
   tablesLoading,
   tablesError,
   reloadTables,
+  match,
+  onMatch,
   connError,
 }: {
   ws: string;
   db: string;
   res: Resource;
+  engine: DbEngine;
+  atomic: boolean;
   database?: string;
   tables?: DbTable[];
   tablesLoading: boolean;
   tablesError: string | null;
   reloadTables: () => void;
+  match: string;
+  onMatch: (m: string) => void;
   connError: string | null;
 }) {
-  const pg = isPg(res);
-  const [sql, setSql] = useLocalStorage<string>(`opsdeck.db.sql.${ws}.${db}`, "select now();");
+  const E = ENGINE[engine];
+  const [sql, setSql] = useLocalStorage<string>(`opsdeck.db.sql.${ws}.${db}`, E.start);
   const [history, setHistory] = useLocalStorage<HistoryItem[]>(`opsdeck.db.history.${ws}.${db}`, []);
   const [maxRows, setMaxRows] = useLocalStorage<number>("opsdeck.db.maxRows", 500);
+  const [split, setSplit] = useLocalStorage<number>("opsdeck.db.split", 38);
   const [answer, setAnswer] = useState<DbAnswer | null>(null);
   const [failure, setFailure] = useState("");
   const [running, setRunning] = useState(false);
@@ -163,6 +205,7 @@ function Workbench({
   const toast = useToast();
   const sqlRef = useRef(sql);
   sqlRef.current = sql;
+  const mainRef = useRef<HTMLElement>(null);
 
   // what the script is, as the user types (debounced)
   useEffect(() => {
@@ -187,8 +230,8 @@ function Workbench({
       const a = await api.dbQuery(ws, db, { sql: text, database, write, maxRows });
       setAnswer(a);
       setHistory([{ sql: text, at: Date.now() }, ...history.filter((h) => h.sql !== text)].slice(0, 30));
-      if (write && a.committed) {
-        toast.success("Committed", `${a.results.length} statement${a.results.length === 1 ? "" : "s"}`);
+      if (write && !a.error) {
+        toast.success(atomic ? "Committed" : "Done", `${a.results.length} statement${a.results.length === 1 ? "" : "s"}`);
         reloadTables();
       }
     } catch (e) {
@@ -202,22 +245,49 @@ function Workbench({
     }
   };
 
-  const qualified = (t: DbTable) => {
-    const q = (s: string) => (pg ? (/^[a-z_][a-z0-9_$]*$/.test(s) ? s : `"${s.replace(/"/g, '""')}"`) : /^[A-Za-z_][A-Za-z0-9_$]*$/.test(s) ? s : `\`${s.replace(/`/g, "``")}\``);
-    return pg && t.schema !== "public" ? `${q(t.schema)}.${q(t.name)}` : q(t.name);
-  };
   const openTable = (t: DbTable) => {
-    const text = `select * from ${qualified(t)} limit 100;`;
-    setSql(text);
-    void run(text);
+    setSql(t.query);
+    void run(t.query);
   };
-  const words = useMemo(() => (tables ?? []).flatMap((t) => (pg && t.schema !== "public" ? [t.name, `${t.schema}.${t.name}`] : [t.name])), [tables, pg]);
+  const words = useMemo(
+    () =>
+      (tables ?? []).flatMap((t) => {
+        if (engine === "postgres" && t.schema !== "public") return [t.name, `${t.schema}.${t.name}`];
+        if (engine === "mongodb") return [t.name, `db.${t.name}`];
+        return [t.name];
+      }),
+    [tables, engine],
+  );
+
+  // the line between the editor and the results moves
+  const drag = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const box = mainRef.current?.getBoundingClientRect();
+    if (!box) return;
+    const onMove = (ev: PointerEvent) => setSplit(Math.min(80, Math.max(12, ((ev.clientY - box.top) / box.height) * 100)));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   return (
     <div className="flex flex-1 min-h-0">
-      <TableList tables={tables} loading={tablesLoading} error={tablesError} onReload={reloadTables} onOpen={openTable} onStructure={setStructure} grouped={pg} />
-      <main className="flex-1 min-w-0 flex flex-col">
-        <div className="h-[38%] min-h-44 flex flex-col border-b border-line">
+      <TableList
+        engine={engine}
+        tables={tables}
+        loading={tablesLoading}
+        error={tablesError}
+        onReload={reloadTables}
+        onOpen={openTable}
+        onStructure={setStructure}
+        match={match}
+        onMatch={onMatch}
+      />
+      <main ref={mainRef} className="flex-1 min-w-0 flex flex-col">
+        <div className="min-h-32 flex flex-col" style={{ height: `${split}%` }}>
           <div className="flex items-center gap-2 px-3 h-10 border-b border-line bg-panel shrink-0">
             <Button size="sm" variant="primary" icon={<Play className="size-3.5" />} onClick={() => void run(sqlRef.current)} loading={running} disabled={!sql.trim()}>
               Run
@@ -225,13 +295,13 @@ function Workbench({
             <Kbd>Ctrl ↵</Kbd>
             {risk && (
               <Badge tone={riskTone(risk.risk)} title={risk.reasons.join("\n")}>
-                {risk.risk === "read" ? "read · read-only transaction" : `${risk.risk} · asks before running`}
+                {risk.risk === "read" ? (atomic ? "read · read-only transaction" : "read") : `${risk.risk} · asks before running`}
               </Badge>
             )}
             <div className="flex-1" />
             <HistoryPicker items={history} onPick={setSql} />
             <Select value={String(maxRows)} onChange={(e) => setMaxRows(Number(e.target.value))} className="h-7 w-32 text-xs" title="Rows shown per result">
-              {[100, 500, 1000, 5000].map((n) => (
+              {[100, 500, 1000, 5000, 10000].map((n) => (
                 <option key={n} value={n}>
                   {n} rows
                 </option>
@@ -239,9 +309,10 @@ function Workbench({
             </Select>
           </div>
           <div className="flex-1 min-h-0">
-            <CodeEditor value={sql} onChange={setSql} language={pg ? "pgsql" : "mysql"} onRun={() => void run(sqlRef.current)} words={words} autoFocus />
+            <CodeEditor value={sql} onChange={setSql} language={E.language} onRun={() => void run(sqlRef.current)} words={words} autoFocus />
           </div>
         </div>
+        <div className="h-1.5 -my-[3px] z-10 cursor-row-resize border-b border-line hover:bg-accent/30 shrink-0" onPointerDown={drag} title="Drag to resize" />
         <div className="flex-1 min-h-0 flex flex-col">
           {connError && !answer && (
             <div className="p-4">
@@ -254,12 +325,12 @@ function Workbench({
             </div>
           )}
           {answer ? (
-            <Results answer={answer} />
+            <Results answer={answer} atomic={atomic} engine={engine} />
           ) : (
             !failure &&
             !connError && (
               <EmptyState icon={<Table2 />} title="Run a query" className="flex-1">
-                Click a table to see its first rows, or write SQL above and press <Kbd>Ctrl ↵</Kbd>. Statements that change data are shown to you before they run.
+                Click a {E.table} to see its content, or {E.hint} and press <Kbd>Ctrl ↵</Kbd>. Scripts that change data are shown to you before they run.
               </EmptyState>
             )
           )}
@@ -269,6 +340,7 @@ function Workbench({
         <ConfirmChange
           db={db}
           database={answer?.database || database || String(res.spec.database || "")}
+          atomic={confirm.atomic ?? atomic}
           c={confirm}
           onCancel={() => setConfirm(null)}
           onRun={() => {
@@ -278,45 +350,59 @@ function Workbench({
           }}
         />
       )}
-      {structure && <StructureDrawer ws={ws} db={db} database={database} t={structure} onClose={() => setStructure(null)} />}
+      {structure && <StructureDrawer ws={ws} db={db} database={database} t={structure} onClose={() => setStructure(null)} onShow={() => (openTable(structure), setStructure(null))} />}
     </div>
   );
 }
 
 function TableList({
+  engine,
   tables,
   loading,
   error,
   onReload,
   onOpen,
   onStructure,
-  grouped,
+  match,
+  onMatch,
 }: {
+  engine: DbEngine;
   tables?: DbTable[];
   loading: boolean;
   error: string | null;
   onReload: () => void;
   onOpen: (t: DbTable) => void;
   onStructure: (t: DbTable) => void;
-  grouped: boolean;
+  match: string;
+  onMatch: (m: string) => void;
 }) {
-  const [q, setQ] = useState("");
+  const E = ENGINE[engine];
+  const redis = engine === "redis";
+  const grouped = engine === "postgres" || redis;
+  const [q, setQ] = useState(match);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
+  // Redis: the search is a SCAN pattern, sent once typing stops
+  useEffect(() => {
+    if (!redis) return;
+    const t = setTimeout(() => onMatch(!q ? "" : /[*?[]/.test(q) ? q : `*${q}*`), 400);
+    return () => clearTimeout(t);
+  }, [q, redis, onMatch]);
   const groups = useMemo(() => {
     const m = new Map<string, DbTable[]>();
     for (const t of tables ?? []) {
-      if (q && !`${t.schema}.${t.name}`.toLowerCase().includes(q.toLowerCase())) continue;
+      if (!redis && q && !`${t.schema}.${t.name}`.toLowerCase().includes(q.toLowerCase())) continue;
       const k = grouped ? t.schema : "";
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(t);
     }
     return [...m.entries()];
-  }, [tables, q, grouped]);
+  }, [tables, q, grouped, redis]);
+  const many = groups.length > 1;
   return (
     <aside className="w-64 shrink-0 border-r border-line flex flex-col min-h-0">
       <div className="p-2 flex items-center gap-1 border-b border-line">
-        <SearchInput value={q} onChange={setQ} placeholder="Tables…" className="flex-1" />
-        <IconButton title="Reload tables" onClick={onReload}>
+        <SearchInput value={q} onChange={setQ} placeholder={redis ? "Keys (pattern: user:*)…" : `${E.tables}…`} className="flex-1" />
+        <IconButton title={`Reload ${E.tables.toLowerCase()}`} onClick={onReload}>
           <RefreshCw className={cx("size-3.5", loading && "animate-spin")} />
         </IconButton>
       </div>
@@ -327,15 +413,16 @@ function TableList({
           </div>
         )}
         {loading && !tables && <Loading />}
-        {tables && tables.length === 0 && <div className="text-[12px] text-faint p-2">No tables in this database.</div>}
+        {tables && tables.length === 0 && <div className="text-[12px] text-faint p-2">{redis && match ? `No key matches ${match}.` : `No ${E.tables.toLowerCase()} in this database.`}</div>}
+        {redis && tables && tables.length >= 1000 && <div className="text-[11px] text-faint px-2 pt-2">The first 1,000 keys. Narrow the pattern to see others.</div>}
         {groups.map(([schema, ts]) => {
-          const open = q ? true : !closed[schema];
+          const open = (q && !redis) || !many ? true : !closed[schema];
           return (
             <div key={schema} className="mt-2">
-              {grouped && (
+              {grouped && many && (
                 <button className="w-full flex items-center gap-1 px-1 text-[10.5px] uppercase tracking-wide text-faint hover:text-muted" onClick={() => setClosed({ ...closed, [schema]: open })}>
                   {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                  {schema}
+                  <span className={cx(redis && "normal-case font-mono")}>{schema || (redis ? "(no prefix)" : "")}</span>
                   <span className="ml-auto normal-case tracking-normal">{ts.length}</span>
                 </button>
               )}
@@ -346,13 +433,13 @@ function TableList({
                       <button
                         className="flex-1 min-w-0 flex items-center gap-2 px-2 h-7 text-[12.5px] text-left text-muted group-hover:text-fg"
                         onClick={() => onOpen(t)}
-                        title={`${t.type} · click for the first rows`}
+                        title={`${t.type} · ${t.query}`}
                       >
-                        {t.type.includes("view") ? <Eye className="size-3.5 shrink-0 text-info" /> : <Table2 className="size-3.5 shrink-0" />}
-                        <span className="truncate font-mono">{t.name}</span>
-                        <span className="ml-auto text-[10.5px] text-faint tabular-nums">{t.rows >= 0 ? compact(t.rows) : ""}</span>
+                        <TableIcon t={t} engine={engine} />
+                        <span className="truncate font-mono">{redis && many && t.schema && t.name.startsWith(t.schema + ":") ? <><span className="text-faint">…:</span>{t.name.slice(t.schema.length + 1)}</> : t.name}</span>
+                        <span className="ml-auto text-[10.5px] text-faint tabular-nums whitespace-nowrap">{t.rows >= 0 ? compact(t.rows) : t.bytes > 0 && redis ? bytes(t.bytes) : ""}</span>
                       </button>
-                      <IconButton title="Columns and indexes" onClick={() => onStructure(t)} className="opacity-0 group-hover:opacity-100">
+                      <IconButton title={engine === "redis" ? "Type, expiry and size" : engine === "mongodb" ? "Fields and indexes" : "Columns and indexes"} onClick={() => onStructure(t)} className="opacity-0 group-hover:opacity-100">
                         <Info className="size-3.5" />
                       </IconButton>
                     </div>
@@ -367,6 +454,13 @@ function TableList({
   );
 }
 
+function TableIcon({ t, engine }: { t: DbTable; engine: DbEngine }) {
+  if (t.type.includes("view")) return <Eye className="size-3.5 shrink-0 text-info" />;
+  if (engine === "mongodb") return <Layers className="size-3.5 shrink-0" />;
+  if (engine === "redis") return <KeyRound className="size-3.5 shrink-0" />;
+  return <Table2 className="size-3.5 shrink-0" />;
+}
+
 function compact(n: number) {
   if (n < 1000) return String(n);
   if (n < 1e6) return `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k`;
@@ -374,10 +468,17 @@ function compact(n: number) {
   return `${(n / 1e9).toFixed(1)}B`;
 }
 
-function Results({ answer }: { answer: DbAnswer }) {
+function bytes(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1 << 20) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1 << 20)).toFixed(1)} MB`;
+}
+
+function Results({ answer, atomic, engine }: { answer: DbAnswer; atomic: boolean; engine: DbEngine }) {
   const [i, setI] = useState(0);
   useEffect(() => setI(Math.max(0, answer.results.length - 1)), [answer]);
   const r = answer.results[Math.min(i, answer.results.length - 1)];
+  const wrote = answer.risk !== "read";
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {answer.results.length > 1 && (
@@ -399,14 +500,14 @@ function Results({ answer }: { answer: DbAnswer }) {
         {answer.error ? (
           <span className="text-err flex items-center gap-1">
             <AlertTriangle className="size-3.5" />
-            {answer.committed ? "Failed" : answer.results.length && answer.risk !== "read" ? "Failed — nothing was committed" : "Failed"}
+            {!wrote || answer.results.length === 0 ? "Failed" : atomic ? "Failed — nothing was committed" : answer.results.length > 1 ? "Failed — the statements before it ran" : "Failed"}
           </span>
-        ) : answer.committed ? (
-          <span className="text-ok">Committed</span>
+        ) : wrote ? (
+          <span className="text-ok">{atomic ? "Committed" : "Done"}</span>
         ) : (
-          <span>Read-only transaction</span>
+          <span>{atomic ? "Read-only transaction" : engine === "redis" ? "Read commands only" : "Read operations only"}</span>
         )}
-        <span>{answer.database}</span>
+        <span>{engine === "redis" ? `db ${answer.database}` : answer.database}</span>
         <span className="ml-auto tabular-nums">{answer.durationMs} ms</span>
       </div>
     </div>
@@ -414,7 +515,6 @@ function Results({ answer }: { answer: DbAnswer }) {
 }
 
 function ResultView({ r }: { r: DbResult }) {
-  const toast = useToast();
   if (r.error) {
     return (
       <div className="p-4">
@@ -424,64 +524,15 @@ function ResultView({ r }: { r: DbResult }) {
   }
   if (!r.columns) {
     return (
-      <div className="flex-1 grid place-items-center text-muted text-[13px]">
-        {r.rowsAffected >= 0 ? `${r.rowsAffected} row${r.rowsAffected === 1 ? "" : "s"} affected` : "Done"} · {r.durationMs} ms
+      <div className="flex-1 grid place-items-center text-muted text-[13px] text-center px-4">
+        <div>
+          {r.rowsAffected >= 0 ? `${r.rowsAffected} row${r.rowsAffected === 1 ? "" : "s"} affected` : "Done"} · {r.durationMs} ms
+          {r.note && <div className="mt-1 text-faint text-[12px] font-mono">{r.note}</div>}
+        </div>
       </div>
     );
   }
-  const rows = r.rows ?? [];
-  const copy = async () => {
-    const esc = (v: unknown) => (v === null || v === undefined ? "" : String(v).replace(/[\t\n]/g, " "));
-    const text = [r.columns!.map((c) => c.name).join("\t"), ...rows.map((row) => row.map(esc).join("\t"))].join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success("Copied", `${rows.length} rows as tab-separated text`);
-    } catch {
-      toast.error("Cannot copy");
-    }
-  };
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex items-center gap-2 px-3 h-8 border-b border-line text-[11.5px] text-muted shrink-0">
-        <span className="tabular-nums">
-          {rows.length} row{rows.length === 1 ? "" : "s"}
-          {r.truncated && <span className="text-warn"> · more rows not shown (raise the limit or narrow the query)</span>}
-        </span>
-        <span className="text-faint tabular-nums">{r.durationMs} ms</span>
-        <div className="flex-1" />
-        <Button size="xs" variant="ghost" icon={<Copy className="size-3" />} onClick={() => void copy()}>
-          Copy
-        </Button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto">
-        <table className="text-[12px] font-mono border-separate border-spacing-0">
-          <thead className="sticky top-0 z-10 bg-panel">
-            <tr>
-              <th className="sticky left-0 bg-panel px-2 h-7 text-right text-faint font-normal border-b border-r border-line">#</th>
-              {r.columns.map((c, j) => (
-                <th key={j} className="px-2.5 h-7 text-left font-medium whitespace-nowrap border-b border-r border-line" title={c.type}>
-                  {c.name}
-                  <span className="ml-1.5 text-[10px] text-faint font-normal">{c.type}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, k) => (
-              <tr key={k} className="hover:bg-panel-2/60">
-                <td className="sticky left-0 bg-bg px-2 text-right text-faint border-b border-r border-line/60 tabular-nums">{k + 1}</td>
-                {row.map((v, j) => (
-                  <td key={j} className="px-2.5 py-1 border-b border-r border-line/60 whitespace-nowrap max-w-[28rem] truncate align-top" title={v === null ? "NULL" : String(v)}>
-                    {v === null ? <span className="text-faint italic">NULL</span> : typeof v === "boolean" ? <span className="text-info">{String(v)}</span> : typeof v === "number" ? <span className="text-warn">{v}</span> : String(v)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  return <ResultGrid r={r} />;
 }
 
 function HistoryPicker({ items, onPick }: { items: HistoryItem[]; onPick: (sql: string) => void }) {
@@ -505,7 +556,21 @@ function HistoryPicker({ items, onPick }: { items: HistoryItem[]; onPick: (sql: 
   );
 }
 
-function ConfirmChange({ db, database, c, onCancel, onRun }: { db: string; database: string; c: DbNotRead & { sql: string }; onCancel: () => void; onRun: () => void }) {
+function ConfirmChange({
+  db,
+  database,
+  atomic,
+  c,
+  onCancel,
+  onRun,
+}: {
+  db: string;
+  database: string;
+  atomic: boolean;
+  c: DbNotRead & { sql: string };
+  onCancel: () => void;
+  onRun: () => void;
+}) {
   // a destructive script on a protected environment: type the database's name
   const typed = c.risk === "destructive" && c.protected;
   const [name, setName] = useState("");
@@ -542,7 +607,10 @@ function ConfirmChange({ db, database, c, onCancel, onRun }: { db: string; datab
         <pre className="max-h-64 overflow-auto rounded-md border border-line bg-panel-2 p-2.5 text-[12px] font-mono whitespace-pre-wrap">{c.sql}</pre>
         <div className="text-muted text-[12px] flex items-start gap-1.5">
           <Info className="size-3.5 mt-0.5 shrink-0" />
-          It runs as one transaction: if a statement fails, nothing is committed. It is recorded in the activity journal.
+          {atomic
+            ? "It runs as one transaction: if a statement fails, nothing is committed."
+            : "It runs statement by statement and stops at the first error: what ran before it stays (this engine has no transaction over a script)."}{" "}
+          It is recorded in the activity journal.
         </div>
         {typed && (
           <label className="block">
@@ -557,58 +625,88 @@ function ConfirmChange({ db, database, c, onCancel, onRun }: { db: string; datab
   );
 }
 
-function StructureDrawer({ ws, db, database, t, onClose }: { ws: string; db: string; database?: string; t: DbTable; onClose: () => void }) {
+function StructureDrawer({ ws, db, database, t, onClose, onShow }: { ws: string; db: string; database?: string; t: DbTable; onClose: () => void; onShow: () => void }) {
   const ti = useAsync(() => api.dbTable(ws, db, t.schema, t.name, database), [ws, db, database, t.schema, t.name]);
+  const kind = ti.data?.kind ?? "table";
+  const sub = [t.type, kind === "key" ? "" : t.schema, t.rows >= 0 ? `~${compact(t.rows)} ${kind === "collection" ? "documents" : kind === "key" ? "elements" : "rows"}` : ""].filter(Boolean).join(" · ");
   return (
-    <Drawer open onClose={onClose} width={620} title={<span className="font-mono">{t.name}</span>} subtitle={`${t.type} · ${t.schema}${t.rows >= 0 ? ` · ~${compact(t.rows)} rows` : ""}`}>
+    <Drawer
+      open
+      onClose={onClose}
+      width={620}
+      title={<span className="font-mono">{t.name}</span>}
+      subtitle={sub}
+      footer={
+        <Button icon={<Play className="size-3.5" />} onClick={onShow} title={t.query}>
+          Show content
+        </Button>
+      }
+    >
       {ti.loading && <Loading />}
       {ti.error && <ErrorBox error={ti.error} />}
       {ti.data && (
         <div className="space-y-5">
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="text-left text-faint text-[11px] uppercase tracking-wide">
-                <th className="py-1.5 font-medium">Column</th>
-                <th className="py-1.5 font-medium">Type</th>
-                <th className="py-1.5 font-medium">Null</th>
-                <th className="py-1.5 font-medium">Default</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ti.data.columns.map((c) => (
-                <tr key={c.name} className="border-t border-line">
-                  <td className="py-1.5 font-mono">
-                    {c.name}
-                    {c.primary && (
-                      <Badge tone="accent" className="ml-1.5">
-                        PK
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="py-1.5 font-mono text-muted">{c.type}</td>
-                  <td className="py-1.5 text-muted">{c.nullable ? "yes" : "no"}</td>
-                  <td className="py-1.5 font-mono text-faint truncate max-w-48" title={c.default ?? ""}>
-                    {c.default ?? ""}
-                  </td>
+          {ti.data.properties && ti.data.properties.length > 0 && (
+            <table className="w-full text-[12.5px]">
+              <tbody>
+                {ti.data.properties.map((p) => (
+                  <tr key={p.name} className="border-t border-line first:border-t-0">
+                    <td className="py-1.5 pr-4 text-muted whitespace-nowrap align-top">{p.name}</td>
+                    <td className="py-1.5 font-mono break-all">{p.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {ti.data.columns.length > 0 && (
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-faint text-[11px] uppercase tracking-wide">
+                  <th className="py-1.5 font-medium">{kind === "collection" ? "Field" : "Column"}</th>
+                  <th className="py-1.5 font-medium">{kind === "collection" ? "Types" : "Type"}</th>
+                  <th className="py-1.5 font-medium">Null</th>
+                  <th className="py-1.5 font-medium">{kind === "collection" ? "Present in" : "Default"}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-faint mb-1.5">Indexes</div>
-            {ti.data.indexes.length === 0 && <div className="text-faint text-[12px]">No indexes.</div>}
-            <div className="space-y-1.5">
-              {ti.data.indexes.map((ix) => (
-                <div key={ix.name} className="rounded-md border border-line bg-panel-2 px-2.5 py-1.5">
-                  <div className="flex items-center gap-1.5 text-[12.5px]">
-                    <span className="font-mono">{ix.name}</span>
-                    {ix.primary ? <Badge tone="accent">primary</Badge> : ix.unique && <Badge>unique</Badge>}
+              </thead>
+              <tbody>
+                {ti.data.columns.map((c) => (
+                  <tr key={c.name} className="border-t border-line">
+                    <td className="py-1.5 font-mono">
+                      {c.name}
+                      {c.primary && (
+                        <Badge tone="accent" className="ml-1.5">
+                          PK
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="py-1.5 font-mono text-muted">{c.type}</td>
+                    <td className="py-1.5 text-muted">{c.nullable ? "yes" : "no"}</td>
+                    <td className="py-1.5 font-mono text-faint truncate max-w-48" title={c.default ?? ""}>
+                      {c.default ?? (kind === "collection" ? "all" : "")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {ti.data.note && <div className="text-[12px] text-faint">{ti.data.note}</div>}
+          {kind !== "key" && (
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-faint mb-1.5">Indexes</div>
+              {ti.data.indexes.length === 0 && <div className="text-faint text-[12px]">No indexes.</div>}
+              <div className="space-y-1.5">
+                {ti.data.indexes.map((ix) => (
+                  <div key={ix.name} className="rounded-md border border-line bg-panel-2 px-2.5 py-1.5">
+                    <div className="flex items-center gap-1.5 text-[12.5px]">
+                      <span className="font-mono">{ix.name}</span>
+                      {ix.primary ? <Badge tone="accent">primary</Badge> : ix.unique && <Badge>unique</Badge>}
+                    </div>
+                    <div className="font-mono text-[11.5px] text-muted mt-0.5 break-all">{ix.definition}</div>
                   </div>
-                  <div className="font-mono text-[11.5px] text-muted mt-0.5 break-all">{ix.definition}</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </Drawer>

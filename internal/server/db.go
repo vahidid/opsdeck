@@ -13,9 +13,10 @@ import (
 	"opsdeck/internal/workspace"
 )
 
-// dbRoutes: the Databases page. Reads run in read-only transactions; a
-// script that is not a read answers 409 not_read until the user confirms it
-// (write: true), and confirmed changes are audited.
+// dbRoutes: the Databases page. Reads run so they cannot change data (SQL:
+// read-only transactions; MongoDB and Redis: only read operations); a script
+// that is not a read answers 409 not_read until the user confirms it (write:
+// true), and confirmed changes are audited.
 func (s *Server) dbRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http.HandlerFunc) {
 	D := "/api/workspaces/{ws}/databases/{db}"
 	mux.HandleFunc("GET "+D+"/info", u(s.dbRead(func(c *dbctx) (any, error) {
@@ -24,10 +25,10 @@ func (s *Server) dbRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http.Hand
 			return nil, err
 		}
 		env, protected := s.dbEnvironment(c.ws, c.res)
-		return map[string]any{"info": in, "path": dbx.Path(c.ws, c.res), "environment": env, "protected": protected}, nil
+		return map[string]any{"info": in, "path": dbx.Path(c.ws, c.res), "environment": env, "protected": protected, "atomic": dbx.Atomic(c.conn.Engine())}, nil
 	})))
 	mux.HandleFunc("GET "+D+"/databases", u(s.dbRead(func(c *dbctx) (any, error) { return c.conn.Databases(c.ctx) })))
-	mux.HandleFunc("GET "+D+"/tables", u(s.dbRead(func(c *dbctx) (any, error) { return c.conn.Tables(c.ctx) })))
+	mux.HandleFunc("GET "+D+"/tables", u(s.dbRead(func(c *dbctx) (any, error) { return c.conn.Tables(c.ctx, c.r.URL.Query().Get("match")) })))
 	mux.HandleFunc("GET "+D+"/table", u(s.dbRead(func(c *dbctx) (any, error) {
 		return c.conn.Table(c.ctx, c.r.URL.Query().Get("schema"), c.r.URL.Query().Get("name"))
 	})))
@@ -48,7 +49,7 @@ func (s *Server) dbRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http.Hand
 		}
 		env, protected := s.dbEnvironment(ws, res)
 		cls := dbx.Classify(engine, in.SQL)
-		writeJSON(w, 200, map[string]any{"risk": cls.Risk, "reasons": nonNil(cls.Reasons), "statements": len(cls.Statements), "environment": env, "protected": protected})
+		writeJSON(w, 200, map[string]any{"risk": cls.Risk, "reasons": nonNil(cls.Reasons), "statements": len(cls.Statements), "environment": env, "protected": protected, "atomic": dbx.Atomic(engine)})
 	}))
 	mux.HandleFunc("POST "+D+"/query", u(s.dbQuery))
 }
@@ -58,7 +59,7 @@ type dbctx struct {
 	r    *http.Request
 	ws   *workspace.Workspace
 	res  *workspace.Resource
-	conn *dbx.Conn
+	conn dbx.Session
 }
 
 func (s *Server) dbResource(w http.ResponseWriter, r *http.Request) (*workspace.Workspace, *workspace.Resource, bool) {
@@ -131,12 +132,13 @@ func (s *Server) dbQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Now()
-	cls, results, err := c.conn.Run(ctx, in.SQL, dbx.QueryOptions{Write: in.Write, MaxRows: in.MaxRows})
+	// the page shows whole values (up to 64K characters) in its cell viewer
+	cls, results, err := c.conn.Run(ctx, in.SQL, dbx.QueryOptions{Write: in.Write, MaxRows: in.MaxRows, CellLimit: 65536})
 	var notRead *dbx.NotReadError
 	if errors.As(err, &notRead) {
 		env, protected := s.dbEnvironment(c.ws, c.res)
 		writeJSON(w, 409, map[string]any{"error": err.Error(), "code": "not_read", "risk": cls.Risk, "reasons": nonNil(cls.Reasons),
-			"statements": len(cls.Statements), "environment": env, "protected": protected})
+			"statements": len(cls.Statements), "environment": env, "protected": protected, "atomic": dbx.Atomic(c.conn.Engine())})
 		return
 	}
 	if in.Write {
@@ -144,9 +146,9 @@ func (s *Server) dbQuery(w http.ResponseWriter, r *http.Request) {
 		if len(sql) > 4000 {
 			sql = sql[:4000] + "…"
 		}
-		s.record(r, c.ws.Name(), "db.query", c.res.ID(), map[string]any{"database": c.conn.Database, "sql": sql, "risk": cls.Risk, "statements": len(cls.Statements)}, err)
+		s.record(r, c.ws.Name(), "db.query", c.res.ID(), map[string]any{"database": c.conn.Database(), "sql": sql, "risk": cls.Risk, "statements": len(cls.Statements)}, err)
 	}
-	out := map[string]any{"risk": cls.Risk, "reasons": nonNil(cls.Reasons), "results": results, "database": c.conn.Database,
+	out := map[string]any{"risk": cls.Risk, "reasons": nonNil(cls.Reasons), "results": results, "database": c.conn.Database(),
 		"durationMs": time.Since(start).Milliseconds(), "committed": in.Write && err == nil}
 	if err != nil {
 		if results == nil { // nothing ran: no statement, a lost connection

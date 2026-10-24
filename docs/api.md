@@ -272,12 +272,12 @@ picks another database on the server). See [databases.md](databases.md).
 
 | Method | Path | |
 |---|---|---|
-| GET | `/info` | → `{info: {engine, version, user, database, address}, path, environment, protected}` |
-| GET | `/databases` | → `[name]` |
-| GET | `/tables` | → `[{schema, name, type, rows (estimate, -1 = unknown), bytes}]` |
-| GET | `/table?schema=&name=` | → `{schema, name, columns: [{name, type, nullable, default, primary}], indexes: [{name, definition, unique, primary}]}` |
-| POST | `/classify` | `{sql}` → `{risk, reasons, statements, environment, protected}` |
-| POST | `/query` | `{sql, database?, write?, maxRows?}` → `{risk, reasons, results: [{statement, columns?, rows?, truncated?, rowsAffected, durationMs, error?}], database, durationMs, committed, error?}`. A script that is not a read answers **409** `{code: "not_read", risk, reasons, statements, environment, protected}` until it is sent with `write: true` (audited as `db.query`). SQL errors are part of a 200 answer. |
+| GET | `/info` | → `{info: {engine (postgres, mysql, mongodb, redis), version, user, database, address}, path, environment, protected, atomic}` (`atomic`: a change script runs as one transaction) |
+| GET | `/databases` | → `[name]` (Redis: `"0"`, `"1"`, …) |
+| GET | `/tables?match=` | → `[{schema, name, type, rows (estimate, -1 = unknown), bytes, query}]`: tables and views, collections, or Redis keys (`match`: a SCAN pattern, at most 1,000 keys; `schema` is the part before the first `:`). `query` shows its content |
+| GET | `/table?schema=&name=` | → `{schema, name, kind (table, collection, key), columns: [{name, type, nullable, default, primary}], indexes: [{name, definition, unique, primary}], properties?: [{name, value}], note?}`. For a collection, fields come from sampled documents (`default` = how many have it); for a key, `properties` |
+| POST | `/classify` | `{sql}` → `{risk, reasons, statements, environment, protected, atomic}` |
+| POST | `/query` | `{sql, database?, write?, maxRows?}` (`sql` is the script in the engine's language) → `{risk, reasons, results: [{statement, columns?, rows?, truncated?, rowsAffected, durationMs, error?, note?}], database, durationMs, committed, error?}`. Values longer than 65,536 characters are cut; documents and arrays come as JSON. A script that is not a read answers **409** `{code: "not_read", risk, reasons, statements, environment, protected, atomic}` until it is sent with `write: true` (audited as `db.query`). Errors of a statement are part of a 200 answer. |
 
 ## Docker (on a Host, over SSH)
 

@@ -53,7 +53,7 @@ type Classification struct {
 // Reads are also run in a read-only transaction, so the database enforces
 // what the classifier allows; the classifier keeps out what such a
 // transaction still permits (killing sessions, writing server files...).
-func Classify(engine, sql string) Classification {
+func classifySQL(engine, sql string) Classification {
 	c := Classification{Risk: RiskRead}
 	for _, st := range splitStatements(engine, sql) {
 		s := classifyStatement(engine, st)

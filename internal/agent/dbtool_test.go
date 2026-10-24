@@ -17,7 +17,7 @@ id | name
 ---+-----
 1  | Ana
 22 | NULL
-(2 rows, more not shown: use LIMIT or a narrower query)
+(2 rows, more not shown: use a limit or a narrower query)
 
 -- 2: update users set name = 'x' where id = 1
 OK, 1 row(s) affected

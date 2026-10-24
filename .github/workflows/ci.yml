@@ -30,9 +30,20 @@ jobs:
         env: { MYSQL_ROOT_PASSWORD: rootpass, MYSQL_DATABASE: shop }
         ports: ["3306:3306"]
         options: --health-cmd "mysqladmin ping -prootpass" --health-interval 5s --health-retries 30
+      mongo:
+        image: mongo:7
+        env: { MONGO_INITDB_ROOT_USERNAME: root, MONGO_INITDB_ROOT_PASSWORD: rootpass }
+        ports: ["27017:27017"]
+        options: --health-cmd "mongosh --quiet --eval 'db.runCommand({ping: 1})'" --health-interval 5s --health-retries 30
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
     env:
       OPSDECK_TEST_POSTGRES: app:pgpass@127.0.0.1:5432/shop
       OPSDECK_TEST_MYSQL: root:rootpass@127.0.0.1:3306/shop
+      OPSDECK_TEST_MONGO: root:rootpass@127.0.0.1:27017/opsdeck_test
+      OPSDECK_TEST_REDIS: ":@127.0.0.1:6379/3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

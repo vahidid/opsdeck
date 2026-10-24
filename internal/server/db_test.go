@@ -21,18 +21,19 @@ import (
 )
 
 // TestDatabasesLive drives the Databases API against real servers, reached
-// through an SSH tunnel to a test host. Set OPSDECK_TEST_POSTGRES and/or
-// OPSDECK_TEST_MYSQL (comma-separated) to user:password@127.0.0.1:port/db.
+// through an SSH tunnel to a test host. Set OPSDECK_TEST_POSTGRES,
+// OPSDECK_TEST_MYSQL, OPSDECK_TEST_MONGO and/or OPSDECK_TEST_REDIS
+// (comma-separated) to user:password@127.0.0.1:port/db.
 func TestDatabasesLive(t *testing.T) {
 	targets := map[string][]string{}
-	if v := os.Getenv("OPSDECK_TEST_POSTGRES"); v != "" {
-		targets["postgres"] = strings.Split(v, ",")
-	}
-	if v := os.Getenv("OPSDECK_TEST_MYSQL"); v != "" {
-		targets["mysql"] = strings.Split(v, ",")
+	for engine, env := range map[string]string{"postgres": "OPSDECK_TEST_POSTGRES", "mysql": "OPSDECK_TEST_MYSQL",
+		"mongodb": "OPSDECK_TEST_MONGO", "redis": "OPSDECK_TEST_REDIS"} {
+		if v := os.Getenv(env); v != "" {
+			targets[engine] = strings.Split(v, ",")
+		}
 	}
 	if len(targets) == 0 {
-		t.Skip("set OPSDECK_TEST_POSTGRES / OPSDECK_TEST_MYSQL to user:password@host:port/db")
+		t.Skip("set OPSDECK_TEST_POSTGRES / _MYSQL / _MONGO / _REDIS to user:password@host:port/db")
 	}
 	t.Setenv("OPSDECK_HOME", t.TempDir())
 	srv, err := New(paths.Default(), Options{Port: 0})
@@ -75,21 +76,50 @@ func TestDatabasesLive(t *testing.T) {
 				{"name": "username", "value": u.User.Username(), "secret": false}, {"name": "password", "value": pw, "secret": true}}}, nil)
 			c.must("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "Database", "name": name, "environment": "prod",
 				"spec": map[string]any{"engine": engine, "address": u.Host, "host": "db-host", "database": strings.TrimPrefix(u.Path, "/"), "login": "vault://acme/" + login}}, nil)
-			t.Run(engine+"/"+u.Host, func(t *testing.T) { c.t = t; testDatabase(t, c, engine, name, strings.TrimPrefix(u.Path, "/")) })
+			t.Run(engine+"/"+u.Host, func(t *testing.T) {
+				c.t = t
+				switch engine {
+				case "mongodb":
+					testMongo(t, c, name, strings.TrimPrefix(u.Path, "/"))
+				case "redis":
+					testRedis(t, c, name, strings.TrimPrefix(u.Path, "/"))
+				default:
+					testDatabase(t, c, engine, name, strings.TrimPrefix(u.Path, "/"))
+				}
+			})
 		}
 	}
 }
 
-func testDatabase(t *testing.T, c *client, engine, name, database string) {
+type dbAnswer struct {
+	Risk      string
+	Reasons   []string
+	Error     string
+	Code      string
+	Atomic    bool
+	Committed bool
+	Results   []struct {
+		Columns      []struct{ Name string }
+		Rows         [][]any
+		Truncated    bool
+		RowsAffected int64
+		Error        string
+		Note         string
+	}
+}
+
+// dbCommon checks info and databases, and returns a function that runs a script.
+func dbCommon(t *testing.T, c *client, name, database string, atomic bool) func(script string, write bool, want int) dbAnswer {
 	D := "/api/workspaces/acme/databases/" + name
 	var info struct {
 		Info        map[string]any
 		Path        []string
 		Environment string
 		Protected   bool
+		Atomic      bool
 	}
 	c.must("GET", D+"/info", nil, &info)
-	if info.Info["version"] == "" || info.Info["database"] != database || len(info.Path) != 1 || info.Path[0] != "Host/db-host" || !info.Protected {
+	if info.Info["version"] == "" || info.Info["database"] != database || len(info.Path) != 1 || info.Path[0] != "Host/db-host" || !info.Protected || info.Atomic != atomic {
 		t.Fatalf("info: %+v", info)
 	}
 	var dbs []string
@@ -97,28 +127,19 @@ func testDatabase(t *testing.T, c *client, engine, name, database string) {
 	if !contains(dbs, database) {
 		t.Fatalf("databases: %v", dbs)
 	}
-	type answer struct {
-		Risk      string
-		Reasons   []string
-		Error     string
-		Code      string
-		Committed bool
-		Results   []struct {
-			Columns      []struct{ Name string }
-			Rows         [][]any
-			Truncated    bool
-			RowsAffected int64
-			Error        string
-		}
-	}
-	run := func(sql string, write bool, want int) answer {
+	return func(script string, write bool, want int) dbAnswer {
 		t.Helper()
-		var a answer
-		if code := c.do("POST", D+"/query", map[string]any{"sql": sql, "write": write, "maxRows": 2}, &a); code != want {
-			t.Fatalf("%q write=%v: %d, want %d (%+v)", sql, write, code, want, a)
+		var a dbAnswer
+		if code := c.do("POST", D+"/query", map[string]any{"sql": script, "write": write, "maxRows": 2}, &a); code != want {
+			t.Fatalf("%q write=%v: %d, want %d (%+v)", script, write, code, want, a)
 		}
 		return a
 	}
+}
+
+func testDatabase(t *testing.T, c *client, engine, name, database string) {
+	D := "/api/workspaces/acme/databases/" + name
+	run := dbCommon(t, c, name, database, true)
 	run("drop table if exists t_opsdeck", true, 200)
 	// a change is refused as a read, and runs once confirmed
 	if a := run("create table t_opsdeck (id int primary key, name varchar(50))", false, 409); a.Code != "not_read" || a.Risk != "change" {
@@ -187,12 +208,104 @@ func testDatabase(t *testing.T, c *client, engine, name, database string) {
 	run("drop function opsdeck_w", true, 200)
 
 	// the agent: describe and select run directly, the update waits for approval
+	outputs := agentRound(t, c, name, "t_opsdeck", "select id, name from t_opsdeck order by id", "update t_opsdeck set name = 'z' where id = 1")
+	if !strings.Contains(outputs[0], "PK") || !strings.Contains(outputs[1], "| a") || !strings.Contains(outputs[1], "(3 rows)") ||
+		!strings.Contains(outputs[2], "1 row(s) affected") || !strings.Contains(outputs[2], "committed") {
+		t.Fatalf("agent results:\n%s", strings.Join(outputs, "\n----\n"))
+	}
+	if a := run("select name from t_opsdeck where id = 1", false, 200); a.Results[0].Rows[0][0] != "z" {
+		t.Fatalf("approved update not applied: %+v", a)
+	}
+	run("drop table t_opsdeck", true, 200)
+}
+
+func testMongo(t *testing.T, c *client, name, database string) {
+	D := "/api/workspaces/acme/databases/" + name
+	run := dbCommon(t, c, name, database, false)
+	run("db.t_opsdeck.drop()", true, 200)
+	if a := run(`db.t_opsdeck.insertMany([{_id: 1, name: "a", tags: ["x"]}, {_id: 2, name: "b"}, {_id: 3, name: "c", nested: {k: 1}}])`, false, 409); a.Code != "not_read" || a.Atomic {
+		t.Fatalf("insert as read: %+v", a)
+	}
+	if a := run(`db.t_opsdeck.insertMany([{_id: 1, name: "a", tags: ["x"]}, {_id: 2, name: "b"}, {_id: 3, name: "c", nested: {k: 1}}])`, true, 200); a.Results[0].RowsAffected != 3 {
+		t.Fatalf("insert: %+v", a)
+	}
+	a := run(`db.t_opsdeck.find().sort({_id: 1})`, false, 200)
+	if r := a.Results[0]; len(r.Rows) != 2 || !r.Truncated || r.Columns[0].Name != "_id" || r.Rows[0][1] != "a" {
+		t.Fatalf("find: %+v", a)
+	}
+	// statement by statement: the first insert stays when the second fails
+	if a := run(`db.t_opsdeck.insertOne({_id: 4})
+		db.t_opsdeck.insertOne({_id: 1})`, true, 200); a.Error == "" || a.Committed || len(a.Results) != 2 {
+		t.Fatalf("failing change: %+v", a)
+	}
+	if a := run(`db.t_opsdeck.countDocuments()`, false, 200); fmt.Sprint(a.Results[0].Rows[0][0]) != "4" {
+		t.Fatalf("count: %+v", a)
+	}
+	if a := run(`db.t_opsdeck.deleteMany({})`, false, 409); a.Risk != "destructive" {
+		t.Fatalf("deleteMany as read: %+v", a)
+	}
+	var tables []map[string]any
+	c.must("GET", D+"/tables", nil, &tables)
+	found := false
+	for _, tb := range tables {
+		found = found || (tb["name"] == "t_opsdeck" && tb["query"] == "db.t_opsdeck.find({}).limit(100)")
+	}
+	if !found {
+		t.Fatalf("tables: %v", tables)
+	}
+	outputs := agentRound(t, c, name, "t_opsdeck", `db.t_opsdeck.find({}, {name: 1}).sort({_id: 1})`, `db.t_opsdeck.updateOne({_id: 1}, {$set: {name: "z"}})`)
+	if !strings.Contains(outputs[0], "_id") || !strings.Contains(outputs[0], "fields of the 4") || !strings.Contains(outputs[1], "| a") ||
+		!strings.Contains(outputs[2], "matched 1, modified 1") || strings.Contains(outputs[2], "committed") {
+		t.Fatalf("agent results:\n%s", strings.Join(outputs, "\n----\n"))
+	}
+	if a := run(`db.t_opsdeck.findOne({_id: 1})`, false, 200); a.Results[0].Rows[0][1] != "z" {
+		t.Fatalf("approved update not applied: %+v", a)
+	}
+	run("db.t_opsdeck.drop()", true, 200)
+}
+
+func testRedis(t *testing.T, c *client, name, database string) {
+	D := "/api/workspaces/acme/databases/" + name
+	run := dbCommon(t, c, name, database, false)
+	run("DEL t_opsdeck:1 t_opsdeck:2", true, 200)
+	if a := run("HSET t_opsdeck:1 name a born 1815", false, 409); a.Code != "not_read" {
+		t.Fatalf("hset as read: %+v", a)
+	}
+	run("HSET t_opsdeck:1 name a born 1815\nSET t_opsdeck:2 \"two words\"", true, 200)
+	if a := run("HGETALL t_opsdeck:1\nGET t_opsdeck:2", false, 200); len(a.Results) != 2 || a.Results[0].Rows[0][1] != "a" || a.Results[1].Rows[0][0] != "two words" {
+		t.Fatalf("read: %+v", a)
+	}
+	if a := run("MULTI", true, 400); !strings.Contains(a.Error, "transactions") {
+		t.Fatalf("multi: %+v", a)
+	}
+	if a := run("FLUSHALL", false, 409); a.Risk != "destructive" {
+		t.Fatalf("flushall as read: %+v", a)
+	}
+	var tables []map[string]any
+	c.must("GET", D+"/tables?match="+url.QueryEscape("t_opsdeck:*"), nil, &tables)
+	if len(tables) != 2 || tables[0]["query"] != "HGETALL t_opsdeck:1" || tables[0]["schema"] != "t_opsdeck" {
+		t.Fatalf("tables: %v", tables)
+	}
+	outputs := agentRound(t, c, name, "t_opsdeck:1", "HGET t_opsdeck:1 name", "HSET t_opsdeck:1 name z")
+	if !strings.Contains(outputs[0], "hash") || !strings.Contains(outputs[1], "a") || !strings.Contains(outputs[2], "0") {
+		t.Fatalf("agent results:\n%s", strings.Join(outputs, "\n----\n"))
+	}
+	if a := run("HGET t_opsdeck:1 name", false, 200); a.Results[0].Rows[0][0] != "z" {
+		t.Fatalf("approved change not applied: %+v", a)
+	}
+	run("DEL t_opsdeck:1 t_opsdeck:2", true, 200)
+}
+
+// agentRound has the agent describe table, run read, then change (which
+// must wait for approval); it returns the three tool outputs.
+func agentRound(t *testing.T, c *client, name, table, read, change string) []string {
+	t.Helper()
 	fake := fakellm.New([]fakellm.Turn{
 		{Text: "Looking at the table.", Tools: []fakellm.ToolCall{
-			{Name: "database", Args: map[string]any{"database": name, "action": "describe", "table": "t_opsdeck"}},
-			{Name: "database", Args: map[string]any{"database": name, "action": "query", "sql": "select id, name from t_opsdeck order by id"}},
+			{Name: "database", Args: map[string]any{"database": name, "action": "describe", "table": table}},
+			{Name: "database", Args: map[string]any{"database": name, "action": "query", "script": read}},
 		}},
-		{Tools: []fakellm.ToolCall{{Name: "database", Args: map[string]any{"database": name, "action": "query", "sql": "update t_opsdeck set name = 'z' where id = 1"}}}},
+		{Tools: []fakellm.ToolCall{{Name: "database", Args: map[string]any{"database": name, "action": "query", "sql": change}}}},
 		{Text: "Done."},
 	})
 	defer fake.Close()
@@ -214,7 +327,7 @@ func testDatabase(t *testing.T, c *client, engine, name, database string) {
 		for _, ev := range full.Events {
 			if ev["type"] == "approval_request" && approvals == 0 {
 				approvals++
-				if !strings.Contains(fmt.Sprint(ev), "update t_opsdeck") {
+				if !strings.Contains(fmt.Sprint(ev), change) {
 					t.Fatalf("approval for the wrong call: %v", ev)
 				}
 				c.must("POST", "/api/workspaces/acme/sessions/"+sid+"/approvals/"+ev["approvalId"].(string), map[string]string{"decision": "approve"}, nil)
@@ -227,22 +340,17 @@ func testDatabase(t *testing.T, c *client, engine, name, database string) {
 	}
 	var outputs []string
 	for _, ev := range full.Events {
-		if ev["type"] == "approval_request" && !strings.Contains(fmt.Sprint(ev), "update t_opsdeck") {
+		if ev["type"] == "approval_request" && !strings.Contains(fmt.Sprint(ev), change) {
 			t.Errorf("a read asked for approval: %v", ev)
 		}
 		if ev["type"] == "tool_result" {
 			outputs = append(outputs, fmt.Sprint(ev["output"]))
 		}
 	}
-	all := strings.Join(outputs, "\n----\n")
-	if len(outputs) != 3 || !strings.Contains(outputs[0], "PK") || !strings.Contains(outputs[1], "| a") || !strings.Contains(outputs[1], "(3 rows)") ||
-		!strings.Contains(outputs[2], "1 row(s) affected") || !strings.Contains(outputs[2], "committed") {
-		t.Fatalf("agent results:\n%s", all)
+	if len(outputs) != 3 || approvals != 1 {
+		t.Fatalf("agent: %d approvals, outputs:\n%s", approvals, strings.Join(outputs, "\n----\n"))
 	}
-	if a := run("select name from t_opsdeck where id = 1", false, 200); a.Results[0].Rows[0][0] != "z" {
-		t.Fatalf("approved update not applied: %+v", a)
-	}
-	run("drop table t_opsdeck", true, 200)
+	return outputs
 }
 
 func contains(list []string, s string) bool {

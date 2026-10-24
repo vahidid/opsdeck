@@ -145,12 +145,13 @@ You can turn the check off, or check now, under *App settings → Updates*.
   restart / set image / cordon / drain, YAML editing and **Apply** with a server-side
   dry-run diff, live events, Secrets revealed only on request, and Helm releases — see
   [docs/kubernetes.md](docs/kubernetes.md).
-- **Databases** — PostgreSQL, MySQL and MariaDB through the workspace's VPNs, jump hosts or an
-  SSH tunnel to the database's host, with the login from the vault: databases, tables,
-  columns and indexes, and a SQL editor with results as a table. Reads run in a read-only
-  transaction; anything else is shown for confirmation first and runs as one transaction.
-  The agent's `database` tool works the same way, with changes on its approval card — see
-  [docs/databases.md](docs/databases.md).
+- **Databases** — PostgreSQL, MySQL, MariaDB, MongoDB and Redis through the workspace's VPNs,
+  jump hosts or an SSH tunnel to the database's host, with the login from the vault:
+  databases, tables, collections and keys with their structure, and an editor for SQL,
+  MongoDB queries or Redis commands. Results come in a grid with a viewer for whole values
+  and rows (JSON indented), sorting, filtering and CSV/JSON export. Reads cannot change data;
+  anything else is shown for confirmation first. The agent's `database` tool works the same
+  way, with changes on its approval card — see [docs/databases.md](docs/databases.md).
 - **Ansible** — projects from a folder (new or existing) or a folder of a workspace Git
   repository, with a complete editor: playbooks, task files, inventories (YAML and INI),
   variables and requirements in visual views (plays, tasks with module options from
@@ -211,7 +212,7 @@ You can turn the check off, or check now, under *App settings → Updates*.
     <td><img src="docs/assets/screenshot-settings-agents.png" alt="Models reported by the Claude Code CLI in the settings"><br><sub><b>Local agents</b>: use Claude Code, Codex, Gemini CLI or an ACP agent and pick its models from the list it reports.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/assets/screenshot-databases.png" alt="A SQL query on a PostgreSQL database with its results"><br><sub><b>Databases</b>: PostgreSQL, MySQL and MariaDB tables, structure and a SQL editor; reads run in a read-only transaction.</sub></td>
+    <td><img src="docs/assets/screenshot-databases.png" alt="A MongoDB query with a nested document open in the value viewer"><br><sub><b>Databases</b>: PostgreSQL, MySQL, MariaDB, MongoDB and Redis; the whole value of a cell, JSON indented, beside the results.</sub></td>
     <td><img src="docs/assets/screenshot-databases-confirm.png" alt="Confirming an UPDATE on a production database"><br><sub><b>Changes ask first</b>: an UPDATE on a protected database is shown with its risk and runs as one transaction.</sub></td>
   </tr>
   <tr>
@@ -298,7 +299,8 @@ The Go test suite runs real SSH servers (exec, PTY, SFTP, jump hosts), userspace
 WireGuard peers, a stdio MCP server and scripted models — no external infrastructure
 needed. The Docker and Kubernetes integration tests also run against a local `dockerd` and
 k3s cluster when one is present (`OPSDECK_TEST_KUBECONFIG`), the Databases tests against
-PostgreSQL and MySQL/MariaDB servers (`OPSDECK_TEST_POSTGRES`, `OPSDECK_TEST_MYSQL` =
+PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
+`OPSDECK_TEST_MYSQL`, `OPSDECK_TEST_MONGO`, `OPSDECK_TEST_REDIS` =
 `user:password@host:port/db`, as CI does), and the Ansible tests against an installed
 `ansible-core`; they are skipped otherwise.
 
@@ -338,7 +340,7 @@ PostgreSQL and MySQL/MariaDB servers (`OPSDECK_TEST_POSTGRES`, `OPSDECK_TEST_MYS
 - [docs/skills.md](docs/skills.md) — skills, the built-in library
 - [docs/docker.md](docs/docker.md) — Docker: containers, compose, swarm, volumes, logs
 - [docs/kubernetes.md](docs/kubernetes.md) — Kubernetes: resources, logs, exec, apply with diff, rollouts, Helm
-- [docs/databases.md](docs/databases.md) — Databases: PostgreSQL / MySQL, reads and changes, the agent's database tool
+- [docs/databases.md](docs/databases.md) — Databases: PostgreSQL, MySQL, MongoDB, Redis; reads and changes, the results grid, the agent's database tool
 - [docs/scripts.md](docs/scripts.md) — scripts: your library and the workspace's, approval, running on hosts
 - [docs/ansible.md](docs/ansible.md) — Ansible: projects, Ansible Vault, runs and logs, the agent's tools and password prompt
 - [docs/api.md](docs/api.md) — local HTTP API used by the UI

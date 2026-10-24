@@ -81,6 +81,8 @@ the MCP bridge at `/mcp/` (streamable HTTP, `Authorization: Bearer <per-turn tok
 | GET | `/api/workspaces` | → `[WorkspaceSummary]` |
 | POST | `/api/workspaces` | `{name, title, description, color}` |
 | POST | `/api/workspaces/import` | `{path}` (register an existing folder) |
+| POST | `/api/workspaces/{ws}/export` | `{password}` → export file (JSON, encrypted; see workspace.md) |
+| POST | `/api/workspaces/import-file` | `{bundle, password}` (`bundle` is the export file) → `{workspace, items, skipped}` |
 | GET | `/api/workspaces/{ws}` | → `Workspace` |
 | PUT | `/api/workspaces/{ws}` | `Workspace` (name immutable) |
 | DELETE | `/api/workspaces/{ws}?purgeVault=1` | |

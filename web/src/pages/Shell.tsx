@@ -4,6 +4,7 @@ import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import {
   ChevronDown,
   ChevronsUpDown,
+  FileKey,
   FolderInput,
   Lock,
   Moon,
@@ -293,13 +294,15 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
   const { reloadWorkspaces } = useApp();
   const toast = useToast();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"new" | "import">("new");
+  const [tab, setTab] = useState<"new" | "import" | "file">("new");
   const [title, setTitle] = useState("");
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [color, setColor] = useState(WORKSPACE_COLORS[0]);
   const [path, setPath] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -310,13 +313,31 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
       setNameTouched(false);
       setDescription("");
       setPath("");
+      setFile(null);
+      setPassword("");
       setErr("");
       setColor(WORKSPACE_COLORS[Math.floor(Math.random() * WORKSPACE_COLORS.length)]);
     }
   }, [open]);
 
   const effName = nameTouched ? name : slugify(title);
-  const valid = useMemo(() => (tab === "new" ? /^[a-z0-9][a-z0-9-]{0,47}$/.test(effName) : path.trim().length > 0), [tab, effName, path]);
+  const valid = useMemo(
+    () => (tab === "new" ? /^[a-z0-9][a-z0-9-]{0,47}$/.test(effName) : tab === "import" ? path.trim().length > 0 : !!file && password.length > 0),
+    [tab, effName, path, file, password],
+  );
+
+  async function importFile() {
+    let bundle: unknown;
+    try {
+      bundle = JSON.parse(await file!.text());
+    } catch {
+      throw new Error("This is not an opsdeck workspace export.");
+    }
+    const r = await api.importWorkspaceFile(bundle, password);
+    const kept = r.skipped ? `, ${r.skipped} kept from this vault` : "";
+    toast.success("Workspace imported", `${r.workspace.title || r.workspace.name}: ${r.items} vault item${r.items === 1 ? "" : "s"}${kept}`);
+    return r.workspace;
+  }
 
   async function submit() {
     setBusy(true);
@@ -325,9 +346,11 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
       const w =
         tab === "new"
           ? await api.createWorkspace({ name: effName, title: title || effName, description, color })
-          : await api.importWorkspace(path.trim());
+          : tab === "import"
+            ? await api.importWorkspace(path.trim())
+            : await importFile();
       await reloadWorkspaces();
-      toast.success(tab === "new" ? "Workspace created" : "Workspace imported", w.title || w.name);
+      if (tab !== "file") toast.success(tab === "new" ? "Workspace created" : "Workspace imported", w.title || w.name);
       onClose();
       navigate(`/w/${encodeURIComponent(w.name)}/overview`);
     } catch (e) {
@@ -361,6 +384,7 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
         tabs={[
           { id: "new", label: "New workspace" },
           { id: "import", label: "Import existing folder" },
+          { id: "file", label: "Import export file" },
         ]}
       />
       {tab === "new" ? (
@@ -396,6 +420,22 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
               ))}
             </div>
           </div>
+        </div>
+      ) : tab === "file" ? (
+        <div className="space-y-3">
+          <div className="flex gap-2.5 text-muted">
+            <FileKey className="size-5 shrink-0" />
+            <p>
+              Open a file made with <i>Export workspace</i> in workspace settings. Its hosts, resources, docs and vault items are added here; the secrets are stored in your vault under
+              your own master password.
+            </p>
+          </div>
+          <FormField label="Export file" required>
+            <Input type="file" accept=".opsdeck,.json" className="pt-1" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </FormField>
+          <FormField label="File password" required help="The password chosen when the file was exported.">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && valid && void submit()} />
+          </FormField>
         </div>
       ) : (
         <div className="space-y-3">

@@ -47,6 +47,32 @@ trace a result back to the agent session that produced it.
 Still outside the folder: the vault (one per machine, with a separate scope per
 workspace) and the global audit journal.
 
+## Export and import
+
+*Workspace settings → Export workspace* writes one file (`<name>-<date>.opsdeck`) with the
+workspace's files and the items of its vault scope, so a workspace can be moved to another
+machine or handed to a teammate without a shared git repository:
+
+| included | left out |
+|---|---|
+| `workspace.yaml`, `resources/`, `topology.yaml` | `.opsdeck/` (agent sessions, known_hosts, run history) |
+| `OPSDECK.md`, `MEMORY.md`, `docs/`, `skills/` | `reports/`, `artifacts/` |
+| `scripts/`, `ansible/` | `repos/` (Git working copies), `.git/` |
+| the workspace's vault scope (current revisions) | the global vault scope, item history |
+
+The content is gzip-compressed JSON encrypted with XChaCha20-Poly1305 under a key derived
+from the password you type at export time (Argon2id, the vault's parameters); only the
+format, version, date and KDF parameters are readable without it. Choose a password other
+than your master password when the file goes to someone else.
+
+*New / import workspace → Import export file* asks for that password, decrypts the file
+once, creates the workspace under its original name in the workspaces folder and adds the
+secrets to the local vault, where they are encrypted with that vault's own keys (as if
+they had been entered by hand). The import fails if a workspace with that name already
+exists; items already in a leftover vault scope of the same name are kept. MCP servers
+from an imported workspace need to be trusted again before they run. References to the
+global scope (`vault://global/…`) show up in validation until the receiving user adds them.
+
 ## workspace.yaml
 
 ```yaml

@@ -23,7 +23,7 @@ var toolNeeds = map[string][]string{
 	"repo":       {"GitRemote"}, "repo_files": {"GitRemote"}, "repo_write": {"GitRemote"}, "merge_request": {"GitRemote"}, "git_sync": {"GitRemote"},
 	"ansible": {"AnsibleProject"}, "ansible_run": {"AnsibleProject"}, "ansible_vault": {"AnsibleProject"},
 	"vpn":           workspace.NetworkKinds,
-	"http_request":  {"Panel"},
+	"http_request":  {"Panel", "Prometheus", "Loki", "Elasticsearch"},
 	"metrics_query": {"Prometheus"},
 	"logs_query":    {"Loki", "Elasticsearch"},
 }

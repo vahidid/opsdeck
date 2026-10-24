@@ -290,7 +290,8 @@ func Tools() []Tool {
 		toolWorkspaceResource(), toolVaultList(), toolVaultAddItem(), toolVPN(),
 		toolScript(), toolRunScript(),
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
-		toolReadOutput(), toolWebSearch(), toolWebFetch(),
+		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
+		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(),
 	}
 }
 
@@ -300,7 +301,7 @@ func toolInventory() Tool {
 	return Tool{
 		Def: llm.Tool{Name: "inventory", Description: "List the workspace's resources (hosts, groups, networks, panels, clusters, databases, git remotes) with addresses, environments, roles and how each is reached. Never contains secrets. Filter by kind, environment or a text query.",
 			Schema: obj(map[string]any{
-				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, GitRemote, Database, KubernetesCluster"),
+				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, Prometheus, Loki, Elasticsearch, GitRemote, Database, KubernetesCluster, AnsibleProject"),
 				"environment": str("Optional environment filter"),
 				"query":       str("Optional case-insensitive text to match in name, address, tags, roles or description"),
 			})},

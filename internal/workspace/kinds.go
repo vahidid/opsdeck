@@ -43,6 +43,17 @@ var (
 		Help: "window: a login window opsdeck drives (Chrome/Edge/Chromium/Brave; remembers your IdP login per profile, so later logins are usually automatic). system: your default browser (AnyConnect external-browser and FortiGate only). auto: window when such a browser is installed"}
 )
 
+// apiFields are shared by HTTP API resources (panels, Prometheus, Loki,
+// Elasticsearch): how the agent authenticates and trusts the server.
+var apiFields = []FieldSchema{
+	{Key: "token", Label: "API token", Type: "secretRef", ItemTypes: []string{"token"}, Advanced: true,
+		Help: "Sent instead of the login, as Authorization: Bearer <token> unless a header is set below (Elasticsearch: ApiKey)"},
+	{Key: "authHeader", Label: "Token header", Type: "string", Placeholder: "Authorization", Advanced: true,
+		Help: "Header that carries the token, e.g. X-API-Key or PRIVATE-TOKEN (the token is sent as it is)"},
+	{Key: "caCert", Label: "CA certificate (PEM)", Type: "text", Advanced: true, Help: "For a server with a private CA"},
+	{Key: "insecure", Label: "Skip TLS verification", Type: "bool", Advanced: true, Help: "Only for self-signed test servers"},
+}
+
 // Kinds is the registry of resource kinds.
 var Kinds = []KindSchema{
 	{Kind: "Host", Label: "Host", Category: "compute", Icon: "server", CanVia: true, Fields: []FieldSchema{
@@ -101,10 +112,10 @@ var Kinds = []KindSchema{
 		{Key: "address", Label: "Address", Type: "string", Required: true, Placeholder: "127.0.0.1:1080"},
 		{Key: "auth", Label: "Credential", Type: "secretRef", ItemTypes: []string{"login"}},
 	}},
-	{Kind: "Panel", Label: "Web panel", Category: "service", Icon: "app-window", CanVia: true, Fields: []FieldSchema{
+	{Kind: "Panel", Label: "Web panel / API", Category: "service", Icon: "app-window", CanVia: true, Fields: append([]FieldSchema{
 		{Key: "url", Label: "URL", Type: "string", Required: true, Placeholder: "https://grafana.internal"},
-		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}},
-	}},
+		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "Username and password: sent as HTTP Basic auth when the agent calls the API (http_request)"},
+	}, apiFields...)},
 	{Kind: "GitRemote", Label: "Git repository", Category: "service", Icon: "git-branch", CanVia: true, Fields: []FieldSchema{
 		{Key: "connection", Label: "Connector", Type: "gitConnection",
 			Help: "The GitHub or GitLab account (Connectors) used for this repository. Empty: the connector whose server matches the URL, if any"},
@@ -153,6 +164,22 @@ var Kinds = []KindSchema{
 		{Key: "authSource", Label: "Auth database", Type: "string", Placeholder: "admin", Advanced: true,
 			Help: "MongoDB: the database the user is defined in"},
 	}},
+	{Kind: "Prometheus", Label: "Prometheus", Category: "service", Icon: "activity", CanVia: true, Fields: append([]FieldSchema{
+		{Key: "url", Label: "URL", Type: "string", Required: true, Placeholder: "http://prometheus.internal:9090",
+			Help: "Prometheus or a compatible API (VictoriaMetrics, Thanos, Mimir: the URL that serves /api/v1/query)"},
+		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "HTTP Basic auth, if any"},
+	}, apiFields...)},
+	{Kind: "Loki", Label: "Loki", Category: "service", Icon: "scroll-text", CanVia: true, Fields: append([]FieldSchema{
+		{Key: "url", Label: "URL", Type: "string", Required: true, Placeholder: "http://loki.internal:3100"},
+		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "HTTP Basic auth, if any"},
+		{Key: "tenant", Label: "Tenant", Type: "string", Help: "X-Scope-OrgID of a multi-tenant Loki"},
+	}, apiFields...)},
+	{Kind: "Elasticsearch", Label: "Elasticsearch / OpenSearch", Category: "service", Icon: "search", CanVia: true, Fields: append([]FieldSchema{
+		{Key: "url", Label: "URL", Type: "string", Required: true, Placeholder: "https://es.internal:9200"},
+		{Key: "login", Label: "Login", Type: "secretRef", ItemTypes: []string{"login"}, Help: "HTTP Basic auth"},
+		{Key: "index", Label: "Log indices", Type: "string", Placeholder: "logs-*", Help: "Index pattern the agent searches for logs (default: all)"},
+		{Key: "timeField", Label: "Time field", Type: "string", Placeholder: "@timestamp", Advanced: true},
+	}, apiFields...)},
 	{Kind: "KubernetesCluster", Label: "Kubernetes cluster", Category: "cluster", Icon: "boxes", CanVia: true, Fields: []FieldSchema{
 		{Key: "kubeconfig", Label: "Kubeconfig", Type: "secretRef", Required: true, ItemTypes: []string{"kubeconfig"}},
 		{Key: "context", Label: "Context", Type: "string", Help: "Defaults to the kubeconfig's current context"},

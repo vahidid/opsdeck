@@ -600,6 +600,10 @@ func typeForResource(r *workspace.Resource) (string, string) {
 		return "git", ""
 	case "SocksProxy":
 		return "forward-proxy", ""
+	case "Prometheus":
+		return "monitoring", ""
+	case "Loki", "Elasticsearch":
+		return "logging", ""
 	}
 	if workspace.IsNetworkKind(r.Kind) {
 		return "vpn-gateway", "remote access"
@@ -638,6 +642,13 @@ func ImportInventory(t *Topology, w *workspace.Workspace) []string {
 			}
 		case "GitRemote":
 			n.Addresses = []string{r.Str("url")}
+		case "Prometheus", "Loki", "Elasticsearch", "Panel":
+			if u := r.Str("url"); u != "" {
+				n.Addresses = []string{u}
+			}
+			if r.Kind != "Panel" {
+				n.Tech = []string{r.Kind}
+			}
 		default:
 			if workspace.IsNetworkKind(r.Kind) {
 				n.Tech = []string{r.Kind}

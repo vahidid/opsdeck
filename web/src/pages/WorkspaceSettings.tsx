@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Plug, Save, Settings, ShieldAlert, Trash2 } from "lucide-react";
+import { Download, Plus, Plug, Save, Settings, ShieldAlert, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { McpServer, PermissionRule, Workspace } from "../api/types";
 import { useApp, useWs } from "../context/app";
@@ -9,6 +9,7 @@ import { useConfirm, useToast } from "../components/overlay";
 import { SecretRefPicker } from "../components/VaultItemForm";
 import { useAsync } from "../hooks";
 import { WORKSPACE_COLORS } from "../lib/format";
+import { saveFile } from "../lib/desktop";
 
 export function WorkspaceSettingsPage() {
   const { name: ws, workspace, reload } = useWs();
@@ -312,6 +313,8 @@ export function WorkspaceSettingsPage() {
           </div>
         </Card>
 
+        <ExportCard ws={ws} />
+
         <Card title={<span className="text-err">Danger zone</span>} className="border-err/30">
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs text-muted">Delete this workspace, its local state and its vault scope. This cannot be undone.</div>
@@ -348,5 +351,55 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
         ))}
       </div>
     </div>
+  );
+}
+
+function ExportCard({ ws }: { ws: string }) {
+  const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const problem = password.length < 8 ? "At least 8 characters" : password !== repeat ? "The passwords do not match" : "";
+
+  async function exportWs() {
+    setBusy(true);
+    try {
+      const file = await api.exportWorkspace(ws, password);
+      const day = new Date().toISOString().slice(0, 10);
+      await saveFile(new Blob([JSON.stringify(file)], { type: "application/json" }), `${ws}-${day}.opsdeck`);
+      setPassword("");
+      setRepeat("");
+    } catch (e) {
+      toast.error("Export failed", errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card
+      title={
+        <>
+          <Download className="size-4 text-muted" /> Export workspace
+        </>
+      }
+    >
+      <div className="text-xs text-muted mb-3">
+        One file with this workspace's hosts and resources, docs, skills, scripts and the items of its vault scope, encrypted with the password below. Import it on another machine
+        with <i>New / import workspace → Import export file</i>. Agent sessions, reports, artifacts, Git working copies and items of the global vault scope are not included. Anyone with
+        the file and the password can read the secrets: when you hand it to someone, choose a password other than your master password.
+      </div>
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+        <FormField label="File password">
+          <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </FormField>
+        <FormField label="Repeat password">
+          <Input type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+        </FormField>
+        <Button icon={<Download className="size-3.5" />} onClick={exportWs} loading={busy} disabled={!!problem} title={problem}>
+          Export
+        </Button>
+      </div>
+    </Card>
   );
 }

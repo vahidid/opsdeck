@@ -214,6 +214,10 @@ export const api = {
   createWorkspace: (b: { name: string; title: string; description: string; color: string }) =>
     post<WorkspaceSummary>("/api/workspaces", b),
   importWorkspace: (path: string) => post<WorkspaceSummary>("/api/workspaces/import", { path }),
+  /** the workspace and its vault scope as one file encrypted with password */
+  exportWorkspace: (ws: string, password: string) => post<unknown>(`${W(ws)}/export`, { password }),
+  importWorkspaceFile: (bundle: unknown, password: string) =>
+    post<{ workspace: WorkspaceSummary; items: number; skipped: number }>("/api/workspaces/import-file", { bundle, password }),
   workspace: (ws: string) => get<Workspace>(W(ws)),
   saveWorkspace: (ws: string, w: Workspace) => put<Workspace>(W(ws), w),
   deleteWorkspace: (ws: string, purgeVault: boolean) => del(`${W(ws)}${qs({ purgeVault: purgeVault ? 1 : undefined })}`),

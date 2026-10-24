@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 
 	"opsdeck/internal/agent"
 	"opsdeck/internal/ansible"
+	"opsdeck/internal/bundle"
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/extagent"
@@ -72,9 +74,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces", u(s.wsList))
 	mux.HandleFunc("POST /api/workspaces", u(s.wsCreate))
 	mux.HandleFunc("POST /api/workspaces/import", u(s.wsImport))
+	mux.HandleFunc("POST /api/workspaces/import-file", u(s.wsImportFile))
 	mux.HandleFunc("GET /api/workspaces/{ws}", u(s.wsGet))
 	mux.HandleFunc("PUT /api/workspaces/{ws}", u(s.wsPut))
 	mux.HandleFunc("DELETE /api/workspaces/{ws}", u(s.wsDelete))
+	mux.HandleFunc("POST /api/workspaces/{ws}/export", u(s.wsExport))
 	mux.HandleFunc("GET /api/workspaces/{ws}/resources", u(s.resList))
 	mux.HandleFunc("POST /api/workspaces/{ws}/resources", u(s.resCreate))
 	mux.HandleFunc("PUT /api/workspaces/{ws}/resources/{kind}/{name}", u(s.resUpdate))
@@ -718,6 +722,49 @@ func (s *Server) wsImport(w http.ResponseWriter, r *http.Request) {
 	s.vault.EnsureScope(ws.Name())
 	s.record(r, ws.Name(), "workspace.import", in.Path, nil, nil)
 	writeJSON(w, 201, summary(ws))
+}
+
+// wsExport returns the workspace and its vault scope as one file encrypted
+// with the given password (see internal/bundle).
+func (s *Server) wsExport(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.workspace(w, r)
+	if !ok {
+		return
+	}
+	var in struct{ Password string }
+	if err := readJSON(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	f, items, err := bundle.Export(ws, s.vault, in.Password)
+	s.record(r, ws.Name(), "workspace.export", "", map[string]any{"vaultItems": items}, err)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.opsdeck"`, ws.Name(), time.Now().Format("2006-01-02")))
+	writeJSON(w, 200, f)
+}
+
+// wsImportFile creates a workspace from an exported file; its secrets are
+// stored in this vault under this vault's keys.
+func (s *Server) wsImportFile(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Bundle   bundle.File
+		Password string
+	}
+	// larger than readJSON allows: the export carries all workspace files
+	if err := json.NewDecoder(io.LimitReader(r.Body, 128<<20)).Decode(&in); err != nil {
+		fail(w, errors.New("invalid export file: "+err.Error()))
+		return
+	}
+	res, err := bundle.Import(s.ws, s.vault, &in.Bundle, in.Password)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	s.record(r, res.Workspace.Name(), "workspace.import", "file", map[string]any{"vaultItems": res.Items, "skipped": res.Skipped}, nil)
+	writeJSON(w, 201, map[string]any{"workspace": summary(res.Workspace), "items": res.Items, "skipped": res.Skipped})
 }
 
 func (s *Server) wsGet(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,11 @@ each release's section becomes its notes on GitHub.
   or single-line cells and a JSON view. Double-click a cell (or press Enter) for the whole
   value — up to 64K characters, JSON indented, with search — or open the whole row; copy as
   tab-separated, CSV or JSON, or download a CSV or JSON file.
+- **Export and import a workspace** — workspace settings export the workspace (hosts and
+  resources, docs, skills, scripts, Ansible projects) and the items of its vault scope as one
+  file encrypted with a password you choose; *New / import workspace → Import export file*
+  opens it on another machine and stores the secrets in that vault under its own master
+  password. Agent sessions, reports, artifacts and Git working copies stay behind.
 
 ### Agent
 

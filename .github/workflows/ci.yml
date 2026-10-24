@@ -34,7 +34,7 @@ jobs:
         image: mongo:7
         env: { MONGO_INITDB_ROOT_USERNAME: root, MONGO_INITDB_ROOT_PASSWORD: rootpass }
         ports: ["27017:27017"]
-        options: --health-cmd "mongosh --quiet --eval 'db.runCommand({ping: 1})'" --health-interval 5s --health-retries 30
+        options: --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'" --health-interval 5s --health-retries 30
       redis:
         image: redis:7
         ports: ["6379:6379"]

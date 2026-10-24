@@ -5,6 +5,11 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-24
+
+Databases in the workbench and for the agent, workspaces you can move to another machine
+as one encrypted file, and far fewer approval prompts for read-only commands.
+
 ### Workbench
 
 - **Databases** — a new page for the PostgreSQL, MySQL, MariaDB, MongoDB and Redis databases
@@ -44,7 +49,6 @@ each release's section becomes its notes on GitHub.
   script only when every command in it that is not a read matches, so `systemctl status*` no
   longer allows `systemctl status x; rm -rf /`. `ask` and `deny` rules apply when any command
   matches.
-
 - **Model lists from the CLI** — Settings asks each local agent which models your login can
   use (Claude Code, Codex, Gemini CLI, opencode and other ACP agents) and shows them with
   their names and descriptions to tick; API providers list their models from the API

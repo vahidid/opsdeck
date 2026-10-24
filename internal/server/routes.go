@@ -107,7 +107,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/up", u(s.netUp))
 	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/down", u(s.netDown))
 	mux.HandleFunc("GET /api/workspaces/{ws}/networks/{name}/log", u(s.netLog))
+	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/code", u(s.netCode))
 	mux.HandleFunc("GET /api/vpn/drivers", s.vpnDrivers)
+	// polled by every page: does not count as activity for the auto-lock
+	mux.HandleFunc("GET /api/vpn/codes", s.vpnCodes)
+	mux.HandleFunc("POST /api/vpn/codes/test", u(s.vpnCodesTest))
 	mux.HandleFunc("POST /api/workspaces/{ws}/hosts/{host}/check", u(s.hostCheck))
 	mux.HandleFunc("GET /api/workspaces/{ws}/hosts/{host}/stats", u(s.hostStats))
 	mux.HandleFunc("POST /api/workspaces/{ws}/hosts/{host}/exec", u(s.hostExec))
@@ -618,6 +622,10 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 	case "", "auto", "sudo", "pkexec", "none":
 	default:
 		fail(w, fmt.Errorf("vpn.elevate must be auto, sudo, pkexec or none"))
+		return
+	}
+	if err := checkVPNCodes(&in.VPN.Codes); err != nil {
+		fail(w, err)
 		return
 	}
 	if err := s.cfg.SetSettings(in); err != nil {

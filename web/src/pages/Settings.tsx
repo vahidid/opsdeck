@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Cpu, KeyRound, Laptop, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2 } from "lucide-react";
+import { Bot, Cpu, KeyRound, Laptop, MessageSquareText, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings } from "../api/types";
+import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
 import { useUpdate } from "../context/update";
-import { Badge, Button, Card, ChipInput, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle } from "../components/ui";
+import { Badge, Button, Card, ChipInput, CopyButton, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { VaultItemModal } from "../components/VaultItemForm";
 import { ModelChooser } from "../components/ModelChooser";
@@ -29,7 +29,16 @@ const AGENT_PRESETS: { kind: AgentKind; label: string; id: string; command: stri
 const NO_LOCAL: Settings["localAccess"] = { disabled: false, allowedDirs: [], autoReadCommands: false };
 const normSettings = (v: Settings): Settings => ({
   ...v,
-  vpn: { elevate: v.vpn?.elevate || "auto", browser: v.vpn?.browser ?? "" },
+  vpn: {
+    elevate: v.vpn?.elevate || "auto",
+    browser: v.vpn?.browser ?? "",
+    codes: {
+      ntfyUrl: v.vpn?.codes?.ntfyUrl ?? "",
+      ntfyTokenRef: v.vpn?.codes?.ntfyTokenRef ?? "",
+      command: v.vpn?.codes?.command ?? "",
+      pattern: v.vpn?.codes?.pattern ?? "",
+    },
+  },
   git: { name: v.git?.name ?? "", email: v.git?.email ?? "" },
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
@@ -385,6 +394,21 @@ export function AppSettingsPage() {
         <Card
           title={
             <>
+              <MessageSquareText className="size-4 text-muted" /> One-time VPN codes (SMS, email)
+            </>
+          }
+        >
+          <VPNCodesSection
+            value={s.vpn.codes}
+            onChange={(codes) => setS({ ...s, vpn: { ...s.vpn, codes } })}
+            tokens={tokens}
+            reloadTokens={loadTokens}
+          />
+        </Card>
+
+        <Card
+          title={
+            <>
               <KeyRound className="size-4 text-muted" /> Security
             </>
           }
@@ -430,6 +454,127 @@ export function AppSettingsPage() {
         onSaved={(it) => {
           void loadTokens();
           if (newKeyFor !== null) setProvider(newKeyFor, { apiKeyRef: it.ref });
+        }}
+      />
+    </div>
+  );
+}
+
+// A random ntfy topic: whoever knows the name can read it.
+function newTopic(): string {
+  const abc = "abcdefghijkmnopqrstuvwxyz23456789";
+  const b = crypto.getRandomValues(new Uint8Array(24));
+  return "https://ntfy.sh/opsdeck-" + Array.from(b, (x) => abc[x % abc.length]).join("");
+}
+
+function VPNCodesSection({ value, onChange, tokens, reloadTokens }: { value: VpnCodes; onChange: (v: VpnCodes) => void; tokens: Item[]; reloadTokens: () => void }) {
+  const [testing, setTesting] = useState(false);
+  const [newToken, setNewToken] = useState(false);
+  const [howto, setHowto] = useState(false);
+  const toast = useToast();
+  const set = (p: Partial<VpnCodes>) => onChange({ ...value, ...p });
+
+  async function test() {
+    setTesting(true);
+    try {
+      const r = await api.vpnCodesTest(value);
+      toast.success(`Received the code ${r.code}`, `from ${r.source} — it works`);
+    } catch (e) {
+      toast.error("No code arrived", errMsg(e));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-xs text-muted leading-relaxed">
+        FortiGate VPNs that send a code by SMS or email for every login ask for it in opsdeck: a prompt shows on any page, and on the VPN page. A dropped
+        tunnel reconnects with the same session, without a new code, while the gateway keeps it. To have the code filled in by itself, forward the
+        gateway's messages from your phone to an <span className="font-mono">ntfy</span> topic (ntfy.sh or your own ntfy server); opsdeck reads it only
+        while a login waits for a code.
+      </div>
+      <FormField
+        label="ntfy topic for codes from your phone"
+        help="Whoever knows a topic's name can read it: keep it secret (New topic makes a long random one), or use a protected topic on your own ntfy server with an access token."
+      >
+        <div className="flex gap-2">
+          <Input mono value={value.ntfyUrl} onChange={(e) => set({ ntfyUrl: e.target.value })} placeholder="https://ntfy.sh/opsdeck-…" className="flex-1" />
+          {value.ntfyUrl && <CopyButton text={value.ntfyUrl} />}
+          <Button size="md" onClick={() => set({ ntfyUrl: newTopic() })}>
+            New topic
+          </Button>
+        </div>
+      </FormField>
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label="Access token" help="Only for a protected topic (a token item in the global vault).">
+          <Select
+            value={value.ntfyTokenRef}
+            onChange={(e) => (e.target.value === "__new" ? setNewToken(true) : set({ ntfyTokenRef: e.target.value }))}
+            className="font-mono text-xs"
+          >
+            <option value="">— none —</option>
+            {value.ntfyTokenRef && !tokens.some((t) => t.ref === value.ntfyTokenRef) && <option value={value.ntfyTokenRef}>{value.ntfyTokenRef}</option>}
+            {tokens.map((t) => (
+              <option key={t.id} value={t.ref}>
+                {t.name}
+              </option>
+            ))}
+            <option value="__new">+ Add token to vault…</option>
+          </Select>
+        </FormField>
+        <FormField label="Code pattern" help="A regular expression whose first group is the code. Empty: 4 to 8 digits, preferring the number after a word like code, token or کد.">
+          <Input mono value={value.pattern} onChange={(e) => set({ pattern: e.target.value })} placeholder="default" />
+        </FormField>
+      </div>
+      <FormField
+        label="Command that prints the code (optional)"
+        help={
+          <>
+            Instead of, or besides, the phone: a command on this computer that prints the newest code, e.g. from a USB modem (
+            <span className="font-mono">mmcli</span>), KDE Connect or the Messages database of a Mac. It runs every few seconds while a code is awaited, with{" "}
+            <span className="font-mono">$OPSDECK_CODE_SINCE</span> (Unix time of the request: print only newer codes, or nothing yet) and{" "}
+            <span className="font-mono">$OPSDECK_VPN</span>.
+          </>
+        }
+      >
+        <Input mono value={value.command} onChange={(e) => set({ command: e.target.value })} placeholder="~/bin/latest-sms-code" />
+      </FormField>
+      <div className="flex items-center gap-2">
+        <Button icon={<MessageSquareText className="size-4" />} loading={testing} disabled={!value.ntfyUrl && !value.command} onClick={() => void test()}>
+          Test
+        </Button>
+        <span className="text-[11px] text-faint">
+          {testing ? "Waiting up to 90 s for a message with a code: send or forward one to the topic now." : "Waits for a message with a code, with the values above (unsaved too)."}
+        </span>
+        <button className="ml-auto text-[11px] text-accent hover:underline" onClick={() => setHowto((v) => !v)}>
+          {howto ? "Hide" : "How to forward SMS from the phone"}
+        </button>
+      </div>
+      {howto && (
+        <div className="rounded-md border border-line bg-panel-2 px-3 py-2.5 text-xs text-muted leading-relaxed space-y-2">
+          <div>
+            <b className="text-fg">Android:</b> install an SMS forwarding app (for example <i>SMS Forwarder</i> or <i>SMS to URL Forwarder</i>) and add a rule:
+            messages from the VPN's sender are sent as a webhook, method POST, to the topic URL above, with the message text as the body.
+          </div>
+          <div>
+            <b className="text-fg">iPhone:</b> in Shortcuts → Automation, add a <i>Message</i> automation for the VPN's sender (or a word in its SMS), set it to
+            run immediately, with the action <i>Get Contents of URL</i>: the topic URL, method POST, request body the message's content.
+          </div>
+          <div>
+            Forward only the VPN's messages. opsdeck takes a code only from messages that arrive after the login asked for one. More in docs/vpn.md.
+          </div>
+        </div>
+      )}
+      <VaultItemModal
+        open={newToken}
+        onClose={() => setNewToken(false)}
+        scope="global"
+        defaultType="token"
+        allowedTypes={["token"]}
+        onSaved={(it) => {
+          reloadTokens();
+          set({ ntfyTokenRef: it.ref });
         }}
       />
     </div>

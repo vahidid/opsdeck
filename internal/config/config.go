@@ -61,6 +61,22 @@ type VPN struct {
 	// Browser is the Chrome/Edge/Chromium/Brave used for SSO login windows
 	// ("" = detect).
 	Browser string `yaml:"browser,omitempty" json:"browser"`
+	// Codes is where one-time codes for VPN logins (sent by SMS or email)
+	// come from by themselves; they can always be typed in.
+	Codes VPNCodes `yaml:"codes,omitempty" json:"codes"`
+}
+
+// VPNCodes are automatic sources of one-time codes (see vpn.CodeSource).
+type VPNCodes struct {
+	// NtfyURL is an ntfy topic (https://ntfy.sh/<topic> or a self-hosted
+	// server) the phone forwards the gateway's messages to.
+	NtfyURL string `yaml:"ntfyUrl,omitempty" json:"ntfyUrl"`
+	// NtfyTokenRef is a vault reference to the topic's access token.
+	NtfyTokenRef string `yaml:"ntfyTokenRef,omitempty" json:"ntfyTokenRef"`
+	// Command prints the code; run every few seconds while one is awaited.
+	Command string `yaml:"command,omitempty" json:"command"`
+	// Pattern finds the code in a message ("" = 4 to 8 digits).
+	Pattern string `yaml:"pattern,omitempty" json:"pattern"`
 }
 
 // LocalAccess controls the agent's tools for this computer (files outside the

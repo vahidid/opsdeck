@@ -54,11 +54,15 @@ type Hub struct {
 	Elevate func() []string
 	// Browser returns the configured browser for VPN single sign-on.
 	Browser func() string
+	// CodeSources returns where one-time codes for VPN logins can arrive
+	// from by themselves (the phone, a command), besides being typed in.
+	CodeSources func() ([]vpn.CodeSource, error)
 
 	mu       sync.Mutex
-	networks map[string]*network // key ws/name
-	netLogs  map[string]*vpn.Log // key ws/name, kept after a network goes down
-	clients  map[string]*sshConn // key ws/host
+	networks map[string]*network     // key ws/name
+	netLogs  map[string]*vpn.Log     // key ws/name, kept after a network goes down
+	sessions map[string]*vpn.Session // key ws/name, gateway sessions kept until a network is taken down
+	clients  map[string]*sshConn     // key ws/host
 	dialing  map[string]*sync.Mutex
 }
 
@@ -69,7 +73,7 @@ type sshConn struct {
 
 func NewHub(v *vault.Vault, stateDir func(ws string) string) *Hub {
 	return &Hub{vault: v, stateDir: stateDir, networks: map[string]*network{}, netLogs: map[string]*vpn.Log{},
-		clients: map[string]*sshConn{}, dialing: map[string]*sync.Mutex{}}
+		sessions: map[string]*vpn.Session{}, clients: map[string]*sshConn{}, dialing: map[string]*sync.Mutex{}}
 }
 
 // credential resolves a vault reference for use by a workspace, enforcing
@@ -495,6 +499,11 @@ func (h *Hub) CloseWorkspace(ws string) {
 		if strings.HasPrefix(k, ws+"/") {
 			nets = append(nets, n)
 			delete(h.networks, k)
+		}
+	}
+	for k := range h.sessions {
+		if strings.HasPrefix(k, ws+"/") {
+			delete(h.sessions, k)
 		}
 	}
 	h.mu.Unlock()

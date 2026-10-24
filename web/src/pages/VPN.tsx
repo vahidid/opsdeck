@@ -11,6 +11,7 @@ import { MenuItem, Popover, useConfirm, useToast } from "../components/overlay";
 import { useAsync, useInterval } from "../hooks";
 import { fmtBytes, timeAgo } from "../lib/format";
 import { ResourceDrawer } from "./Resources";
+import { CodeEntry } from "../components/VPNCode";
 
 type Preset = { id: string; label: string; kind: string; spec: Record<string, unknown>; hint: string };
 
@@ -25,7 +26,7 @@ export const VPN_PRESETS: Preset[] = [
   { id: "anyconnect", label: "Cisco AnyConnect", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "ASA / Firepower" },
   { id: "anyconnect-sso", label: "Cisco AnyConnect · SSO", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace", sso: true }, hint: "Entra ID, Okta, ADFS…" },
   { id: "ocserv", label: "ocserv", kind: "OpenConnect", spec: { protocol: "anyconnect", mode: "userspace" }, hint: "OpenConnect server" },
-  { id: "fortinet", label: "FortiGate", kind: "OpenConnect", spec: { protocol: "fortinet", mode: "userspace" }, hint: "FortiClient SSL VPN" },
+  { id: "fortinet", label: "FortiGate", kind: "OpenConnect", spec: { protocol: "fortinet", mode: "userspace" }, hint: "FortiClient SSL VPN · codes by SMS" },
   { id: "fortinet-sso", label: "FortiGate · SSO", kind: "OpenConnect", spec: { protocol: "fortinet", mode: "userspace", sso: true }, hint: "SAML login" },
   { id: "openfortivpn", label: "FortiGate (openfortivpn)", kind: "OpenFortiVPN", spec: {}, hint: "system mode" },
   { id: "gp", label: "Palo Alto GlobalProtect", kind: "OpenConnect", spec: { protocol: "gp", mode: "userspace" }, hint: "" },
@@ -66,7 +67,7 @@ export function netTone(s: NetworkStatus["status"]): Tone {
 export function netStateLabel(n: NetworkStatus): string {
   switch (n.status) {
     case "auth":
-      return n.authWindow ? "signing in…" : "waiting for login";
+      return n.code ? "waiting for code" : n.authWindow ? "signing in…" : "waiting for login";
     case "connecting":
       return "connecting…";
   }
@@ -373,6 +374,11 @@ function NetworkCard({
         </IconButton>
       </div>
 
+      {n.status === "auth" && n.code && (
+        <div className="mx-4 mb-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5">
+          <CodeEntry ws={ws} name={n.name} wait={n.code} />
+        </div>
+      )}
       {n.status === "auth" && n.authWindow && (
         <div className="mx-4 mb-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
           Single sign-on: finish signing in in the login window opsdeck opened. It connects by itself as soon as you are signed in

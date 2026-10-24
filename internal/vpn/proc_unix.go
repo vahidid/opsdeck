@@ -3,8 +3,11 @@
 package vpn
 
 import (
+	"context"
 	"os/exec"
 	"syscall"
+
+	"opsdeck/internal/sysproc"
 )
 
 func setProcAttrs(cmd *exec.Cmd, elevated bool) {
@@ -23,4 +26,13 @@ func kill(cmd *exec.Cmd) {
 		cmd.Process.Signal(syscall.SIGTERM)
 		cmd.Process.Kill()
 	}
+}
+
+// shellCommand runs a command line with sh in its own process group, so
+// cancelling ctx stops everything it started.
+func shellCommand(ctx context.Context, command string) *exec.Cmd {
+	cmd := sysproc.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	return cmd
 }

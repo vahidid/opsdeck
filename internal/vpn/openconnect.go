@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -147,10 +148,15 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown protocol %q (one of %s)", protocol, strings.Join(ocProtocols, ", "))
 	}
-	auth := cfg.Items["auth"]
-	argv := []string{"openconnect", "--protocol=" + protocol, "--non-inter"}
-	stdin := ""
 	pin := r.Str("serverCert")
+	if protocol == "fortinet" && fortiPasswordLogin(cfg) {
+		return withFortiSession(ctx, cfg, func(cookie string) (Tunnel, error) {
+			return runOpenConnect(ctx, cfg, protocol, server, pin, []string{"--cookie-on-stdin"}, cookie+"\n")
+		})
+	}
+	auth := cfg.Items["auth"]
+	var args []string
+	stdin := ""
 	switch {
 	case r.Bool("sso", false):
 		res, err := ssoLogin(ctx, cfg, protocol)
@@ -160,9 +166,9 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 		cfg.prompt(AuthPrompt{}) // signed in; back to "connecting"
 		cfg.Log.Printf("single sign-on complete; connecting")
 		if protocol == "gp" {
-			argv = append(argv, "--user="+res.User, "--usergroup="+res.UserGroup, "--passwd-on-stdin")
+			args = append(args, "--user="+res.User, "--usergroup="+res.UserGroup, "--passwd-on-stdin")
 		} else {
-			argv = append(argv, "--cookie-on-stdin")
+			args = append(args, "--cookie-on-stdin")
 		}
 		stdin = res.Cookie + "\n"
 		if pin == "" {
@@ -172,23 +178,31 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 			server = res.ConnectURL
 		}
 	case cfg.Value("cookie", "token") != "":
-		argv = append(argv, "--cookie-on-stdin")
+		args = append(args, "--cookie-on-stdin")
 		stdin = cfg.Value("cookie", "token") + "\n"
 	default:
 		if u := auth.Get("username"); u != "" {
-			argv = append(argv, "--user="+u)
+			args = append(args, "--user="+u)
 		}
 		if pw := auth.Get("password"); pw != "" {
-			argv = append(argv, "--passwd-on-stdin")
+			args = append(args, "--passwd-on-stdin")
 			stdin = pw + "\n"
 		}
 		if s := totpSecret(auth.Get("totp")); s != "" {
-			argv = append(argv, "--token-mode=totp", "--token-secret=base32:"+s)
+			args = append(args, "--token-mode=totp", "--token-secret=base32:"+s)
 		}
 	}
 	if g := r.Str("authGroup"); g != "" && !r.Bool("sso", false) {
-		argv = append(argv, "--authgroup="+g)
+		args = append(args, "--authgroup="+g)
 	}
+	return runOpenConnect(ctx, cfg, protocol, server, pin, args, stdin)
+}
+
+// runOpenConnect starts openconnect with the given authentication arguments
+// and stdin, and waits until the tunnel is up.
+func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin string, auth []string, stdin string) (Tunnel, error) {
+	r := cfg.Res
+	argv := append([]string{"openconnect", "--protocol=" + protocol, "--non-inter"}, auth...)
 	if pin != "" {
 		argv = append(argv, "--servercert="+pin)
 	}
@@ -235,6 +249,8 @@ func startOpenConnect(ctx context.Context, cfg *Config) (Tunnel, error) {
 			t.setHint("the server certificate is not trusted. If it is the right server, set the profile's server certificate to " + ocPinRe.FindStringSubmatch(line)[1])
 		case strings.Contains(line, "Login failed") || strings.Contains(line, "authentication failed") || strings.Contains(line, "Invalid password"):
 			t.setHint("login failed: check the username/password (and OTP secret) of the profile's login")
+		case strings.Contains(line, "Cookie was rejected") || strings.Contains(line, "Cookie is no longer valid"):
+			t.setHint("the gateway did not accept the session: " + strings.TrimSpace(line))
 		case strings.Contains(line, "SAML") || strings.Contains(line, "single sign-on") || strings.Contains(line, "SSO"):
 			t.setHint("the gateway uses SAML/SSO login: run `openconnect --authenticate " + server + "` once in a terminal (or the vendor client) and store the cookie in the vault as a token, then set it as the profile's session cookie")
 		case strings.Contains(line, "DTLS") || strings.Contains(line, "ESP session established"):
@@ -317,46 +333,63 @@ func startOpenFortiVPN(ctx context.Context, cfg *Config) (Tunnel, error) {
 		host, port = h, p
 	}
 	auth := cfg.Items["auth"]
-	var conf strings.Builder
-	fmt.Fprintf(&conf, "host = %s\nport = %s\n", host, port)
+	if fortiPasswordLogin(cfg) && ofvCookieOnStdin() {
+		return withFortiSession(ctx, cfg, func(cookie string) (Tunnel, error) {
+			return runOpenFortiVPN(ctx, cfg, host, port, "", []string{"--cookie-on-stdin"}, cookie+"\n", false)
+		})
+	}
+	var creds strings.Builder
+	var args []string
 	stdin := ""
-	sso := r.Bool("sso", false)
-	if sso {
+	if r.Bool("sso", false) {
 		res, err := ssoLogin(ctx, cfg, "fortinet")
 		if err != nil {
 			return nil, err
 		}
 		cfg.prompt(AuthPrompt{})
 		cfg.Log.Printf("single sign-on complete; connecting")
+		args = append(args, "--cookie-on-stdin")
 		stdin = res.Cookie + "\n"
 	} else {
+		// an openfortivpn that cannot take a session cookie logs in itself
 		if u := auth.Get("username"); u != "" {
-			fmt.Fprintf(&conf, "username = %s\n", u)
+			fmt.Fprintf(&creds, "username = %s\n", u)
 		}
 		if pw := auth.Get("password"); pw != "" {
-			fmt.Fprintf(&conf, "password = %s\n", pw)
+			fmt.Fprintf(&creds, "password = %s\n", pw)
+		}
+		if auth.Get("totp") != "" {
+			code, err := otp(auth)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, "--otp="+code)
 		}
 	}
+	return runOpenFortiVPN(ctx, cfg, host, port, creds.String(), args, stdin, !r.Bool("sso", false))
+}
+
+// runOpenFortiVPN writes openfortivpn's config (with creds, if it logs in
+// itself) and starts it; oldLogin explains a one-time code it cannot ask for.
+func runOpenFortiVPN(ctx context.Context, cfg *Config, host, port, creds string, args []string, stdin string, oldLogin bool) (Tunnel, error) {
+	r := cfg.Res
+	var conf strings.Builder
+	fmt.Fprintf(&conf, "host = %s\nport = %s\n%s", host, port, creds)
 	if c := r.Str("serverCert"); c != "" {
 		fmt.Fprintf(&conf, "trusted-cert = %s\n", strings.TrimPrefix(c, "sha256:"))
 	}
 	if g := r.Str("authGroup"); g != "" {
 		fmt.Fprintf(&conf, "realm = %s\n", g)
 	}
+	// a failed attempt removed the folder (and another one may follow)
+	if err := os.MkdirAll(cfg.RunDir, 0o700); err != nil {
+		return nil, err
+	}
 	path := filepath.Join(cfg.RunDir, "openfortivpn.conf")
 	if err := writePrivate(path, conf.String()); err != nil {
 		return nil, err
 	}
-	argv := []string{"openfortivpn", "-c", path}
-	if sso {
-		argv = append(argv, "--cookie-on-stdin")
-	} else if auth.Get("totp") != "" {
-		code, err := otp(auth)
-		if err != nil {
-			return nil, err
-		}
-		argv = append(argv, "--otp="+code)
-	}
+	argv := append([]string{"openfortivpn", "-c", path}, args...)
 	t := &cliTunnel{cfg: cfg, up: make(chan struct{}), started: make(chan struct{}), dial: direct, cleanup: func() { removeAll(cfg.RunDir) }}
 	t.info.Server = net.JoinHostPort(host, port)
 	var err error
@@ -374,6 +407,8 @@ func startOpenFortiVPN(ctx context.Context, cfg *Config) (Tunnel, error) {
 			t.markUp()
 		case ofvCertRe.MatchString(line):
 			t.setHint("the gateway certificate is not trusted. If it is the right gateway, set the profile's server certificate to " + ofvCertRe.FindStringSubmatch(line)[1])
+		case oldLogin && (strings.Contains(line, "No token specified") || strings.Contains(line, "Two-factor authentication")):
+			t.setHint("the gateway asks for a one-time code (SMS, email or token). This openfortivpn cannot hand the login to opsdeck to ask you for it: install a newer openfortivpn (one with --cookie-on-stdin), use a FortiGate profile with OpenConnect, or add the TOTP secret to the login")
 		case strings.Contains(line, "Could not authenticate") || strings.Contains(line, "permission denied"):
 			t.setHint("login failed: check the profile's login")
 		}

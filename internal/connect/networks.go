@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -21,8 +23,9 @@ type network struct {
 	kind, mode string
 	state      string // connecting | up | error
 	err        string
-	authURL    string // waiting for the user to log in at this URL…
-	authWindow bool   // …or in the login window opsdeck opened
+	authURL    string    // waiting for the user to log in at this URL…
+	authWindow bool      // …or in the login window opsdeck opened…
+	code       *codeWait // …or for a one-time code
 	since      time.Time
 	tun        vpn.Tunnel
 	dial       DialFunc
@@ -85,12 +88,35 @@ func (h *Hub) netLog(key string) *vpn.Log {
 }
 
 // connectTimeout bounds one connection attempt; an interactive login
-// (Tailscale without an auth key) gets time for the user to finish it.
+// (Tailscale without an auth key, SSO, a one-time code) gets time for the
+// user to finish it.
 func connectTimeout(r *workspace.Resource) time.Duration {
 	if (r.Kind == "Tailscale" && r.Str("authKey") == "") || r.Bool("sso", false) {
 		return 15 * time.Minute
 	}
+	if vpn.MayAskForCode(r) {
+		return 2*time.Minute + codeTimeout
+	}
 	return 2 * time.Minute
+}
+
+// codeTimeout is how long a login waits for a one-time code. Gateways let
+// them expire sooner (FortiGate: after 60 seconds by default, 5 minutes at
+// most).
+const codeTimeout = 5 * time.Minute
+
+// CodeWait is a one-time code a network waits for.
+type CodeWait struct {
+	Message string    `json:"message,omitempty"` // the gateway's prompt, e.g. "Please enter the code sent to +98912***4567"
+	Retry   bool      `json:"retry,omitempty"`   // the code entered before was not accepted
+	Since   time.Time `json:"since"`
+	Expires time.Time `json:"expires"`
+	Sources []string  `json:"sources,omitempty"` // where it can also arrive from by itself
+}
+
+type codeWait struct {
+	CodeWait
+	codes chan string
 }
 
 // NetworkUp brings up a network and waits until it is up, it failed, or
@@ -132,8 +158,15 @@ func (h *Hub) networkUp(ctx context.Context, w *workspace.Workspace, r *workspac
 	case <-n.ready:
 	case <-ctx.Done():
 		h.mu.Lock()
-		auth, window := n.authURL, n.authWindow
+		auth, window, code := n.authURL, n.authWindow, n.code
 		h.mu.Unlock()
+		if code != nil {
+			msg := ""
+			if code.Message != "" {
+				msg = " (" + code.Message + ")"
+			}
+			return nil, fmt.Errorf("network %s: %w — waiting for the one-time code the gateway sent%s: the user enters it in opsdeck", r.Name, ErrConnecting, msg)
+		}
 		if window {
 			return nil, fmt.Errorf("network %s: %w — waiting for the user to sign in in the login window opsdeck opened", r.Name, ErrConnecting)
 		}
@@ -162,12 +195,19 @@ func (h *Hub) launch(actor Actor, w *workspace.Workspace, r *workspace.Resource,
 	log := h.netLog(key)
 	log.Printf("— connecting %s (%s) —", r.Name, firstNonEmpty(mode, "proxy"))
 	ws := w.Name()
+	sess := h.sessions[key]
+	if sess == nil {
+		sess = &vpn.Session{}
+		h.sessions[key] = sess
+	}
 	go func() {
 		defer cancel()
-		tun, dial, err := h.startNetwork(ctx, w, &res, mode, items, log, func(p vpn.AuthPrompt) {
+		tun, dial, err := h.startNetwork(ctx, w, &res, mode, items, log, sess, func(p vpn.AuthPrompt) {
 			h.mu.Lock()
 			n.authURL, n.authWindow = p.URL, p.Window
 			h.mu.Unlock()
+		}, func(ctx context.Context, p vpn.CodePrompt) (string, error) {
+			return h.waitCode(ctx, n, log, p)
 		})
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -221,7 +261,8 @@ func (h *Hub) watch(ws, key string, n *network) {
 	}
 }
 
-func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *workspace.Resource, mode string, items map[string]vault.Item, log *vpn.Log, auth func(vpn.AuthPrompt)) (vpn.Tunnel, DialFunc, error) {
+func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *workspace.Resource, mode string, items map[string]vault.Item, log *vpn.Log,
+	sess *vpn.Session, auth func(vpn.AuthPrompt), code func(context.Context, vpn.CodePrompt) (string, error)) (vpn.Tunnel, DialFunc, error) {
 	if r.Kind == "SocksProxy" {
 		forward, err := h.Dialer(ctx, w, r)
 		if err != nil {
@@ -250,7 +291,8 @@ func (h *Hub) startNetwork(ctx context.Context, w *workspace.Workspace, r *works
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		return nil, nil, err
 	}
-	cfg := &vpn.Config{Res: r, Mode: mode, Items: items, StateDir: stateDir, RunDir: runDir, Elevate: elevate, Log: log, Auth: auth, Browser: h.browser()}
+	cfg := &vpn.Config{Res: r, Mode: mode, Items: items, StateDir: stateDir, RunDir: runDir, Elevate: elevate, Log: log, Auth: auth, Browser: h.browser(),
+		Code: code, Session: sess}
 	tun, err := d.Start(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
@@ -267,12 +309,14 @@ func (d ctxDialer) DialContext(ctx context.Context, network, addr string) (net.C
 	return d(ctx, network, addr)
 }
 
-// NetworkDown stops a network and drops SSH connections that used it.
+// NetworkDown stops a network and drops SSH connections that used it. The
+// gateway session ends with it (the client logs out).
 func (h *Hub) NetworkDown(ws, name string) {
 	key := netKey(ws, name)
 	h.mu.Lock()
 	n := h.networks[key]
 	delete(h.networks, key)
+	delete(h.sessions, key)
 	if n != nil {
 		h.netLog(key).Printf("— disconnecting —")
 	}
@@ -292,6 +336,7 @@ type NetStatus struct {
 	Error         string    `json:"error,omitempty"`
 	AuthURL       string    `json:"authUrl,omitempty"`
 	AuthWindow    bool      `json:"authWindow,omitempty"` // login in progress in opsdeck's login window
+	Code          *CodeWait `json:"code,omitempty"`       // waiting for a one-time code
 	Since         time.Time `json:"since,omitempty"`
 	Address       string    `json:"address,omitempty"`
 	Interface     string    `json:"interface,omitempty"`
@@ -330,6 +375,10 @@ func (h *Hub) Networks(w *workspace.Workspace) []NetStatus {
 			if n.state == "connecting" && (n.authURL != "" || n.authWindow) {
 				st.Status, st.AuthURL, st.AuthWindow = "auth", n.authURL, n.authWindow
 			}
+			if n.state == "connecting" && n.code != nil {
+				c := n.code.CodeWait
+				st.Status, st.Code = "auth", &c
+			}
 			tun = n.tun
 		}
 		for _, x := range w.Resources {
@@ -349,6 +398,108 @@ func (h *Hub) Networks(w *workspace.Workspace) []NetStatus {
 		}
 		out = append(out, it.st)
 	}
+	return out
+}
+
+// waitCode shows the gateway's request for a one-time code and waits until
+// the user enters it (NetworkCode) or a code source delivers it.
+func (h *Hub) waitCode(ctx context.Context, n *network, log *vpn.Log, p vpn.CodePrompt) (string, error) {
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, codeTimeout)
+	defer cancel()
+	var sources []vpn.CodeSource
+	if h.CodeSources != nil {
+		var err error
+		if sources, err = h.CodeSources(); err != nil {
+			log.Printf("one-time codes: %v", err)
+		}
+	}
+	now := time.Now()
+	w := &codeWait{CodeWait: CodeWait{Message: p.Message, Retry: p.Retry, Since: now, Expires: now.Add(codeTimeout)}, codes: make(chan string, 1)}
+	for _, s := range sources {
+		w.Sources = append(w.Sources, s.Name())
+	}
+	h.mu.Lock()
+	n.code = w
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		if n.code == w {
+			n.code = nil
+		}
+		h.mu.Unlock()
+	}()
+	if len(sources) > 0 {
+		log.Printf("waiting for the one-time code: enter it in opsdeck, or it comes from %s", strings.Join(w.Sources, " or "))
+	} else {
+		log.Printf("waiting for the one-time code: enter it in opsdeck")
+	}
+	for _, s := range sources {
+		go func() {
+			code, err := s.Wait(ctx, p)
+			if code != "" {
+				select {
+				case w.codes <- code:
+					log.Printf("one-time code received from %s", s.Name())
+				default:
+				}
+			} else if err != nil && ctx.Err() == nil {
+				log.Printf("%s: %v", s.Name(), err)
+			}
+		}()
+	}
+	select {
+	case code := <-w.codes:
+		return code, nil
+	case <-ctx.Done():
+		if parent.Err() != nil {
+			return "", parent.Err()
+		}
+		return "", fmt.Errorf("no one-time code was entered within %d minutes; connect again for a new one", int(codeTimeout.Minutes()))
+	}
+}
+
+// NetworkCode answers a network's request for a one-time code.
+func (h *Hub) NetworkCode(ws, name, code string) error {
+	code = vpn.NormalizeCode(code)
+	if code == "" {
+		return errors.New("enter the code")
+	}
+	key := netKey(ws, name)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := h.networks[key]
+	if n == nil || n.code == nil {
+		return fmt.Errorf("network %s is not waiting for a one-time code", name)
+	}
+	select {
+	case n.code.codes <- code:
+		h.netLog(key).Printf("one-time code entered")
+	default: // one is on its way already
+	}
+	return nil
+}
+
+// PendingCode is a network, in any workspace, waiting for a one-time code.
+type PendingCode struct {
+	Workspace string `json:"workspace"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	CodeWait
+}
+
+// PendingCodes lists the networks waiting for a one-time code.
+func (h *Hub) PendingCodes() []PendingCode {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := []PendingCode{}
+	for k, n := range h.networks {
+		if n.code != nil && n.state == "connecting" {
+			ws, name, _ := strings.Cut(k, "/")
+			out = append(out, PendingCode{Workspace: ws, Name: name, Kind: n.kind, CodeWait: n.code.CodeWait})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Since.Before(out[j].Since) })
 	return out
 }
 

@@ -62,7 +62,11 @@ type Settings = { autoLockMinutes: number; defaultModel: string;
                models: string[];
                modelNames?: Record<string, string> }[];   // display names, as listed by the CLI/API
   vpn: { elevate: "auto"|"sudo"|"pkexec"|"none";   // how system-mode VPN clients get root
-         browser: string };                         // Chrome/Edge/Chromium for SSO login windows ("" = detect)
+         browser: string;                           // Chrome/Edge/Chromium for SSO login windows ("" = detect)
+         codes: { ntfyUrl: string;                  // ntfy topic the phone forwards one-time codes to
+                  ntfyTokenRef: string;             // vault ref of its access token (protected topics)
+                  command: string;                  // a local command that prints the code
+                  pattern: string } };              // regexp for the code in a message ("" = 4-8 digits)
   localAccess: { disabled: boolean;        // agent access to this computer (default on)
                  allowedDirs: string[];    // readable without asking; "~/..." is expanded
                  autoReadCommands: boolean };  // run read-only local_exec commands without asking
@@ -123,10 +127,13 @@ Kinds: `Host`, `HostGroup`, network kinds `WireGuard`, `Tailscale`, `NetBird`, `
 
 ## Networks
 
-| GET | `/api/workspaces/{ws}/networks` | → `[{name, kind, mode: "userspace"\|"system"\|"", status: "down"\|"connecting"\|"auth"\|"up"\|"error", error, authUrl, authWindow, since, address, interface, server, detail, proxy, lastHandshake, rxBytes, txBytes, missing, usedBy}]` |
+| GET | `/api/workspaces/{ws}/networks` | → `[{name, kind, mode: "userspace"\|"system"\|"", status: "down"\|"connecting"\|"auth"\|"up"\|"error", error, authUrl, authWindow, code, since, address, interface, server, detail, proxy, lastHandshake, rxBytes, txBytes, missing, usedBy}]`; `code` (status `auth`) = waiting for a one-time code: `{message, retry, since, expires, sources}` |
 | POST | `/api/workspaces/{ws}/networks/{name}/up` / `/down` | `up` waits up to ~20 s; slower connects continue in the background (`connecting` / `auth`) |
+| POST | `/api/workspaces/{ws}/networks/{name}/code` | `{code}`: answers the network's request for a one-time code (Persian/Arabic digits and spaces are fine) → networks |
 | GET | `/api/workspaces/{ws}/networks/{name}/log?lines=N` | → `[{time, text}]` |
 | GET | `/api/vpn/drivers` | → `{drivers: [{kind, label, modes, missing: {mode: reason}}], privileged, elevate, os, browser}` |
+| GET | `/api/vpn/codes` | → `[{workspace, name, kind, message, retry, since, expires, sources}]`: networks of every workspace waiting for a one-time code (polled by the app's prompt; does not keep the vault unlocked) |
+| POST | `/api/vpn/codes/test` | `{ntfyUrl, ntfyTokenRef, command, pattern}` (saved or not) → `{code, source}` of the first message with a code within 90 s |
 
 Networks used by `via` are brought up automatically when needed.
 

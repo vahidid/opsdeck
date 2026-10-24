@@ -5,6 +5,18 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Workbench
+
+- **One-time VPN codes by SMS or email** — FortiGate VPNs (OpenConnect or openfortivpn)
+  that send a code for every login now connect: opsdeck logs in itself and, when the gateway
+  asks for the code, shows a prompt on any page (and on the VPN page) with the gateway's
+  message; Persian digits are fine. A TOTP secret on the login answers it by itself, and so
+  can your phone: forward the gateway's SMS to an ntfy topic (App settings → One-time VPN
+  codes, with a test) or let a local command print the code. A tunnel that drops connects
+  again with the same session, without a new code, while the gateway keeps it. The agent
+  asks you for the code instead of failing. Untrusted FortiGate certificates now show the
+  pin to set before anything else runs.
+
 ## [0.2.0] — 2026-10-24
 
 Databases in the workbench and for the agent, workspaces you can move to another machine

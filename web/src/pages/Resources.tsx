@@ -58,6 +58,9 @@ export function resourceSummary(r: Resource): string {
     case "SocksProxy":
       return str(s.address);
     case "Panel":
+    case "Prometheus":
+    case "Loki":
+    case "Elasticsearch":
     case "GitRemote":
       return str(s.url);
     case "KubernetesCluster":
@@ -288,8 +291,8 @@ export function ResourcesPage() {
                               </IconButton>
                             </>
                           )}
-                          {r.kind === "Panel" && (
-                            <IconButton title="Open panel" onClick={() => void openPanel(r)}>
+                          {(r.kind === "Panel" || r.kind === "Prometheus" || r.kind === "Loki" || r.kind === "Elasticsearch") && (
+                            <IconButton title="Open in the browser" onClick={() => void openPanel(r)}>
                               <ExternalLink className="size-4" />
                             </IconButton>
                           )}

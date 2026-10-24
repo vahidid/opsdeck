@@ -1441,7 +1441,12 @@ func (s *Server) panelOpen(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p := ws.Find("Panel", r.PathValue("name"))
+	var p *workspace.Resource
+	for _, kind := range []string{"Panel", "Prometheus", "Loki", "Elasticsearch"} {
+		if p = ws.Find(kind, r.PathValue("name")); p != nil {
+			break
+		}
+	}
 	if p == nil {
 		writeErr(w, 404, "panel not found")
 		return

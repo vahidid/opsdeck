@@ -88,11 +88,11 @@ func TestPublicAddressesOnly(t *testing.T) {
 	}
 	for _, raw := range []string{"http://127.0.0.1:7788/api/vault/items", "http://169.254.169.254/latest/meta-data", "file:///etc/passwd",
 		"https://user:pass@example.com/", "http://grafana:3000/", "http://[::1]/"} {
-		if _, err := fetchURL(raw); err == nil {
+		if _, err := fetchURL(raw, false); err == nil {
 			t.Errorf("%s accepted", raw)
 		}
 	}
-	u, err := fetchURL("github.com/kubernetes/kubernetes/blob/master/README.md#install")
+	u, err := fetchURL("github.com/kubernetes/kubernetes/blob/master/README.md#install", false)
 	if err != nil || u.String() != "https://raw.githubusercontent.com/kubernetes/kubernetes/master/README.md" {
 		t.Fatalf("github blob: %v %v", u, err)
 	}
@@ -233,6 +233,19 @@ func TestSearchBackends(t *testing.T) {
 	wc = &webClient{cfg: WebConfig{Search: "brave", Endpoints: ends, AllowPrivate: true}}
 	if _, err := wc.search(ctx, "x", 3); err == nil || !strings.Contains(err.Error(), "API key") {
 		t.Fatalf("brave without key: %v", err)
+	}
+	// a self-hosted SearXNG is usually on the local network: the configured
+	// address is reached, while pages and other backends stay public-only
+	wc = &webClient{cfg: WebConfig{Search: "searxng", SearchURL: srv.URL + "/searx"}}
+	if res, err := wc.search(ctx, "nginx", 5); err != nil || len(res) != 1 {
+		t.Fatalf("searxng on a private address: %+v %v", res, err)
+	}
+	if _, err := wc.fetch(ctx, srv.URL+"/searx/search", false); err == nil {
+		t.Fatal("a page on a private address was read")
+	}
+	wc = &webClient{cfg: WebConfig{Search: "brave", Key: key, Endpoints: ends}}
+	if _, err := wc.search(ctx, "nginx", 5); err == nil {
+		t.Fatal("brave on a private address was reached")
 	}
 }
 

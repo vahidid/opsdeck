@@ -109,6 +109,8 @@ type Call struct {
 	// Hosts are the hosts a fan-out call runs on (shown on the approval
 	// card, which then offers a canary rollout).
 	Hosts []string
+	// Canary: the agent asked to roll out over Hosts one host first.
+	Canary bool
 	// Serial keeps a read from running alongside other reads.
 	Serial bool
 	// Tainting marks a call that brings content from outside (a web page):
@@ -643,7 +645,8 @@ func toolExec() Tool {
 				preview += "\ncanary: " + names[0] + " first, then the others after your OK"
 			}
 			c := &Call{Risk: risk, Target: target, Environment: envName, Protected: protected, Match: in.Command,
-				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...), Hosts: names}
+				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...), Hosts: names,
+				Canary: in.Canary && len(hosts) > 1}
 			c.Run = func(ctx context.Context) (string, error) {
 				if in.Background {
 					h := hosts[0]
@@ -685,8 +688,8 @@ func toolExec() Tool {
 					if !ok {
 						reason = fmt.Sprintf("the canary on %s FAILED (exit %d)", first.Name, res.ExitCode)
 					}
-					approved, note, cerr := confirmStep(ctx, Step{Title: fmt.Sprintf("Continue on the other %d hosts", len(hosts)-1), Reason: reason, Risk: risk,
-						Preview: "$ " + in.Command + "\n\non " + first.Name + ":\n" + truncate(out, 6000) + "\n\nnext: " + strings.Join(names[1:], ", ")})
+					approved, note, cerr := confirmStep(ctx, Step{Title: continueTitle(names[1:]), Reason: reason, Risk: risk,
+						Preview: "$ " + in.Command + "\n\non " + first.Name + ":\n" + strings.TrimSpace(truncate(out, 6000)) + "\n\nnext: " + strings.Join(names[1:], ", ")})
 					if cerr != nil || !approved {
 						msg := head + "\n\nThe rollout stopped after the canary host: the user did not continue on " + strings.Join(names[1:], ", ") + "."
 						if note != "" {
@@ -791,6 +794,14 @@ func writeRemote(ctx context.Context, env *Env, h *workspace.Resource, path, bef
 		msg += " (backup: " + backup + ")"
 	}
 	return msg, nil
+}
+
+// continueTitle names the rest of a canary rollout.
+func continueTitle(rest []string) string {
+	if len(rest) <= 3 {
+		return "Continue on " + strings.Join(rest, ", ")
+	}
+	return fmt.Sprintf("Continue on the other %d hosts", len(rest))
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
@@ -1154,7 +1165,7 @@ func toolSaveArtifact() Tool {
 				if err != nil {
 					return nil, err
 				}
-				u, err := fetchURL(env.redact(in.URL))
+				u, err := fetchURL(env.redact(in.URL), wc.cfg.AllowPrivate)
 				if err != nil {
 					return nil, err
 				}

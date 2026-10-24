@@ -65,6 +65,8 @@ import type {
   PathHop,
   Resource,
   SessionInfo,
+  HarnessInfo,
+  TaskInfo,
   SessionMode,
   Settings,
   Skill,
@@ -510,6 +512,7 @@ export const api = {
   // agent
   sessions: (ws: string) => arr(get<SessionInfo[]>(`${W(ws)}/sessions`)),
   createSession: (ws: string, b: { model?: string; mode?: SessionMode }) => post<SessionInfo>(`${W(ws)}/sessions`, b),
+  harness: (ws: string) => get<HarnessInfo>(`${W(ws)}/harness`),
   session: (ws: string, id: string) =>
     get<{ session: SessionInfo; events: AgentEvent[] | null }>(S(ws, id)).then((r) => ({ ...r, events: r.events ?? [] })),
   updateSession: (ws: string, id: string, b: { title?: string; model?: string; mode?: SessionMode }) =>
@@ -517,8 +520,19 @@ export const api = {
   deleteSession: (ws: string, id: string) => del(S(ws, id)),
   sendMessage: (ws: string, id: string, text: string) => post(`${S(ws, id)}/messages`, { text }),
   interrupt: (ws: string, id: string) => post(`${S(ws, id)}/interrupt`),
-  approve: (ws: string, id: string, approvalId: string, decision: "approve" | "deny" | "always", note?: string, secret?: string) =>
-    post(`${S(ws, id)}/approvals/${e(approvalId)}`, { decision, note, secret }),
+  approve: (ws: string, id: string, approvalId: string, decision: "approve" | "deny" | "always", note?: string, secret?: string, canary?: boolean) =>
+    post(`${S(ws, id)}/approvals/${e(approvalId)}`, { decision, note, secret, canary }),
+  answer: (ws: string, id: string, questionId: string, a: { choices?: string[]; text?: string; skipped?: boolean }) =>
+    post(`${S(ws, id)}/questions/${e(questionId)}`, a),
+  tasks: (ws: string, id: string) => arr(get<TaskInfo[]>(`${S(ws, id)}/tasks`)),
+  task: (ws: string, id: string, task: string) => get<{ task: TaskInfo; output: string }>(`${S(ws, id)}/tasks/${e(task)}`),
+  stopTask: (ws: string, id: string, task: string) => post(`${S(ws, id)}/tasks/${e(task)}/stop`),
+  outputUrl: (ws: string, id: string, output: string, download?: boolean) => `${S(ws, id)}/outputs/${e(output)}${download ? "?download=1" : ""}`,
+  forkSession: (ws: string, id: string, at?: string) => post<{ session: SessionInfo; text: string }>(`${S(ws, id)}/fork`, { at }),
+  exportSession: (ws: string, id: string, as: "report" | "runbook" | "skill", title?: string) => post<{ path: string }>(`${S(ws, id)}/export`, { as, title }),
+  shell: (ws: string, id: string, command: string, target?: string) => post<AgentEvent>(`${S(ws, id)}/shell`, { command, target }),
+  compactSession: (ws: string, id: string) => post(`${S(ws, id)}/compact`),
+  trustHooks: (ws: string) => post<Workspace>(`${W(ws)}/hooks/trust`),
   sessionStreamUrl: (ws: string, id: string) => `${S(ws, id)}/stream`,
 
   // audit

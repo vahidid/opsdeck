@@ -225,6 +225,9 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 			"reasons": call.Reasons, "preview": m.redactor.Redact(call.Preview), "grantLabel": call.GrantLabel}
 		if len(call.Hosts) > 1 && call.Risk != RiskRead {
 			req["hosts"] = call.Hosts
+			if call.Canary {
+				req["canary"] = true
+			}
 		}
 		var check func(string) error
 		if call.Secret != nil {

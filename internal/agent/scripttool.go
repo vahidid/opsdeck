@@ -319,7 +319,7 @@ func toolRunScript() Tool {
 				match += " " + strings.Join(pv, " ")
 			}
 			c := &Call{Risk: risk, Target: "host/" + strings.Join(names, ","), Environment: envName, Protected: protected,
-				Match: match, Preview: truncate(b.String(), 30000), Reasons: reasons, Credentials: creds, Hosts: names,
+				Match: match, Preview: truncate(b.String(), 30000), Reasons: reasons, Credentials: creds, Hosts: names, Canary: in.Canary && len(hosts) > 1,
 				GrantLabel: s.Ref() + " with these parameters on " + strings.Join(names, ", ") + " (until the script changes)"}
 			c.Run = func(ctx context.Context) (string, error) {
 				r := scripts.Runner{WS: env.WS, Hub: env.Hub, Vault: env.Vault, Redact: NewRedactor(env.Vault.SecretValues).Redact,
@@ -334,7 +334,7 @@ func toolRunScript() Tool {
 					if len(first) == 0 || !first[0].OK() {
 						reason = "the canary on " + names[0] + " FAILED"
 					}
-					approved, note, cerr := confirmStep(ctx, Step{Title: fmt.Sprintf("Run %s on the other %d hosts", s.Ref(), len(hosts)-1), Reason: reason, Risk: risk,
+					approved, note, cerr := confirmStep(ctx, Step{Title: strings.Replace(continueTitle(names[1:]), "Continue on", "Run "+s.Ref()+" on", 1), Reason: reason, Risk: risk,
 						Preview: truncate(head, 8000) + "\n\nnext: " + strings.Join(names[1:], ", ")})
 					if cerr != nil || !approved {
 						msg := head + "\nThe rollout stopped after the canary host: the user did not continue on " + strings.Join(names[1:], ", ") + "."

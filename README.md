@@ -173,11 +173,17 @@ You can turn the check off, or check now, under *App settings → Updates*.
   stats, live log streaming (journald, files, containers), Docker and Kubernetes views,
   port-forwarding for panels that are only reachable through a VPN.
 - **Agent** — chat with any model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…)
-  that works through infra tools: `exec` (single host or groups), `read_file`/`edit_file`
-  with diffs and backups, `docker`, `kubernetes`, `net_check`, Git (`repo`, `repo_files`,
-  `repo_write`, `merge_request`, `git_sync`), `database`, Ansible (`ansible`, `ansible_run`,
-  `ansible_vault`), docs, skills,
-  memory, and any MCP server you attach to the workspace.
+  that works through infra tools: `exec` (single host or groups, canary rollouts, background
+  tasks), `read_file`/`edit_file` with diffs and backups, `docker`, `kubernetes`, `net_check`,
+  Git (`repo`, `repo_files`, `repo_write`, `merge_request`, `git_sync`), `database`, Ansible
+  (`ansible`, `ansible_run`, `ansible_vault`), panel APIs (`http_request`), Prometheus, Loki and
+  Elasticsearch (`metrics_query`, `logs_query`), the web (`web_search`, `web_fetch`,
+  end-of-life and CVE lookups), docs, skills, memory, and any MCP server you attach to the
+  workspace.
+- **Harness** — like a coding harness: subagents that investigate in parallel, hooks around
+  tool calls, slash commands and `!` shell, a live checklist, questions with options, forked
+  and exported sessions, and headless runs (`opsdeck run`) for cron and CI — see
+  [docs/harness.md](docs/harness.md).
 - **Local agents** — besides model APIs, the agent can be a CLI you already use with
   your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** (Google
   account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
@@ -270,6 +276,7 @@ scripted model endpoint (OpenAI-compatible), and prints their addresses.
 
 ```
 opsdeck [serve] [--port 7788] [--no-open]   start the server and UI
+opsdeck run -p "prompt" --ws <workspace>    run the agent headless (needs a running opsdeck)
 opsdeck url                                 print the login link
 opsdeck paths                               show where data is stored
 ```
@@ -325,6 +332,9 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 - The agent's access to this computer (Settings → This computer) is on by default: it can
   read files with consent, and every local write or command asks. Turn it off there if you
   only want it to work on workspace hosts.
+- The agent's web access (App settings → Web access) is on by default, except in workspaces
+  that allow only local models. Search without a key uses DuckDuckGo's HTML page, which can
+  rate-limit heavy use; SearXNG, Brave or Tavily are steadier.
 - Tested mostly on Linux. The macOS and Windows desktop apps are built and released by CI,
   but have seen less use.
 
@@ -333,7 +343,7 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 - [docs/architecture.md](docs/architecture.md) — framework, modules, data layout
 - [docs/desktop.md](docs/desktop.md) — the desktop app: how it works, install, build
 - [docs/releasing.md](docs/releasing.md) — versions, releases and how updates install
-- [docs/harness.md](docs/harness.md) — agent loop, tools, permissions
+- [docs/harness.md](docs/harness.md) — agent loop, tools, permissions, web access, subagents, hooks, background tasks, headless runs
 - [docs/vault.md](docs/vault.md) — vault design
 - [docs/workspace.md](docs/workspace.md) — workspace model and files
 - [docs/vpn.md](docs/vpn.md) — VPN drivers, userspace vs system mode, credentials

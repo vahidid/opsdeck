@@ -254,6 +254,19 @@ func TestHarnessHeadlessShellAndCommands(t *testing.T) {
 	if code := c.do("POST", base+"/messages", map[string]string{"text": "hello"}, nil); code != 400 {
 		t.Fatalf("a message with a model the workspace does not allow: %d", code)
 	}
+	// a new session starts with a model the workspace allows, not the app default
+	var settings map[string]any
+	c.must("GET", "/api/settings", nil, &settings)
+	settings["providers"] = append(settings["providers"].([]any), map[string]any{"id": "cloud", "type": "openai", "name": "Cloud", "baseUrl": "https://api.example.com/v1", "models": []string{"big"}})
+	settings["defaultModel"] = "cloud/big"
+	c.must("PUT", "/api/settings", settings, nil)
+	ws["settings"].(map[string]any)["models"] = []string{"fake/*"}
+	c.must("PUT", "/api/workspaces/acme", ws, nil)
+	var sess map[string]any
+	c.must("POST", "/api/workspaces/acme/sessions", map[string]any{}, &sess)
+	if sess["model"] != "fake/m1" {
+		t.Fatalf("new session model %v, want the allowed fake/m1", sess["model"])
+	}
 }
 
 func TestHarnessQuestionsBackgroundAndCanary(t *testing.T) {

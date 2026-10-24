@@ -5,6 +5,52 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Agent
+
+- **Web access** — `web_search` (DuckDuckGo without a key, or SearXNG, Brave, Tavily),
+  `web_fetch` (pages as Markdown, in parts; GitHub files as raw) and `software_lookup`
+  (end-of-life dates from endoflife.date, known vulnerabilities from OSV.dev, GitHub releases).
+  Only public addresses are reached — every redirect and resolved IP is checked, so a page
+  cannot point the agent at opsdeck, this computer, the local network or cloud metadata.
+  Sites outside the allowed list (documentation sites built in, plus your own) ask once;
+  pages are marked untrusted and the next change after web content asks, in every mode; a
+  query that names a workspace address asks first. App settings → Web access sets the
+  default, the search backend and a proxy; a workspace can lower it or route the web through
+  one of its VPNs, and a workspace that allows only local models has it off.
+- **Workspace APIs, metrics and logs** — `http_request` calls the API of a panel (Grafana,
+  Alertmanager, Harbor, Proxmox, an admin API…) through its VPN or jump host with its vault
+  login or token; writes ask like other changes. New resource kinds **Prometheus**, **Loki**
+  and **Elasticsearch/OpenSearch** with `metrics_query` (PromQL, ranges drawn as a chart,
+  alerts, targets) and `logs_query` (LogQL or a query string, lines coloured by level).
+- **Subagents** — `delegate` hands work to an `investigator` (read-only; several run in
+  parallel), a `deployer` (changes with the usual approvals) or the workspace's own
+  `agents/*.md`, each with its own context and optionally a cheaper model. Their steps,
+  calls and approvals show inside the call.
+- **Hooks** — commands before and after tool calls and at the end of a turn, with the event
+  as JSON on stdin: block a call (exit 2), make it ask, keep an audit log, post to a chat.
+  In App settings and per workspace; workspace hooks run only after you trust them here.
+- **Background tasks** — `exec` and `local_exec` can run a command in the background; the
+  session is told when it ends or prints a matching line, and an idle session picks it up by
+  itself. `tasks` lists, reads, waits for and stops them; so does the session header.
+- **Canary rollouts** — a change over several hosts can run on one host first; a second card
+  then asks to continue on the rest or stop.
+- **Waiting, asking, planning** — `wait_for` (port, URL, command output, Kubernetes rollout)
+  instead of sleep loops; `ask_user` asks a multiple-choice question in the chat; `todo` keeps
+  a live checklist above the message box.
+- **Sessions** — fork a session (or from one of your messages, to edit and resend it), export
+  it as a report, runbook or skill, `!command` (or `!@host command`) to run something
+  yourself, and slash commands: the built-in ones and the workspace's own prompt templates in
+  `commands/*.md`.
+- **Headless runs** — `opsdeck run -p "…" --ws acme` for cron and CI, with text, JSON or
+  streamed JSON output; anything that would ask is denied.
+- **Model policy** — a workspace can limit its sessions to some models (e.g. `ollama/*`).
+- **Faster, leaner loop** — the reads of one step run in parallel; a long output is kept in
+  full and read in parts with `read_output` instead of being cut; tools are offered only
+  when the workspace has what they work on.
+- **The chat** — tool results come with views: charts, log lines, search results, the page
+  read, HTTP status, end-of-life tables and vulnerabilities, with the text the agent got one
+  click away.
+
 ### Workbench
 
 - **One-time VPN codes by SMS or email** — FortiGate VPNs (OpenConnect or openfortivpn)

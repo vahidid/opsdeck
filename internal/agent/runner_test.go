@@ -262,6 +262,14 @@ func TestHooks(t *testing.T) {
 	if res := r.runCalls(context.Background(), calls("status"), false); res[0].IsError {
 		t.Fatalf("hook matched another tool: %q", res[0].Content)
 	}
+	// a list of tool patterns
+	hooks[0].Tool = "exec, rest*"
+	if res := r.runCalls(context.Background(), calls("restart"), false); !res[0].IsError {
+		t.Fatalf("a hook for a list of tools did not match: %q", res[0].Content)
+	}
+	if res := r.runCalls(context.Background(), calls("status"), false); res[0].IsError {
+		t.Fatalf("a hook for a list of tools matched another tool: %q", res[0].Content)
+	}
 
 	// an App settings hook can let an asking call run; a workspace hook cannot
 	hooks = []Hook{{Name: "policy", Event: HookBeforeTool, Command: `cat >/dev/null; echo '{"decision":"allow"}'`}}

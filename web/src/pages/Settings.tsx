@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Cpu, KeyRound, Laptop, MessageSquareText, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, Sparkles, Sun, Trash2 } from "lucide-react";
+import { Bot, Cpu, Globe, KeyRound, Laptop, MessageSquareText, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Sparkles, Sun, Trash2, Webhook } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes } from "../api/types";
+import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes, WebSettings } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
 import { useUpdate } from "../context/update";
-import { Badge, Button, Card, ChipInput, CopyButton, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle } from "../components/ui";
+import { Badge, Button, Card, ChipInput, CopyButton, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle, cx } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { VaultItemModal } from "../components/VaultItemForm";
 import { ModelChooser } from "../components/ModelChooser";
+import { HooksEditor } from "../components/HooksEditor";
 import { passwordStrength } from "../lib/format";
 
 const PRESETS: { label: string; type: ProviderConfig["type"]; id: string; baseUrl: string; models: string[]; needsKey: boolean }[] = [
@@ -42,7 +43,21 @@ const normSettings = (v: Settings): Settings => ({
   git: { name: v.git?.name ?? "", email: v.git?.email ?? "" },
   providers: v.providers ?? [],
   localAccess: { ...NO_LOCAL, ...(v.localAccess ?? {}), allowedDirs: v.localAccess?.allowedDirs ?? [] },
-  agent: { autoServerChanges: !!v.agent?.autoServerChanges },
+  agent: {
+    autoServerChanges: !!v.agent?.autoServerChanges,
+    subagentModel: v.agent?.subagentModel ?? "",
+    noSubagents: !!v.agent?.noSubagents,
+    hooks: (v.agent?.hooks ?? []).map((h) => ({ ...h, tool: h.tool ?? "", risk: h.risk ?? "", environment: h.environment ?? [], workspace: h.workspace ?? "" })),
+  },
+  web: {
+    access: v.web?.access ?? "",
+    search: v.web?.search ?? "",
+    searchUrl: v.web?.searchUrl ?? "",
+    keyRef: v.web?.keyRef ?? "",
+    proxy: v.web?.proxy ?? "",
+    domains: v.web?.domains ?? [],
+    noDefaultDomains: !!v.web?.noDefaultDomains,
+  },
   updates: { noCheck: !!v.updates?.noCheck },
 });
 
@@ -61,11 +76,11 @@ export function AppSettingsPage() {
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
   const [tokens, setTokens] = useState<Item[]>([]);
-  const [newKeyFor, setNewKeyFor] = useState<number | null>(null);
+  const [newKeyFor, setNewKeyFor] = useState<number | "web" | null>(null);
   const [installed, setInstalled] = useState<InstalledAgent[] | null>(null);
   // providers added in this visit whose models are fetched right away
   const autoLoad = useRef(new Set<string>());
-  const { theme, setTheme } = useApp();
+  const { theme, setTheme, workspaces } = useApp();
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -334,7 +349,7 @@ export function AppSettingsPage() {
             />
             <Toggle
               checked={!s.agent?.autoServerChanges}
-              onChange={(v) => setS({ ...s, agent: { autoServerChanges: !v } })}
+              onChange={(v) => setS({ ...s, agent: { ...s.agent!, autoServerChanges: !v } })}
               label={
                 <span>
                   Ask before every change on a server, in every mode{" "}
@@ -388,6 +403,62 @@ export function AppSettingsPage() {
                 />
               </>
             )}
+          </div>
+        </Card>
+
+        <Card
+          title={
+            <>
+              <Globe className="size-4 text-muted" /> Web access
+            </>
+          }
+        >
+          <WebSection value={s.web!} onChange={(web) => setS({ ...s, web })} tokens={tokens} onNewKey={() => setNewKeyFor("web")} />
+        </Card>
+
+        <Card
+          title={
+            <>
+              <Bot className="size-4 text-muted" /> Agent harness
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <div className="text-[13px] font-medium mb-1">Subagents</div>
+              <div className="text-xs text-muted mb-2">
+                The agent can hand work to subagents with their own context: <b>investigator</b> (read-only; several run in parallel) and <b>deployer</b> (carries out a
+                planned change with the usual approvals), plus a workspace&apos;s own in <span className="font-mono">agents/*.md</span>. A cheaper, faster model is a good fit
+                for investigators.
+              </div>
+              <Toggle checked={!s.agent?.noSubagents} onChange={(v) => setS({ ...s, agent: { ...s.agent!, noSubagents: !v } })} label="Allow subagents" />
+              <div className={cx("mt-3 max-w-md", s.agent?.noSubagents && "opacity-50")}>
+                <FormField label="Subagent model" help="Empty: the session's model (local agent CLIs cannot run subagents; then the first API model is used)">
+                  <Select value={s.agent?.subagentModel ?? ""} onChange={(e) => setS({ ...s, agent: { ...s.agent!, subagentModel: e.target.value } })} className="font-mono text-xs" disabled={s.agent?.noSubagents}>
+                    <option value="">— the session&apos;s model —</option>
+                    {s.agent?.subagentModel && !allModels.some((m) => m.id === s.agent?.subagentModel) && <option value={s.agent.subagentModel}>{s.agent.subagentModel}</option>}
+                    {s.providers
+                      .filter((p) => !isAgentKind(p.type))
+                      .flatMap((p) => p.models.map((m) => ({ id: `${p.id}/${m}`, label: `${p.name} · ${p.modelNames?.[m] || m}` })))
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                  </Select>
+                </FormField>
+              </div>
+            </div>
+            <div className="border-t border-line pt-4">
+              <div className="text-[13px] font-medium mb-1 flex items-center gap-1.5">
+                <Webhook className="size-3.5 text-muted" /> Hooks
+              </div>
+              <div className="text-xs text-muted mb-3">
+                Commands on this computer that run around the agent&apos;s work, with the event as JSON on stdin — a policy check before tool calls, an audit log, a chat
+                message when a turn ends. Workspaces can bring their own hooks; those run only after you trust them in the workspace&apos;s settings.
+              </div>
+              <HooksEditor hooks={s.agent?.hooks ?? []} onChange={(hooks) => setS({ ...s, agent: { ...s.agent!, hooks } })} canAllow workspaces={workspaces.map((w) => w.name)} />
+            </div>
           </div>
         </Card>
 
@@ -453,9 +524,106 @@ export function AppSettingsPage() {
         allowedTypes={["token"]}
         onSaved={(it) => {
           void loadTokens();
-          if (newKeyFor !== null) setProvider(newKeyFor, { apiKeyRef: it.ref });
+          if (newKeyFor === "web") setS((cur) => (cur ? { ...cur, web: { ...cur.web!, keyRef: it.ref } } : cur));
+          else if (newKeyFor !== null) setProvider(newKeyFor, { apiKeyRef: it.ref });
         }}
       />
+    </div>
+  );
+}
+
+const SEARCH: { id: WebSettings["search"]; label: string; help: string }[] = [
+  { id: "", label: "DuckDuckGo", help: "No key needed. Results come from DuckDuckGo's HTML page." },
+  { id: "searxng", label: "SearXNG (self-hosted)", help: "Your own metasearch instance; its settings must allow format=json. Queries stay with you." },
+  { id: "brave", label: "Brave Search API", help: "Needs a Brave Search API key." },
+  { id: "tavily", label: "Tavily", help: "Search made for agents; needs a Tavily API key." },
+];
+
+function WebSection({ value, onChange, tokens, onNewKey }: { value: WebSettings; onChange: (v: WebSettings) => void; tokens: Item[]; onNewKey: () => void }) {
+  const access = value.access || "fetch";
+  const backend = SEARCH.find((b) => b.id === (value.search === "duckduckgo" ? "" : value.search)) ?? SEARCH[0];
+  return (
+    <div className="space-y-4">
+      <div className="text-xs text-muted leading-relaxed">
+        Lets the agent search the web and read pages — vendor documentation, release notes, error messages, CVEs — and look up end-of-life dates, known vulnerabilities
+        and releases. Workspaces can turn it down or off (and a workspace that allows only local models has it off unless it says otherwise).
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-muted w-28">Default access</span>
+        <Segmented
+          value={access}
+          onChange={(a) => onChange({ ...value, access: a })}
+          options={[
+            { id: "off", label: "Off" },
+            { id: "search", label: "Search only" },
+            { id: "fetch", label: "Search & read pages" },
+          ]}
+        />
+      </div>
+      {access !== "off" && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Search with" help={backend.help}>
+              <Select value={backend.id} onChange={(e) => onChange({ ...value, search: e.target.value as WebSettings["search"] })}>
+                {SEARCH.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+            {backend.id === "searxng" && (
+              <FormField label="SearXNG address">
+                <Input mono value={value.searchUrl} onChange={(e) => onChange({ ...value, searchUrl: e.target.value })} placeholder="https://searx.example.org" />
+              </FormField>
+            )}
+            {(backend.id === "brave" || backend.id === "tavily") && (
+              <FormField label="API key" help="Stored in your global vault as a token item.">
+                <Select value={value.keyRef} onChange={(e) => (e.target.value === "__new" ? onNewKey() : onChange({ ...value, keyRef: e.target.value }))} className="font-mono text-xs">
+                  <option value="">— choose —</option>
+                  {value.keyRef && !tokens.some((t) => t.ref === value.keyRef) && <option value={value.keyRef}>{value.keyRef}</option>}
+                  {tokens.map((t) => (
+                    <option key={t.id} value={t.ref}>
+                      {t.name}
+                    </option>
+                  ))}
+                  <option value="__new">+ Add API key to vault…</option>
+                </Select>
+              </FormField>
+            )}
+          </div>
+          <FormField label="Proxy" help="socks5://host:port or http://host:port — for networks where sites are blocked or filtered. A workspace can instead send its web requests through one of its own VPNs.">
+            <Input mono value={value.proxy} onChange={(e) => onChange({ ...value, proxy: e.target.value })} placeholder="direct" />
+          </FormField>
+          {access === "fetch" && (
+            <div className="space-y-2">
+              <FormField label="Sites read without asking" help="Other sites ask once per site in Ask and Plan mode (Auto and Full read them).">
+                <ChipInput mono value={value.domains} onChange={(d) => onChange({ ...value, domains: d })} placeholder="wiki.example.com" />
+              </FormField>
+              <Toggle
+                checked={!value.noDefaultDomains}
+                onChange={(v) => onChange({ ...value, noDefaultDomains: !v })}
+                label={
+                  <span>
+                    Also documentation sites <span className="text-faint">(kubernetes.io, docs.docker.com, nginx.org, github.com, postgresql.org, … and their subdomains)</span>
+                  </span>
+                }
+              />
+            </div>
+          )}
+          <div className="rounded-lg border border-line bg-panel-2 p-3 text-[12px] text-muted space-y-1.5">
+            <div className="flex items-center gap-1.5 text-fg font-medium text-[12.5px]">
+              <ShieldCheck className="size-3.5 text-ok" /> Built-in safeguards
+            </div>
+            <ul className="list-disc ml-5 space-y-0.5">
+              <li>Only public addresses: pages and redirects can never reach opsdeck itself, this computer, the local network or cloud metadata.</li>
+              <li>Pages reach the model marked as untrusted data; after the agent reads one, its next change asks you, in every mode.</li>
+              <li>Queries are redacted, and a query that names an address of the workspace asks first.</li>
+              <li>Every request is in the audit journal, like any other tool call.</li>
+            </ul>
+          </div>
+        </>
+      )}
     </div>
   );
 }

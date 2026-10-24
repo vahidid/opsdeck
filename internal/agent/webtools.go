@@ -173,7 +173,7 @@ var githubBlob = regexp.MustCompile(`^/([^/]+)/([^/]+)/blob/(.+)$`)
 
 // fetchURL checks a URL the agent wants to read and points GitHub file
 // pages at the raw file.
-func fetchURL(raw string) (*url.URL, error) {
+func fetchURL(raw string, allowPrivate bool) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
@@ -189,7 +189,7 @@ func fetchURL(raw string) (*url.URL, error) {
 		return nil, errors.New("URLs with credentials are refused")
 	}
 	host := u.Hostname()
-	if ip := net.ParseIP(host); (ip != nil && blockedIP(ip)) || (ip == nil && internalName(host)) {
+	if ip := net.ParseIP(host); !allowPrivate && ((ip != nil && blockedIP(ip)) || (ip == nil && internalName(host))) {
 		return nil, errPrivate{host, ""}
 	}
 	if strings.EqualFold(host, "github.com") {
@@ -239,7 +239,7 @@ func toolWebFetch() Tool {
 			if err != nil {
 				return nil, err
 			}
-			u, err := fetchURL(env.redact(in.URL))
+			u, err := fetchURL(env.redact(in.URL), wc.cfg.AllowPrivate)
 			if err != nil {
 				return nil, err
 			}

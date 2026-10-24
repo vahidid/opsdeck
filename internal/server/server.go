@@ -129,17 +129,26 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		Router:   s.router,
 		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {
-			if w.Settings.DefaultModel != "" {
-				return w.Settings.DefaultModel
-			}
+			// the workspace's default, the app's, else the first model —
+			// one the workspace allows when there is one
 			st := cfg.Settings()
-			if st.DefaultModel != "" {
-				return st.DefaultModel
+			ids := []string{w.Settings.DefaultModel, st.DefaultModel}
+			for _, m := range llm.ListModels(st.Providers) {
+				ids = append(ids, m.ID)
 			}
-			if m := llm.ListModels(st.Providers); len(m) > 0 {
-				return m[0].ID
+			first := ""
+			for _, id := range ids {
+				if id == "" {
+					continue
+				}
+				if agent.ModelAllowed(w, id) {
+					return id
+				}
+				if first == "" {
+					first = id
+				}
 			}
-			return ""
+			return first
 		},
 		UserScripts: dirs.Scripts(),
 		Local:       s.localPolicy,

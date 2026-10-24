@@ -1,4 +1,5 @@
 import {
+  Activity,
   Boxes,
   Cloud,
   Database,
@@ -12,6 +13,8 @@ import {
   LayoutDashboard,
   Lock,
   Network,
+  ScrollText,
+  Search,
   Server,
   Shield,
   ShieldCheck,
@@ -39,6 +42,9 @@ const byIcon: Record<string, (c: string) => ReactNode> = {
   database: (c) => <Database className={c} />,
   cloud: (c) => <Cloud className={c} />,
   workflow: (c) => <Workflow className={c} />,
+  activity: (c) => <Activity className={c} />,
+  "scroll-text": (c) => <ScrollText className={c} />,
+  search: (c) => <Search className={c} />,
 };
 
 const byKind: Record<string, string> = {
@@ -55,6 +61,9 @@ const byKind: Record<string, string> = {
   GitRemote: "git",
   KubernetesCluster: "boxes",
   AnsibleProject: "workflow",
+  Prometheus: "activity",
+  Loki: "scroll-text",
+  Elasticsearch: "search",
 };
 
 export function KindIcon({ kind, icon, className = "size-3.5" }: { kind: string; icon?: string; className?: string }) {

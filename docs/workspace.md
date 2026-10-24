@@ -11,13 +11,15 @@ write and what the agent produces:
 
 ```
 acme/
-├── workspace.yaml        # identity, environments, defaults, permissions, MCP servers
+├── workspace.yaml        # identity, environments, defaults, permissions, MCP servers, hooks
 ├── resources/            # inventory: hosts, networks, panels, clusters… (YAML)
 ├── OPSDECK.md            # instructions for the agent (like CLAUDE.md / AGENTS.md)
 ├── docs/                 # documentation and runbooks (Markdown) — yours and the agent's (write_doc)
 ├── topology.yaml         # the infrastructure map (Topology page, topology tool)
 ├── skills/               # reusable procedures the agent can load (name.md or name/SKILL.md + files)
 ├── scripts/              # scripts run on hosts as one unit (name/script.yaml + script.sh), see scripts.md
+├── agents/               # the workspace's own subagents (name.md: front matter + instructions), see harness.md
+├── commands/             # slash commands: prompt templates (name.md, $ARGUMENTS), see harness.md
 ├── ansible/              # Ansible projects kept in the workspace (ansible/<name>/), see ansible.md
 ├── reports/              # analyses, audits, incident write-ups, plans saved by the agent
 │   └── 2026/10/2026-10-21-0930-disk-and-memory-audit-of-prod.md
@@ -29,7 +31,7 @@ acme/
 │   └── deploy/
 ├── .gitignore            # ignores .opsdeck/ and repos/
 └── .opsdeck/             # local-only, not shared: agent sessions (transcripts), pinned host keys
-    ├── sessions/
+    ├── sessions/         #   with <id>.outputs/: full outputs of long tool results
     ├── ansible/          # Ansible run history and logs
     └── known_hosts
 ```
@@ -56,7 +58,7 @@ machine or handed to a teammate without a shared git repository:
 | included | left out |
 |---|---|
 | `workspace.yaml`, `resources/`, `topology.yaml` | `.opsdeck/` (agent sessions, known_hosts, run history) |
-| `OPSDECK.md`, `MEMORY.md`, `docs/`, `skills/` | `reports/`, `artifacts/` |
+| `OPSDECK.md`, `MEMORY.md`, `docs/`, `skills/`, `agents/`, `commands/` | `reports/`, `artifacts/` |
 | `scripts/`, `ansible/` | `repos/` (Git working copies), `.git/` |
 | the workspace's vault scope (current revisions) | the global vault scope, item history |
 
@@ -94,6 +96,14 @@ environments:          # used for grouping and, later, for agent policies
 settings:
   defaultUser: deploy
   defaultKey: vault://acme/deploy-key
+  web: search              # agent web access here: off | search | fetch ("" = the app default)
+  webVia: network/office-wg # send the agent's web requests through a VPN or proxy of the workspace
+  models: [ollama/*]       # the models sessions may use (patterns; empty = any)
+
+hooks:                     # commands around the agent's tool calls (harness.md#hooks);
+  - name: audit            # ones that came with the folder run only after you trust them
+    event: after_tool
+    command: logger -t opsdeck-agent
 ```
 
 ## Resources
@@ -167,7 +177,29 @@ spec: { ... }         # provider-specific
   via: network/office-wg
   spec:
     url: https://grafana.acme.internal
-    login: vault://acme/grafana-admin
+    login: vault://acme/grafana-admin       # or token: vault://… (+ authHeader); the agent's http_request uses it
+
+# observability.yaml — for the agent's metrics_query and logs_query
+- kind: Prometheus                         # or VictoriaMetrics, Thanos, Mimir
+  name: prom
+  environment: prod
+  via: network/office-wg
+  spec:
+    url: http://prometheus.acme.internal:9090
+
+- kind: Loki
+  name: loki
+  via: network/office-wg
+  spec:
+    url: http://loki.acme.internal:3100
+    tenant: acme                            # X-Scope-OrgID, optional
+
+- kind: Elasticsearch                       # or OpenSearch
+  name: logs
+  spec:
+    url: https://es.acme.internal:9200
+    login: vault://acme/es-reader
+    index: logs-*
 
 - kind: GitRemote
   name: deploy

@@ -46,11 +46,24 @@ func HookHash(ws string, h workspace.Hook) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// toolMatches reports whether a tool name matches a list of patterns
+// ("exec, local_*"; empty or * = any tool).
+func toolMatches(patterns, tool string) bool {
+	empty := true
+	for _, p := range strings.FieldsFunc(patterns, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if p == "*" || commandGlob(p, tool) {
+			return true
+		}
+		empty = false
+	}
+	return empty
+}
+
 func (h Hook) matches(event, tool string, c *Call) bool {
 	if h.Event != event {
 		return false
 	}
-	if h.Tool != "" && h.Tool != "*" && !commandGlob(h.Tool, tool) {
+	if !toolMatches(h.Tool, tool) {
 		return false
 	}
 	if c != nil {

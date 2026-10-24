@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 )
 
@@ -21,9 +22,12 @@ type ToolCall struct {
 }
 
 // Server answers the n-th assistant turn of a conversation with Script[n].
+// A conversation whose system prompt contains a key of ByMarker (a
+// subagent's) follows that script instead.
 type Server struct {
 	*httptest.Server
-	Script []Turn
+	Script   []Turn
+	ByMarker map[string][]Turn
 
 	Mu       sync.Mutex
 	Requests []map[string]any
@@ -48,9 +52,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			n++
 		}
 	}
+	script := s.Script
+	for _, m := range msgs {
+		mm, _ := m.(map[string]any)
+		sys, _ := mm["content"].(string)
+		if mm["role"] != "system" {
+			continue
+		}
+		for marker, sc := range s.ByMarker {
+			if strings.Contains(sys, marker) {
+				script = sc
+			}
+		}
+	}
 	turn := Turn{Text: "(script exhausted)"}
-	if n < len(s.Script) {
-		turn = s.Script[n]
+	if n < len(script) {
+		turn = script[n]
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(v any) {

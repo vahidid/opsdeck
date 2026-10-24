@@ -496,8 +496,27 @@ type searchResult struct {
 	Domain  string `json:"domain"`
 }
 
+// configuredClient reaches a service the user set up, such as a
+// self-hosted SearXNG, which is often on the local network. Only the
+// configured address is requested and redirects are not followed, so the
+// public-address rule cannot be bypassed through it.
+func (c *webClient) configuredClient(ctx context.Context) (*http.Client, error) {
+	base, proxied, err := c.baseDial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tr := &http.Transport{DialContext: guardedDial(base, proxied, true), TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 30 * time.Second}
+	return &http.Client{Transport: tr, Timeout: 60 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}, nil
+}
+
 func (c *webClient) search(ctx context.Context, query string, n int) ([]searchResult, error) {
-	hc, err := c.client(ctx)
+	clientFor := c.client
+	if c.cfg.Search == "searxng" {
+		clientFor = c.configuredClient
+	}
+	hc, err := clientFor(ctx)
 	if err != nil {
 		return nil, err
 	}

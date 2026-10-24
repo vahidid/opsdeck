@@ -172,6 +172,9 @@ func NewManager(d Deps) *Manager {
 
 func (m *Manager) dir(ws string) string { return filepath.Join(m.deps.StateDir(ws), "sessions") }
 
+// SetWeb replaces where the web settings come from (tests, embedding).
+func (m *Manager) SetWeb(f func() WebConfig) { m.deps.Web = f }
+
 // List returns sessions of a workspace, newest first.
 func (m *Manager) List(ws string) []Info {
 	entries, _ := os.ReadDir(m.dir(ws))

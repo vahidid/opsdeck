@@ -69,6 +69,12 @@ type Session struct {
 	taint string
 	// questions the agent asked the user (ask_user) and waits for.
 	questions map[string]*pendingQuestion
+	// inbox holds notifications (background tasks) that arrived during a
+	// turn; they start the next one.
+	inbox []string
+	// context is what the user ran with ! since their last message; it goes
+	// to the model with the next one.
+	context []string
 }
 
 type approval struct {
@@ -104,6 +110,7 @@ type stored struct {
 	Messages []llm.Message `json:"messages"`
 	Events   []Event       `json:"events"`
 	Granted  []string      `json:"granted"`
+	Context  []string      `json:"context,omitempty"`
 }
 
 // Deps are the services sessions use.
@@ -145,6 +152,7 @@ type Manager struct {
 	sessions map[string]*Session // ws/id
 	bridges  bridges
 	pages    pageCache // web pages read recently
+	bg       bgRegistry
 }
 
 func NewManager(d Deps) *Manager {
@@ -230,7 +238,8 @@ func (m *Manager) Get(ws, id string) (*Session, error) {
 		return nil, err
 	}
 	s := &Session{info: st.Info, messages: st.Messages, events: st.Events, granted: map[string]bool{},
-		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{}, path: path, nextID: len(st.Events)}
+		subs: map[chan Event]struct{}{}, pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{}, path: path, nextID: len(st.Events),
+		context: st.Context}
 	for _, g := range st.Granted {
 		s.granted[g] = true
 	}
@@ -250,6 +259,7 @@ func (m *Manager) Delete(ws, id string) error {
 		return err
 	}
 	s.Interrupt()
+	m.stopTasks(ws, id)
 	m.mu.Lock()
 	delete(m.sessions, ws+"/"+id)
 	m.mu.Unlock()
@@ -268,6 +278,7 @@ func (m *Manager) InterruptAll() {
 	for _, s := range all {
 		s.Interrupt()
 	}
+	m.stopTasks("", "")
 }
 
 // ---------------------------------------------------------------------------
@@ -452,7 +463,7 @@ func (s *Session) saveLocked() error {
 	for g := range s.granted {
 		granted = append(granted, g)
 	}
-	b, err := json.Marshal(stored{Info: s.info, Messages: s.messages, Events: s.events, Granted: granted})
+	b, err := json.Marshal(stored{Info: s.info, Messages: s.messages, Events: s.events, Granted: granted, Context: s.context})
 	if err != nil {
 		return err
 	}

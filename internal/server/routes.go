@@ -154,6 +154,10 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/interrupt", u(s.sessInterrupt))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/approvals/{aid}", u(s.sessApproval))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/questions/{qid}", u(s.sessAnswer))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks", u(s.sessTasks))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks/{tid}", u(s.sessTask))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/tasks/{tid}/stop", u(s.sessTaskStop))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/outputs/{oid}", u(s.sessOutput))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/stream", u(s.sessStream))
 
 	// git repositories

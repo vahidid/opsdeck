@@ -39,15 +39,24 @@ func (m *Manager) Send(ws, id, text string) error {
 	if err != nil {
 		return err
 	}
+	if err := checkModel(w, s.Info().Model); err != nil {
+		return err
+	}
+	return m.start(s, w, text, false)
+}
+
+// start runs a turn in the background: for a message of the user, or for a
+// notification the agent should act on (a background task finished).
+func (m *Manager) start(s *Session, w *workspace.Workspace, text string, notification bool) error {
 	s.mu.Lock()
 	if s.cancel != nil {
 		s.mu.Unlock()
 		return ErrBusy
 	}
-	ctx, cancel := context.WithCancel(connect.WithActor(context.Background(), connect.Actor{Kind: "agent", Session: id}))
+	ctx, cancel := context.WithCancel(connect.WithActor(context.Background(), connect.Actor{Kind: "agent", Session: s.info.ID}))
 	s.cancel, s.runCtx = cancel, ctx
 	s.mu.Unlock()
-	go m.run(ctx, s, w, text)
+	go m.run(ctx, s, w, text, notification)
 	return nil
 }
 
@@ -55,6 +64,17 @@ func (m *Manager) env(w *workspace.Workspace) *Env {
 	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, DB: m.deps.DB, Git: m.deps.Git, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
 		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local(), Policy: m.policy(),
 		Web: m.webClientFor(w), WebLevel: m.webAccess(w), Redact: m.redactor.Redact, Agents: m.agents(w)}
+}
+
+// sessionEnv is the tool environment of a session's turn.
+func (m *Manager) sessionEnv(s *Session, w *workspace.Workspace) *Env {
+	env := m.env(w)
+	info := s.Info()
+	env.SessionID, env.Model = info.ID, info.Model
+	env.Outputs = s.Output
+	env.Tasks = func(id string) *BgTask { return m.bg.get(w.Name(), info.ID, id) }
+	env.AllTasks = func() []*BgTask { return m.bg.list(w.Name(), info.ID) }
+	return env
 }
 
 func (m *Manager) agents(w *workspace.Workspace) []workspace.AgentDef {
@@ -98,7 +118,7 @@ func (m *Manager) local() *LocalPolicy {
 	return m.deps.Local()
 }
 
-func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, text string) {
+func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, text string, notification bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.emit("error", map[string]any{"message": fmt.Sprintf("internal error: %v", r)}, true)
@@ -117,14 +137,25 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		s.save()
 		msg, errMsg := s.lastOutcome()
 		m.turnEndHooks(s, w, msg, errMsg)
+		go m.deliverInbox(s, w)
 	}()
 
 	text = m.redactor.Redact(text)
 	s.mu.Lock()
 	first := len(s.messages) == 0
-	s.messages = append(s.messages, llm.Message{Role: "user", Content: []llm.Block{{Type: "text", Text: text}}})
-	s.taint = "" // a new message from the user: they are back in the loop
-	if first {
+	content := text
+	if notification {
+		content = "[opsdeck notification — not a message from the user]\n" + text
+	} else if len(s.context) > 0 {
+		// what the user ran with ! since the last message
+		content = strings.Join(s.context, "\n\n") + "\n\n" + text
+		s.context = nil
+	}
+	s.messages = append(s.messages, llm.Message{Role: "user", Content: []llm.Block{{Type: "text", Text: content}}})
+	if !notification {
+		s.taint = "" // a new message from the user: they are back in the loop
+	}
+	if first && !notification {
 		title := strings.Join(strings.Fields(text), " ")
 		if r := []rune(title); len(r) > 70 {
 			title = string(r[:70]) + "…"
@@ -132,14 +163,23 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		s.info.Title = title
 	}
 	mode, modelID := s.info.Mode, s.info.Model
+	msgIndex := len(s.messages) - 1
 	s.mu.Unlock()
-	s.emit("user", map[string]any{"text": text}, true)
+	if notification {
+		s.emit("notification", map[string]any{"text": text}, true)
+	} else {
+		s.emit("user", map[string]any{"text": text, "msgIndex": msgIndex}, true)
+	}
 	s.setState("running")
 	s.save()
+	if err := checkModel(w, modelID); err != nil {
+		s.emit("error", map[string]any{"message": err.Error()}, true)
+		return
+	}
 
 	router := m.deps.Router()
 	if p, model, ok := router.Lookup(modelID); ok && extagent.IsKind(p.Type) {
-		m.runExternal(ctx, s, w, text, p, model)
+		m.runExternal(ctx, s, w, content, p, model)
 		return
 	}
 	provider, model, err := router.Resolve(modelID)
@@ -147,10 +187,11 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, t
 		s.emit("error", map[string]any{"message": err.Error()}, true)
 		return
 	}
-	env := m.env(w)
-	env.SessionID, env.Model = s.info.ID, modelID
-	env.Outputs = s.Output
-	m.recallFor(s, env, text)
+	env := m.sessionEnv(s, w)
+	env.Model = modelID
+	if !notification {
+		m.recallFor(s, env, text)
+	}
 	m.deps.MCP.Ensure(ctx, w)
 
 	if err := m.maybeCompact(ctx, s, provider, model); err != nil && ctx.Err() == nil {

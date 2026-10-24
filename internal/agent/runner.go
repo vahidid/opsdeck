@@ -303,6 +303,9 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 	runCtx = context.WithValue(runCtx, delegateKey{}, delegateFunc(func(ctx context.Context, def workspace.AgentDef, task string) (string, error) {
 		return r.delegate(ctx, c.ID, def, task)
 	}))
+	runCtx = context.WithValue(runCtx, bgKey{}, bgStarter(func(tool, target, command, notifyOn string, limit time.Duration, run bgRun) (*BgTask, error) {
+		return r.startBackground(ctx, c.ID, tool, target, command, notifyOn, limit, run)
+	}))
 	start := time.Now()
 	out, err := call.Run(runCtx)
 	dur := time.Since(start).Milliseconds()

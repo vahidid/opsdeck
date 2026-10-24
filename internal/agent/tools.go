@@ -64,6 +64,9 @@ type Env struct {
 	Redact func(string) string
 	// Agents are the subagents delegate can start (none when unavailable).
 	Agents []workspace.AgentDef
+	// Tasks finds a background task of the session; AllTasks lists them.
+	Tasks    func(id string) *BgTask
+	AllTasks func() []*BgTask
 }
 
 // Call is a prepared tool invocation: everything the permission layer needs
@@ -294,7 +297,7 @@ func Tools() []Tool {
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
 		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(),
-		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(),
+		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(), toolTasks(),
 	}
 }
 
@@ -576,17 +579,23 @@ func toolWriteDoc() Tool {
 
 func toolExec() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "exec", Description: "Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). target is a host name, group/<name>, or a comma-separated list. Commands run as the host's configured user; use 'sudo -n' when root is needed. Do not run interactive programs (vim, less, top without -b). Output is limited; filter with grep/head/tail.",
+		Def: llm.Tool{Name: "exec", Description: "Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). target is a host name, group/<name>, or a comma-separated list. Commands run as the host's configured user; use 'sudo -n' when root is needed. Do not run interactive programs (vim, less, top without -b). Output is limited; filter with grep/head/tail. A change on several hosts can roll out as a canary (canary=true: the first host, then the user decides on the rest). Long commands (a deploy, a build, a log tail) can run in the background on one host (background=true): you are told when they finish, or when a line matches notify_on.",
 			Schema: obj(map[string]any{
 				"target":      str("Host name, group/<name>, or comma-separated host names"),
 				"command":     str("Shell command"),
-				"timeout_sec": num("Timeout in seconds (default 120, max 1800)"),
+				"timeout_sec": num("Timeout in seconds (default 120, max 1800; background: default 4h, max 24h)"),
+				"canary":      map[string]any{"type": "boolean", "description": "Several hosts: run on the first one, then ask before the rest"},
+				"background":  map[string]any{"type": "boolean", "description": "Keep it running after this call returns (one host only)"},
+				"notify_on":   str("background: a regular expression; you are told when an output line matches it (e.g. 'Started|ERROR')"),
 			}, "target", "command")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
 			var in struct {
 				Target     string
 				Command    string
 				TimeoutSec int `json:"timeout_sec"`
+				Canary     bool
+				Background bool
+				NotifyOn   string `json:"notify_on"`
 			}
 			if err := decode(input, &in); err != nil {
 				return nil, err
@@ -598,12 +607,17 @@ func toolExec() Tool {
 			if err != nil {
 				return nil, err
 			}
-			timeout := time.Duration(in.TimeoutSec) * time.Second
-			if timeout <= 0 {
-				timeout = 120 * time.Second
+			if in.Background && len(hosts) > 1 {
+				return nil, errors.New("background runs on one host; start one background task per host")
 			}
-			if timeout > 30*time.Minute {
-				timeout = 30 * time.Minute
+			timeout := time.Duration(in.TimeoutSec) * time.Second
+			if in.Background {
+				timeout = min(timeout, 24*time.Hour)
+			} else {
+				if timeout <= 0 {
+					timeout = 120 * time.Second
+				}
+				timeout = min(timeout, 30*time.Minute)
 			}
 			an := AnalyzeCommand(in.Command)
 			risk, reasons := an.Risk, an.Reasons
@@ -619,15 +633,31 @@ func toolExec() Tool {
 					preview += "\nvia: " + strings.Join(path, " → ")
 				}
 			}
-			return &Call{Risk: risk, Target: target, Environment: envName, Protected: protected, Match: in.Command,
-				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...),
-				Run: func(ctx context.Context) (string, error) {
-					ctx, cancel := context.WithTimeout(ctx, timeout)
-					defer cancel()
-					if len(hosts) == 1 {
-						res, err := env.Hub.Exec(ctx, env.WS, hosts[0], in.Command, nil, 2<<20)
-						return formatExec(res, err), nil
-					}
+			if in.Background {
+				preview += "\nin the background"
+				if in.NotifyOn != "" {
+					preview += ", notify on /" + in.NotifyOn + "/"
+				}
+			}
+			if in.Canary && len(hosts) > 1 {
+				preview += "\ncanary: " + names[0] + " first, then the others after your OK"
+			}
+			c := &Call{Risk: risk, Target: target, Environment: envName, Protected: protected, Match: in.Command,
+				Shell: true, Commands: an.Parts, Preview: preview, Reasons: reasons, Credentials: env.creds(hosts...), Hosts: names}
+			c.Run = func(ctx context.Context) (string, error) {
+				if in.Background {
+					h := hosts[0]
+					return startBg(ctx, "exec", h.Name, in.Command, in.NotifyOn, timeout, func(ctx context.Context, onLine func(string)) (int, error) {
+						return env.Hub.ExecWatch(ctx, env.WS, h, in.Command, onLine)
+					})
+				}
+				ctx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+				if len(hosts) == 1 {
+					res, err := env.Hub.Exec(ctx, env.WS, hosts[0], in.Command, nil, 2<<20)
+					return formatExec(res, err), nil
+				}
+				fan := func(hosts []*workspace.Resource) []string {
 					results := make([]string, len(hosts))
 					var wg sync.WaitGroup
 					sem := make(chan struct{}, 8)
@@ -642,8 +672,33 @@ func toolExec() Tool {
 						}(i, h)
 					}
 					wg.Wait()
-					return strings.Join(results, "\n"), nil
-				}}, nil
+					return results
+				}
+				if (in.Canary || c.canary) && risk != RiskRead {
+					first := hosts[0]
+					res, err := env.Hub.Exec(ctx, env.WS, first, in.Command, nil, 512<<10)
+					out := formatExec(res, err)
+					head := "=== " + first.Name + " (canary) ===\n" + truncate(out, 30000)
+					ok := err == nil && res.ExitCode == 0
+					reportProgress(ctx, "canary on %s: exit %d", first.Name, res.ExitCode)
+					reason := "the canary on " + first.Name + " succeeded (exit 0)"
+					if !ok {
+						reason = fmt.Sprintf("the canary on %s FAILED (exit %d)", first.Name, res.ExitCode)
+					}
+					approved, note, cerr := confirmStep(ctx, Step{Title: fmt.Sprintf("Continue on the other %d hosts", len(hosts)-1), Reason: reason, Risk: risk,
+						Preview: "$ " + in.Command + "\n\non " + first.Name + ":\n" + truncate(out, 6000) + "\n\nnext: " + strings.Join(names[1:], ", ")})
+					if cerr != nil || !approved {
+						msg := head + "\n\nThe rollout stopped after the canary host: the user did not continue on " + strings.Join(names[1:], ", ") + "."
+						if note != "" {
+							msg += " Their note: " + note
+						}
+						return msg, nil
+					}
+					return head + "\n" + strings.Join(fan(hosts[1:]), "\n"), nil
+				}
+				return strings.Join(fan(hosts), "\n"), nil
+			}
+			return c, nil
 		},
 	}
 }

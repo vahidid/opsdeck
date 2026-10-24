@@ -213,12 +213,13 @@ func toolRunScript() Tool {
 				"target": str("Host name, group/<name>, or comma-separated host names"),
 				"params": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "Parameter values by name (strings; secrets as vault:// references)"},
 				"force":  map[string]any{"type": "boolean", "description": "Run even when the script's check says it is already applied"},
+				"canary": map[string]any{"type": "boolean", "description": "Several hosts: run on the first one, then ask before the rest"},
 			}, "script", "target")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
 			var in struct {
 				Script, Target string
 				Params         map[string]any
-				Force          bool
+				Force, Canary  bool
 			}
 			if err := decode(input, &in); err != nil {
 				return nil, err
@@ -317,18 +318,44 @@ func toolRunScript() Tool {
 			if len(pv) > 0 {
 				match += " " + strings.Join(pv, " ")
 			}
-			return &Call{Risk: risk, Target: "host/" + strings.Join(names, ","), Environment: envName, Protected: protected,
-				Match: match, Preview: truncate(b.String(), 30000), Reasons: reasons, Credentials: creds,
-				GrantLabel: s.Ref() + " with these parameters on " + strings.Join(names, ", ") + " (until the script changes)",
-				Run: func(ctx context.Context) (string, error) {
-					r := scripts.Runner{WS: env.WS, Hub: env.Hub, Vault: env.Vault, Redact: NewRedactor(env.Vault.SecretValues).Redact,
-						Actor: "agent", Session: env.SessionID}
-					results, err := r.Run(ctx, &s, hosts, given, in.Force)
+			c := &Call{Risk: risk, Target: "host/" + strings.Join(names, ","), Environment: envName, Protected: protected,
+				Match: match, Preview: truncate(b.String(), 30000), Reasons: reasons, Credentials: creds, Hosts: names,
+				GrantLabel: s.Ref() + " with these parameters on " + strings.Join(names, ", ") + " (until the script changes)"}
+			c.Run = func(ctx context.Context) (string, error) {
+				r := scripts.Runner{WS: env.WS, Hub: env.Hub, Vault: env.Vault, Redact: NewRedactor(env.Vault.SecretValues).Redact,
+					Actor: "agent", Session: env.SessionID}
+				if (in.Canary || c.canary) && len(hosts) > 1 {
+					first, err := r.Run(ctx, &s, hosts[:1], given, in.Force)
 					if err != nil {
 						return "", err
 					}
-					return formatScriptResults(&s, results), nil
-				}}, nil
+					head := formatScriptResults(&s, first)
+					reason := "the canary on " + names[0] + " succeeded"
+					if len(first) == 0 || !first[0].OK() {
+						reason = "the canary on " + names[0] + " FAILED"
+					}
+					approved, note, cerr := confirmStep(ctx, Step{Title: fmt.Sprintf("Run %s on the other %d hosts", s.Ref(), len(hosts)-1), Reason: reason, Risk: risk,
+						Preview: truncate(head, 8000) + "\n\nnext: " + strings.Join(names[1:], ", ")})
+					if cerr != nil || !approved {
+						msg := head + "\nThe rollout stopped after the canary host: the user did not continue on " + strings.Join(names[1:], ", ") + "."
+						if note != "" {
+							msg += " Their note: " + note
+						}
+						return msg, nil
+					}
+					rest, err := r.Run(ctx, &s, hosts[1:], given, in.Force)
+					if err != nil {
+						return head, err
+					}
+					return formatScriptResults(&s, append(first, rest...)), nil
+				}
+				results, err := r.Run(ctx, &s, hosts, given, in.Force)
+				if err != nil {
+					return "", err
+				}
+				return formatScriptResults(&s, results), nil
+			}
+			return c, nil
 		},
 	}
 }

@@ -31,9 +31,8 @@ You are running inside opsdeck. Your ONLY tools are those of the MCP server name
 
 // runExternal runs one turn with a locally installed agent CLI.
 func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Workspace, text string, p config.Provider, model string) {
-	env := m.env(w)
+	env := m.sessionEnv(s, w)
 	s.mu.Lock()
-	env.SessionID, env.Model = s.info.ID, s.info.Model
 	mode := s.info.Mode
 	resume := ""
 	if pid, id, ok := strings.Cut(s.info.External, ":"); ok && pid == p.ID {

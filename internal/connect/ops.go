@@ -153,6 +153,66 @@ func (h *Hub) ExecStream(ctx context.Context, w *workspace.Workspace, host *work
 	return nil
 }
 
+// ExecWatch runs cmd, passes every line it prints (stdout and stderr
+// together) to onLine as it comes, and returns its exit code (-1 when ctx
+// stopped it).
+func (h *Hub) ExecWatch(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(string)) (int, error) {
+	client, err := h.SSH(ctx, w, host)
+	if err != nil {
+		return -1, err
+	}
+	sess, err := client.NewSession()
+	if err != nil {
+		h.Disconnect(w.Name(), host.Name)
+		if client, err = h.SSH(ctx, w, host); err != nil {
+			return -1, err
+		}
+		if sess, err = client.NewSession(); err != nil {
+			return -1, err
+		}
+	}
+	defer sess.Close()
+	pr, pw := io.Pipe()
+	sess.Stdout, sess.Stderr = pw, pw
+	if err := sess.Start(cmd); err != nil {
+		return -1, err
+	}
+	waited := make(chan error, 1)
+	go func() {
+		err := sess.Wait()
+		waited <- err
+		pw.CloseWithError(io.EOF)
+	}()
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-ctx.Done():
+			sess.Signal(ssh.SIGTERM)
+			sess.Close()
+			pw.Close()
+		case <-stop:
+		}
+	}()
+	sc := bufio.NewScanner(pr)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	for sc.Scan() {
+		onLine(sc.Text())
+	}
+	if ctx.Err() != nil {
+		return -1, nil
+	}
+	err = <-waited
+	var exitErr *ssh.ExitError
+	switch {
+	case err == nil:
+		return 0, nil
+	case errors.As(err, &exitErr):
+		return exitErr.ExitStatus(), nil
+	}
+	return -1, err
+}
+
 // ExecStreams is ExecStream with stdout and stderr kept apart: onLine gets
 // stderr=true for lines the command wrote to standard error.
 func (h *Hub) ExecStreams(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(stderr bool, line string)) error {

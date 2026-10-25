@@ -208,6 +208,16 @@ spec: { ... }         # provider-specific
     zone: example.com
     connection: cloudflare                   # optional: the DNS connector of this computer; default: the account that has the zone
 
+- kind: DeployPlatform                      # Portainer, Argo CD or Komodo of this workspace (docs/deployments.md)
+  name: argo
+  environment: prod
+  via: network/office-wg                     # optional: the server is only reachable over the VPN
+  spec:
+    platform: argocd                         # portainer | argocd | komodo
+    url: https://argocd.acme.internal
+    token: vault://acme/argocd-token         # Komodo: a login item (API key as username, secret as password)
+    targets: [shop-*]                        # optional: the applications/stacks of this workspace
+
 - kind: Certificate                         # a TLS certificate from an ACME CA (docs/certificates.md)
   name: web
   environment: prod

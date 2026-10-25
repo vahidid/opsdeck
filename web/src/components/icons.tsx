@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   Lock,
   Network,
+  Rocket,
   ScrollText,
   Search,
   Server,
@@ -47,6 +48,7 @@ const byIcon: Record<string, (c: string) => ReactNode> = {
   "scroll-text": (c) => <ScrollText className={c} />,
   search: (c) => <Search className={c} />,
   certificate: (c) => <BadgeCheck className={c} />,
+  rocket: (c) => <Rocket className={c} />,
 };
 
 const byKind: Record<string, string> = {
@@ -68,6 +70,7 @@ const byKind: Record<string, string> = {
   Elasticsearch: "search",
   Domain: "globe",
   Certificate: "certificate",
+  DeployPlatform: "rocket",
 };
 
 export function KindIcon({ kind, icon, className = "size-3.5" }: { kind: string; icon?: string; className?: string }) {

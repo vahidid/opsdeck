@@ -63,6 +63,8 @@ export function resourceSummary(r: Resource): string {
     case "Elasticsearch":
     case "GitRemote":
       return str(s.url);
+    case "DeployPlatform":
+      return [s.platform, s.url].filter(Boolean).map(String).join(" · ");
     case "KubernetesCluster":
       return [s.context, s.namespace].filter(Boolean).map(String).join(" · ") || str(s.kubeconfig);
     default: {

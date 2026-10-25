@@ -201,6 +201,21 @@ Record changes are audited as `dns.record.create`, `dns.record.update` and
 `dns.record.delete` on `domain/<name>`; connecting and disconnecting as `dns.connect` and
 `dns.disconnect`.
 
+## Deployments
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/deploy/platforms` | → `[{id: portainer\|argocd\|komodo, label, tokenHelp, tokenPath, credential: token\|login, actions: [{id, label, help, risk, types}]}]` |
+| GET | `/api/workspaces/{ws}/deploy` | → `[{name, platform, label, url, environment, protected, via, description, targets, server: {version, user}, error}]` for every DeployPlatform resource (each checked against its server) |
+| GET | `/api/workspaces/{ws}/deploy/{name}/targets` | → `[{id, name, type, where, status, health: ok\|warn\|err\|busy\|unknown, sync, outOfSync, updateAvailable, revision, source, updated, message, url, actions}]` (only those matching `spec.targets`) |
+| GET | `/api/workspaces/{ws}/deploy/{name}/target?id=` | one target by id or name, plus `{services: [{name, kind, namespace, image, status, health, message, outOfSync, updateAvailable, container}], history: [{id, revision, source, time, durationMs, by, result, operation}], operation: {name, phase, message, started, finished}, file, git, autoSync}` |
+| GET | `/api/workspaces/{ws}/deploy/{name}/logs?id=&service=&tail=` | → `{text}` |
+| GET | `/api/workspaces/{ws}/deploy/{name}/diff?id=` | → `{supported, diff}` (a unified diff; `""` when nothing would change) |
+| POST | `/api/workspaces/{ws}/deploy/{name}/action` | `{id, action, revision?, prune?, history?, service?, file?, pull?, hard?}` → `{ok, message, output}` (400 when the target does not take the action) |
+
+Errors from the platform come back as 502 with its message. Actions are audited as
+`deploy.<action>` on `deploy/<platform>/<target>`, with the target's state before.
+
 ## Certificates (ACME)
 
 | Method | Path | |

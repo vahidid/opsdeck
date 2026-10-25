@@ -73,7 +73,7 @@ func (m *Manager) start(s *Session, w *workspace.Workspace, in turnInput) error 
 }
 
 func (m *Manager) env(w *workspace.Workspace) *Env {
-	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, DB: m.deps.DB, Git: m.deps.Git, DNS: m.deps.DNS, ACME: m.deps.ACME, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
+	return &Env{WS: w, Hub: m.deps.Hub, Docker: m.deps.Docker, Kube: m.deps.Kube, DB: m.deps.DB, Git: m.deps.Git, DNS: m.deps.DNS, Deploy: m.deps.Deploy, ACME: m.deps.ACME, Ansible: m.deps.Ansible, Vault: m.deps.Vault, MCP: m.deps.MCP,
 		MemoryPath: w.MemoryPath(), UserScripts: m.deps.UserScripts, Local: m.local(), Policy: m.policy(),
 		Web: m.webClientFor(w), WebLevel: m.webAccess(w), Redact: m.redactor.Redact, Agents: m.agents(w)}
 }

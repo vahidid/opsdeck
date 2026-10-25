@@ -492,7 +492,8 @@ export type ToolView =
   | { kind: "eol"; product: string; version: string; cycles: { cycle: string; release?: string; latest?: string; eol?: string | boolean; support?: string | boolean; lts?: boolean; match?: boolean }[] }
   | { kind: "vulns"; package: string; vulns: { id: string; aliases?: string[]; summary: string; severity?: string; fixed?: string[]; published?: string }[] }
   | { kind: "releases"; repo: string; releases: { tag: string; name?: string; published?: string; prerelease?: boolean; url: string }[] }
-  | { kind: "dns"; zone: string; records: DNSRecord[] };
+  | { kind: "dns"; zone: string; records: DNSRecord[] }
+  | { kind: "deploy"; platform: string; targets?: DeployTarget[]; detail?: DeployDetail };
 
 export type AgentEvent =
   | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string })
@@ -750,6 +751,65 @@ export type DomainInfo = {
   comments: boolean;
 };
 export const DNS_RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA", "PTR"];
+
+// Deployment platforms (DeployPlatform resources: Portainer, Argo CD,
+// Komodo) and what they deploy, in one provider-neutral shape.
+export type DeployActionInfo = { id: string; label: string; help: string; risk: "read" | "change" | "destructive"; types?: string[] };
+export type DeployPlatformType = { id: "portainer" | "argocd" | "komodo"; label: string; tokenHelp: string; tokenPath?: string; credential: "token" | "login"; actions: DeployActionInfo[] };
+export type DeployHealth = "ok" | "warn" | "err" | "busy" | "unknown";
+export type DeployPlatformInfo = {
+  name: string;
+  platform: string;
+  label: string;
+  url: string;
+  environment?: string;
+  protected?: boolean;
+  via?: string;
+  description?: string;
+  targets?: string[];
+  server?: { version?: string; user?: string };
+  error?: string;
+};
+export type DeployTarget = {
+  id: string;
+  name: string;
+  type: string;
+  where?: string;
+  status: string;
+  health: DeployHealth;
+  sync?: string;
+  outOfSync?: boolean;
+  updateAvailable?: boolean;
+  revision?: string;
+  source?: string;
+  updated?: string;
+  message?: string;
+  url?: string;
+  actions: string[];
+};
+export type DeployService = {
+  name: string;
+  kind?: string;
+  namespace?: string;
+  image?: string;
+  status: string;
+  health: DeployHealth;
+  message?: string;
+  outOfSync?: boolean;
+  updateAvailable?: boolean;
+  container?: string;
+};
+export type DeployHistory = { id: string; revision?: string; source?: string; time?: string; durationMs?: number; by?: string; result?: string; operation?: string };
+export type DeployDetail = DeployTarget & {
+  services: DeployService[];
+  history: DeployHistory[];
+  operation?: { name?: string; phase: string; message?: string; started?: string; finished?: string };
+  file?: string;
+  git?: boolean;
+  autoSync?: boolean;
+};
+export type DeployActionInput = { id: string; action: string; revision?: string; prune?: boolean; history?: string; service?: string; file?: string; pull?: boolean; hard?: boolean };
+export type DeployResult = { message: string; output?: string; ok: boolean };
 
 // TLS certificates (ACME): Certificate resources, their issued certificate
 // in the vault, issuance jobs and deployments.

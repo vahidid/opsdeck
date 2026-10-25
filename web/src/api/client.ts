@@ -14,6 +14,12 @@ import type {
   DNSRecord,
   DNSRecordInput,
   DomainInfo,
+  DeployPlatformType,
+  DeployPlatformInfo,
+  DeployTarget,
+  DeployDetail,
+  DeployActionInput,
+  DeployResult,
   AcmeCA,
   CertStatus,
   CertDetail,
@@ -338,6 +344,15 @@ export const api = {
   dnsRecordCreate: (ws: string, name: string, r: DNSRecordInput) => post<DNSRecord>(`${W(ws)}/domains/${e(name)}/records`, r),
   dnsRecordUpdate: (ws: string, name: string, id: string, r: DNSRecordInput) => put<DNSRecord>(`${W(ws)}/domains/${e(name)}/records/${e(id)}`, r),
   dnsRecordDelete: (ws: string, name: string, id: string) => del(`${W(ws)}/domains/${e(name)}/records/${e(id)}`),
+
+  // deployment platforms
+  deployPlatformTypes: () => arr(get<DeployPlatformType[]>("/api/deploy/platforms")),
+  deployPlatforms: (ws: string) => arr(get<DeployPlatformInfo[]>(`${W(ws)}/deploy`)),
+  deployTargets: (ws: string, name: string) => arr(get<DeployTarget[]>(`${W(ws)}/deploy/${e(name)}/targets`)),
+  deployTarget: (ws: string, name: string, id: string) => get<DeployDetail>(`${W(ws)}/deploy/${e(name)}/target${qs({ id })}`),
+  deployLogs: (ws: string, name: string, id: string, service = "", tail = 300) => get<{ text: string }>(`${W(ws)}/deploy/${e(name)}/logs${qs({ id, service, tail: String(tail) })}`),
+  deployDiff: (ws: string, name: string, id: string) => get<{ supported: boolean; diff?: string }>(`${W(ws)}/deploy/${e(name)}/diff${qs({ id })}`),
+  deployAction: (ws: string, name: string, a: DeployActionInput) => post<DeployResult>(`${W(ws)}/deploy/${e(name)}/action`, a),
 
   // certificates (ACME)
   acmeCAs: () => arr(get<AcmeCA[]>("/api/acme/cas")),

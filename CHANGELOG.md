@@ -5,6 +5,13 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-25
+
+The agent works like a coding harness — web access, subagents, hooks, background tasks,
+canary rollouts and headless runs — and the workbench manages domains and DNS at
+Cloudflare and ArvanCloud and TLS certificates from Let's Encrypt; FortiGate and AnyConnect
+VPNs that ask for one-time codes or a group now connect.
+
 ### Agent
 
 - **Web access** — `web_search` (DuckDuckGo without a key, or SearXNG, Brave, Tavily),

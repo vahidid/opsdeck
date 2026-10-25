@@ -28,6 +28,8 @@ export function ToolViewBlock({ view }: { view: ToolView }) {
       return <VulnsView v={view} />;
     case "releases":
       return <ReleasesView v={view} />;
+    case "dns":
+      return <DnsView v={view} />;
   }
   return null;
 }
@@ -522,6 +524,41 @@ function VulnsView({ v }: { v: Extract<ToolView, { kind: "vulns" }> }) {
           </div>
         </ExtLink>
       ))}
+    </div>
+  );
+}
+
+function DnsView({ v }: { v: Extract<ToolView, { kind: "dns" }> }) {
+  if (v.records.length === 0) return <div className="text-xs text-muted">No records in {v.zone}.</div>;
+  return (
+    <div className="rounded-md border border-line bg-panel-2 overflow-hidden">
+      <div className="px-3 h-8 flex items-center gap-2 text-[11px] text-faint border-b border-line">
+        <Globe className="size-3" />
+        <span className="font-mono">{v.zone}</span>
+        <span>· {v.records.length} records</span>
+      </div>
+      <table className="w-full text-[12px]">
+        <tbody>
+          {v.records.map((r) => (
+            <tr key={r.id || r.fqdn + r.type + r.content} className="border-b border-line/60 last:border-0">
+              <td className="px-3 h-8 w-14">
+                <Badge mono tone="neutral">
+                  {r.type}
+                </Badge>
+              </td>
+              <td className="px-2 font-mono truncate max-w-[220px]" title={r.fqdn}>
+                {r.name}
+              </td>
+              <td className="px-2 font-mono text-muted truncate" title={r.content}>
+                {r.priority ? `${r.priority} ` : ""}
+                {r.content}
+              </td>
+              <td className="px-2 text-[11px] text-faint tabular-nums whitespace-nowrap">{r.ttl > 1 ? `${r.ttl}s` : "auto"}</td>
+              <td className="px-3 text-[11px] whitespace-nowrap">{r.proxied && <span className="text-accent">proxied</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

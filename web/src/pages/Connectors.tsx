@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Terminal, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, GitBranch, Globe, KeyRound, Plug, Plus, RefreshCw, Terminal, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { ConnInput, ConnOptions, GitConnection, OAuthStart } from "../api/types";
+import type { ConnInput, ConnOptions, DNSConnection, DNSProvider, GitConnection, OAuthStart } from "../api/types";
 import { Badge, Button, CopyButton, EmptyState, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Spinner, Textarea, cx } from "../components/ui";
 import { Modal, useConfirm, useToast } from "../components/overlay";
 import { ProviderMark } from "../components/brand";
@@ -21,33 +21,67 @@ const METHOD_LABEL: Record<string, string> = { token: "access token", oauth: "si
 
 export function ConnectorsPage() {
   const conns = useAsync(() => api.gitConnections(), []);
+  const dns = useAsync(() => api.dnsConnections(), []);
   const [adding, setAdding] = useState<GitConnection | true | null>(null);
+  const [addingDNS, setAddingDNS] = useState<DNSConnection | true | null>(null);
   return (
     <div className="flex-1 overflow-y-auto">
       <PageHeader
         icon={<Plug />}
         title="Connectors"
-        subtitle="GitHub and GitLab accounts connected on this computer. Any workspace can then add their repositories in one click."
-        actions={
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
-            Connect an account
-          </Button>
-        }
+        subtitle="Accounts connected on this computer: Git hosting and DNS / CDN providers. Any workspace can then add their repositories and domains in one click."
       />
-      <div className="px-5 pb-8 space-y-3 max-w-4xl">
-        {conns.error && <ErrorBox error={conns.error} onRetry={() => void conns.reload()} />}
-        {conns.loading && !conns.data && <Loading />}
-        {conns.data?.length === 0 && (
-          <EmptyState icon={<Plug />} title="No accounts connected">
-            Connect GitHub or GitLab once; then adding a repository to a workspace is picking it from a list.
-            <div className="mt-4">
-              <ServiceTiles onPick={() => setAdding(true)} />
-            </div>
-          </EmptyState>
-        )}
-        {(conns.data ?? []).map((c) => (
-          <ConnectorCard key={c.id} c={c} onChanged={() => void conns.reload()} onReconnect={() => setAdding(c)} />
-        ))}
+      <div className="px-5 pb-8 space-y-8 max-w-4xl">
+        <section className="space-y-3">
+          <SectionHead
+            icon={<GitBranch />}
+            title="Git hosting"
+            sub="GitHub and GitLab accounts: repositories for the Repositories page and the agent's Git tools."
+            action={
+              <Button variant="primary" size="sm" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
+                Connect a Git account
+              </Button>
+            }
+          />
+          {conns.error && <ErrorBox error={conns.error} onRetry={() => void conns.reload()} />}
+          {conns.loading && !conns.data && <Loading />}
+          {conns.data?.length === 0 && (
+            <EmptyState icon={<GitBranch />} title="No Git accounts connected">
+              Connect GitHub or GitLab once; then adding a repository to a workspace is picking it from a list.
+              <div className="mt-4">
+                <ServiceTiles onPick={() => setAdding(true)} />
+              </div>
+            </EmptyState>
+          )}
+          {(conns.data ?? []).map((c) => (
+            <ConnectorCard key={c.id} c={c} onChanged={() => void conns.reload()} onReconnect={() => setAdding(c)} />
+          ))}
+        </section>
+        <section className="space-y-3">
+          <SectionHead
+            icon={<Globe />}
+            title="DNS & CDN"
+            sub="Cloudflare and ArvanCloud accounts: the zones for the Domains page and the agent's dns tool."
+            action={
+              <Button variant="primary" size="sm" icon={<Plus className="size-4" />} onClick={() => setAddingDNS(true)}>
+                Connect a DNS account
+              </Button>
+            }
+          />
+          {dns.error && <ErrorBox error={dns.error} onRetry={() => void dns.reload()} />}
+          {dns.loading && !dns.data && <Loading />}
+          {dns.data?.length === 0 && (
+            <EmptyState icon={<Globe />} title="No DNS accounts connected">
+              Connect Cloudflare or ArvanCloud with an API token; then a workspace adds its domains from the account and manages their records.
+              <div className="mt-4">
+                <DNSProviderTiles onPick={() => setAddingDNS(true)} />
+              </div>
+            </EmptyState>
+          )}
+          {(dns.data ?? []).map((c) => (
+            <DNSConnectorCard key={c.id} c={c} onChanged={() => void dns.reload()} onReconnect={() => setAddingDNS(c)} />
+          ))}
+        </section>
       </div>
       {adding && (
         <ConnectModal
@@ -59,6 +93,31 @@ export function ConnectorsPage() {
           }}
         />
       )}
+      {addingDNS && (
+        <DNSConnectModal
+          reconnect={addingDNS === true ? undefined : addingDNS}
+          onClose={() => setAddingDNS(null)}
+          onConnected={() => {
+            setAddingDNS(null);
+            void dns.reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SectionHead({ icon, title, sub, action }: { icon: React.ReactNode; title: string; sub: string; action: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[14px] font-semibold flex items-center gap-2 [&_svg]:size-4 [&_svg]:text-muted">
+          {icon}
+          {title}
+        </h2>
+        <div className="text-[12px] text-muted">{sub}</div>
+      </div>
+      {action}
     </div>
   );
 }
@@ -354,6 +413,182 @@ export function ConnectModal({ reconnect, onClose, onConnected }: { reconnect?: 
               </Button>
             </div>
           </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DNS / CDN providers: Cloudflare, ArvanCloud. One way in: an API token with
+// the permissions the provider page describes.
+
+function DNSProviderTiles({ onPick, selected }: { onPick: (p: DNSProvider) => void; selected?: string }) {
+  const providers = useAsync(() => api.dnsProviders(), []);
+  return (
+    <div className="grid grid-cols-2 gap-2 text-left">
+      {(providers.data ?? []).map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          onClick={() => onPick(p)}
+          className={cx(
+            "flex items-center gap-3 rounded-md border px-3 py-2.5",
+            selected === p.id ? "border-accent bg-accent/8" : "border-line bg-panel-2 hover:border-line-strong",
+          )}
+        >
+          <ProviderMark provider={p.id} className="size-5 shrink-0" />
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium">{p.label}</span>
+            <span className="block text-[11px] text-faint">{p.apiUrl.replace(/^https?:\/\//, "").split("/")[0]}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DNSConnectorCard({ c, onChanged, onReconnect }: { c: DNSConnection; onChanged: () => void; onReconnect: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [testing, setTesting] = useState(false);
+  const [state, setState] = useState<{ ok: boolean; zones?: number; error?: string } | null>(null);
+  async function test() {
+    setTesting(true);
+    try {
+      const r = await api.dnsConnTest(c.id);
+      setState(r);
+      if (r.ok) onChanged();
+    } catch (e) {
+      setState({ ok: false, error: errMsg(e) });
+    } finally {
+      setTesting(false);
+    }
+  }
+  async function remove() {
+    const ok = await confirm({
+      title: `Disconnect ${c.label}?`,
+      message: "The token is deleted from the vault. Domains that use this account cannot be read or changed until you connect it again (the Domain resources stay).",
+      confirmLabel: "Disconnect",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.dnsDisconnect(c.id);
+      onChanged();
+    } catch (e) {
+      toast.error("Disconnect failed", errMsg(e));
+    }
+  }
+  return (
+    <div className="rounded-lg border border-line bg-panel px-4 py-3">
+      <div className="flex items-center gap-3">
+        <ProviderMark provider={c.provider} className="size-6 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[14px] font-semibold">{c.label}</span>
+            {c.account && <span className="text-muted text-xs">{c.account}</span>}
+            <Badge tone="neutral">{c.zones === 1 ? "1 zone" : `${c.zones} zones`}</Badge>
+            {state && <Badge tone={state.ok ? "ok" : "err"}>{state.ok ? "working" : "failing"}</Badge>}
+          </div>
+          <div className="text-[11.5px] text-faint">
+            API token · connected {timeAgo(c.created)} · token in <span className="font-mono">{c.credential}</span> · id <span className="font-mono">{c.id}</span>
+            {c.proxy && (
+              <>
+                {" "}
+                · via <span className="font-mono">{c.proxy}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <a href={c.dashboard} target="_blank" rel="noreferrer" className="text-xs text-muted hover:text-fg inline-flex items-center gap-1" title="Open the provider's dashboard">
+          <ExternalLink className="size-3.5" /> Dashboard
+        </a>
+        <Button size="sm" variant="ghost" loading={testing} icon={<RefreshCw className="size-3.5" />} onClick={() => void test()}>
+          Test
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onReconnect}>
+          Reconnect
+        </Button>
+        <IconButton title="Disconnect" onClick={() => void remove()}>
+          <Trash2 className="size-4" />
+        </IconButton>
+      </div>
+      {state && !state.ok && <div className="mt-2 text-xs text-err whitespace-pre-wrap">{state.error}</div>}
+    </div>
+  );
+}
+
+// DNSConnectModal connects (or reconnects) a DNS / CDN account with an API
+// token created on the provider's page.
+export function DNSConnectModal({ reconnect, onClose, onConnected }: { reconnect?: DNSConnection; onClose: () => void; onConnected: (c: DNSConnection) => void }) {
+  const toast = useToast();
+  const providers = useAsync(() => api.dnsProviders(), []);
+  const [providerId, setProviderId] = useState<string>(reconnect?.provider ?? "");
+  const [token, setToken] = useState("");
+  const [apiUrl, setApiUrl] = useState(reconnect?.apiUrl ?? "");
+  const [proxy, setProxy] = useState(reconnect?.proxy ?? "");
+  const [advanced, setAdvanced] = useState(!!(reconnect?.apiUrl || reconnect?.proxy));
+  const [busy, setBusy] = useState(false);
+  const prov = providers.data?.find((p) => p.id === providerId);
+
+  async function connect() {
+    if (!prov) return;
+    setBusy(true);
+    try {
+      const c = await api.dnsConnect({ id: reconnect?.id, provider: prov.id, apiUrl: apiUrl.trim() || undefined, proxy: proxy.trim() || undefined, token: token.trim() });
+      toast.success(`Connected ${c.label}`, c.account ? c.account : `${c.zones} zones`);
+      onConnected(c);
+    } catch (e) {
+      toast.error("Could not connect", errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={reconnect ? `Reconnect ${reconnect.label}` : "Connect a DNS / CDN account"} icon={<Globe />} width={600}>
+      <div className="space-y-4">
+        {!reconnect && <DNSProviderTiles selected={providerId} onPick={(p) => setProviderId(p.id)} />}
+        {providers.error && <div className="text-xs text-err">{providers.error}</div>}
+        {prov && (
+          <>
+            <Way
+              icon={<KeyRound className="size-4" />}
+              title={`An API token for ${prov.label}`}
+              sub={
+                <>
+                  <a href={prov.tokenPage} target="_blank" rel="noreferrer" className="text-accent hover:underline inline-flex items-center gap-1">
+                    Create a token <ExternalLink className="size-3" />
+                  </a>{" "}
+                  {prov.tokenHelp} Paste it here: it is stored in the vault; the agent can use it but never sees it.
+                </>
+              }
+            >
+              <span />
+            </Way>
+            <div className="flex gap-2 ps-7">
+              <Input mono type="password" autoFocus value={token} onChange={(e) => setToken(e.target.value)} placeholder={prov.tokenPlaceholder} onKeyDown={(e) => e.key === "Enter" && token.trim() && void connect()} />
+              <Button variant="primary" disabled={!token.trim()} loading={busy} onClick={() => void connect()}>
+                Connect
+              </Button>
+            </div>
+            <div>
+              <button type="button" onClick={() => setAdvanced((v) => !v)} className="flex items-center gap-1 text-xs text-muted hover:text-fg">
+                {advanced ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} Advanced
+              </button>
+              {advanced && (
+                <div className="mt-2 space-y-3">
+                  <FormField label="API URL" help={`Only when the API is not at ${prov.apiUrl} (a mirror or a proxy in front of it).`}>
+                    <Input mono value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder={prov.apiUrl} />
+                  </FormField>
+                  <FormField label="Proxy" help="Send the API calls through a proxy when the provider is not reachable directly from this computer.">
+                    <Input mono value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="socks5://127.0.0.1:1080 or http://proxy:3128" />
+                  </FormField>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </Modal>

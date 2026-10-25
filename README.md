@@ -91,7 +91,7 @@ You can turn the check off, or check now, under *App settings → Updates*.
 ## Features
 
 - **Workspaces** — one per project: hosts, groups, VPN profiles and proxies, jump hosts,
-  web panels, Git repos, databases, Kubernetes clusters, docs and runbooks. Plain YAML +
+  web panels, Git repos, domains, databases, Kubernetes clusters, docs and runbooks. Plain YAML +
   Markdown, git-friendly, **never contain secrets**.
 - **Vault** — local, encrypted (Argon2id → XChaCha20-Poly1305, a separate key per
   workspace): SSH keys (generate/import), logins with TOTP, API tokens, kubeconfigs,
@@ -114,6 +114,12 @@ You can turn the check off, or check now, under *App settings → Updates*.
   requests (create, comment, merge, CI status). The agent works the same way: branch →
   edit → commit → push → merge request, with approvals on push and merge. Repositories can
   be documentation for the agent — see [docs/git.md](docs/git.md).
+- **Domains and DNS** — connect **Cloudflare** or **ArvanCloud** once under **Connectors**
+  (an API token, stored in the vault), add a workspace's zones from the account, and manage
+  their DNS records on a Domains page: status and name servers, records with TTL and the
+  CDN (proxied) switch, add / edit / delete with every change in the activity journal. The
+  agent's `dns` tool reads zones and records and changes them with the record before and
+  after on its approval card — see [docs/dns.md](docs/dns.md).
 - **Topology** — an interactive map of the infrastructure per workspace: zones (DC, VPC,
   subnet, DMZ, office…), about 45 component types (routers of every kind, switches,
   firewalls, CDN, WAF, DDoS protection, load balancers, VPN gateways, servers, clusters,
@@ -175,7 +181,7 @@ You can turn the check off, or check now, under *App settings → Updates*.
 - **Agent** — chat with any model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…)
   that works through infra tools: `exec` (single host or groups, canary rollouts, background
   tasks), `read_file`/`edit_file` with diffs and backups, `docker`, `kubernetes`, `net_check`,
-  Git (`repo`, `repo_files`, `repo_write`, `merge_request`, `git_sync`), `database`, Ansible
+  Git (`repo`, `repo_files`, `repo_write`, `merge_request`, `git_sync`), `database`, `dns`, Ansible
   (`ansible`, `ansible_run`, `ansible_vault`), panel APIs (`http_request`), Prometheus, Loki and
   Elasticsearch (`metrics_query`, `logs_query`), the web (`web_search`, `web_fetch`,
   end-of-life and CVE lookups), docs, skills, memory, and any MCP server you attach to the
@@ -348,6 +354,7 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 - [docs/workspace.md](docs/workspace.md) — workspace model and files
 - [docs/vpn.md](docs/vpn.md) — VPN drivers, userspace vs system mode, credentials
 - [docs/git.md](docs/git.md) — Git repositories, working copies, merge requests
+- [docs/dns.md](docs/dns.md) — Domains: Cloudflare and ArvanCloud connectors, zones and records, the agent's dns tool
 - [docs/topology.md](docs/topology.md) — the topology map and the agent's topology tool
 - [docs/skills.md](docs/skills.md) — skills, the built-in library
 - [docs/docker.md](docs/docker.md) — Docker: containers, compose, swarm, volumes, logs

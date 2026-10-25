@@ -168,6 +168,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// git repositories
 	s.gitRoutes(mux, u)
 	s.connectorRoutes(mux, u)
+	s.dnsRoutes(mux, u)
 	s.topologyRoutes(mux, u)
 	s.scriptRoutes(mux, u)
 	s.ansibleRoutes(mux, u)

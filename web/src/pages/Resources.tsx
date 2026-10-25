@@ -614,6 +614,8 @@ function SpecField({
       );
     case "gitConnection":
       return <ConnectionField label={label} help={f.help} value={str(value)} onChange={onChange} />;
+    case "dnsConnection":
+      return <DNSConnectionField label={label} help={f.help} value={str(value)} onChange={onChange} />;
     case "resourceRef": {
       const list = resources.filter((r) => !f.refKinds?.length || f.refKinds.includes(r.kind));
       return (
@@ -666,6 +668,33 @@ function SpecField({
         </FormField>
       );
   }
+}
+
+function DNSConnectionField({ label, help, value, onChange }: { label: string; help?: string; value: string; onChange: (v: unknown) => void }) {
+  const conns = useAsync(() => api.dnsConnections(), []);
+  return (
+    <FormField
+      label={label}
+      help={
+        <>
+          {help}{" "}
+          <Link to="/connectors" className="text-accent hover:underline">
+            Manage connectors
+          </Link>
+        </>
+      }
+    >
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Automatic (the account that has the zone)</option>
+        {(conns.data ?? []).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label} · {c.account || `${c.zones} zones`} · {c.id}
+          </option>
+        ))}
+        {value && conns.data && !conns.data.some((c) => c.id === value) && <option value={value}>{value} (not set up here)</option>}
+      </Select>
+    </FormField>
+  );
 }
 
 function ConnectionField({ label, help, value, onChange }: { label: string; help?: string; value: string; onChange: (v: unknown) => void }) {

@@ -181,6 +181,12 @@ var Kinds = []KindSchema{
 		{Key: "index", Label: "Log indices", Type: "string", Placeholder: "logs-*", Help: "Index pattern the agent searches for logs (default: all)"},
 		{Key: "timeField", Label: "Time field", Type: "string", Placeholder: "@timestamp", Advanced: true},
 	}, apiFields...)},
+	{Kind: "Domain", Label: "Domain (DNS zone)", Category: "service", Icon: "globe", Fields: []FieldSchema{
+		{Key: "zone", Label: "Domain", Type: "string", Required: true, Placeholder: "example.com", Help: "The zone as the provider lists it (without a trailing dot)"},
+		{Key: "connection", Label: "Connector", Type: "dnsConnection",
+			Help: "The Cloudflare or ArvanCloud account (Connectors) that manages this domain. Empty: the connected account that has the zone"},
+		{Key: "notes", Label: "What points here", Type: "text", Advanced: true, Help: "Which services and hosts the records of this zone belong to (the agent reads it)"},
+	}},
 	{Kind: "KubernetesCluster", Label: "Kubernetes cluster", Category: "cluster", Icon: "boxes", CanVia: true, Fields: []FieldSchema{
 		{Key: "kubeconfig", Label: "Kubeconfig", Type: "secretRef", Required: true, ItemTypes: []string{"kubeconfig"}},
 		{Key: "context", Label: "Context", Type: "string", Help: "Defaults to the kubeconfig's current context"},

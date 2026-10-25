@@ -180,6 +180,27 @@ as `git.*`.
 Documentation repositories appear in `GET /api/workspaces/{ws}/docs` as
 `repo/<name>/<path>` (read-only).
 
+## DNS connectors and domains
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/dns/providers` | → `[{id: cloudflare\|arvancloud, label, apiUrl, tokenPage, dashboard, tokenHelp, tokenPlaceholder, proxy, ttls, comments}]` |
+| GET | `/api/dns/connections` | → `[{id, provider, apiUrl, proxy, credential, method, account, zones, created, label, tokenPage, dashboard}]` |
+| POST | `/api/dns/connections` | `{provider, token, apiUrl?, proxy?, id?}` → connector (token checked against the provider; `id` reconnects that connector, the same account is replaced) |
+| POST | `/api/dns/connections/{id}/test` | → `{ok, account, zones, error}` |
+| DELETE | `/api/dns/connections/{id}` | also deletes its vault item |
+| GET | `/api/dns/connections/{id}/zones?q=` | → `[{id, name, status, paused, plan, nameServers, currentNameServers, account, modified, url}]` |
+| GET | `/api/workspaces/{ws}/domains` | → `[{name, zone, environment, protected, description, connection, provider, account, info: zone, error, proxyLabel, ttls, comments}]` for every Domain resource |
+| GET | `/api/workspaces/{ws}/domains/{name}` | one domain (502 with the reason when its connector or zone cannot be reached) |
+| GET | `/api/workspaces/{ws}/domains/{name}/records?type=&q=` | → `[{id, type, name, fqdn, content, ttl, priority, proxied, proxiable, comment, locked, modified, raw}]` |
+| POST | `/api/workspaces/{ws}/domains/{name}/records` | `{type, name, content, ttl, priority, proxied?, comment?}` → record (400 when the input is invalid) |
+| PUT | `/api/workspaces/{ws}/domains/{name}/records/{id}` | same body → record |
+| DELETE | `/api/workspaces/{ws}/domains/{name}/records/{id}` | |
+
+Record changes are audited as `dns.record.create`, `dns.record.update` and
+`dns.record.delete` on `domain/<name>`; connecting and disconnecting as `dns.connect` and
+`dns.disconnect`.
+
 ## Topology
 
 | Method | Path | |

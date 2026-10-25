@@ -166,7 +166,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const obj = (data && typeof data === "object" ? data : {}) as { error?: string; code?: string };
     const msg = obj.error || (typeof data === "string" && data) || `${res.status} ${res.statusText}`;
     const code = obj.code || "";
-    if (res.status === 401) emit("unauthorized");
+    // a wrong master password is a 401 too, but the login is fine
+    if (res.status === 401 && code !== "bad_password") emit("unauthorized");
     if (res.status === 423) emit(code === "vault_uninitialized" ? "uninitialized" : "locked");
     throw new ApiError(res.status, msg, code, obj as Record<string, unknown>);
   }

@@ -1,5 +1,6 @@
 # Tests: Go (vet and the test suite, which runs its own SSH servers, WireGuard
-# peers and scripted models) and the web UI's typecheck.
+# peers and scripted models), the web UI's typecheck, and the browser tests in
+# e2e/ (Playwright against a real opsdeck, see tools/e2e).
 name: CI
 
 on:
@@ -60,3 +61,41 @@ jobs:
           cache-dependency-path: go.sum
       - run: go vet ./...
       - run: go test ./...
+
+  e2e:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+      - name: Web UI
+        working-directory: web
+        run: npm ci && npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test server
+        run: go build -o bin/opsdeck-e2e ./tools/e2e
+      - name: Playwright
+        working-directory: e2e
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Run
+        working-directory: e2e
+        env:
+          OPSDECK_E2E_BIN: ${{ github.workspace }}/bin/opsdeck-e2e
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

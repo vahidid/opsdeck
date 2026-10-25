@@ -372,6 +372,17 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 `user:password@host:port/db`, as CI does), and the Ansible tests against an installed
 `ansible-core`; they are skipped otherwise.
 
+The browser tests in [`e2e/`](e2e) drive the built UI with Playwright against a real
+opsdeck (`tools/e2e`: a fresh data folder, local SSH hosts, a scripted model): unlocking,
+adding a resource, search, customizing, an agent change that waits for approval, and
+connecting an outside agent.
+
+```bash
+cd web && npm run build && cd ../e2e
+npm ci && npx playwright install chromium
+npx playwright test
+```
+
 ## Status and known limits
 
 - OpenVPN, OpenConnect (AnyConnect/ocserv/FortiGate/…) and openfortivpn profiles need those

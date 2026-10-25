@@ -29,7 +29,8 @@ code is organised, and [docs/harness.md](docs/harness.md) how the agent and its 
 ## Pull requests
 
 - Keep a pull request to one change, and explain what it changes and why.
-- Run `make test` before you push; CI runs `go vet`, the Go tests and the web build.
+- Run `make test` before you push; CI runs `go vet`, the Go tests, the web build and
+  the browser tests in `e2e/` (`npx playwright test` there, see the README).
 - Match the style of the code around your change. Run `gofmt` on Go files.
 - Add or update tests for behaviour you change, and the docs in `docs/` when the
   behaviour is user-visible. Add a line to the *Unreleased* section of

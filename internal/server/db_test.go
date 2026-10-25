@@ -338,13 +338,26 @@ func agentRound(t *testing.T, c *client, name, table, read, change string) []str
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	var outputs []string
+	// The reads of one step run in parallel, so their results arrive in
+	// completion order: return them in the order the model called the tools
+	// (tool_call events are emitted in that order).
+	var order []string
+	byCall := map[string]string{}
 	for _, ev := range full.Events {
 		if ev["type"] == "approval_request" && !strings.Contains(fmt.Sprint(ev), change) {
 			t.Errorf("a read asked for approval: %v", ev)
 		}
-		if ev["type"] == "tool_result" {
-			outputs = append(outputs, fmt.Sprint(ev["output"]))
+		switch ev["type"] {
+		case "tool_call":
+			order = append(order, fmt.Sprint(ev["callId"]))
+		case "tool_result":
+			byCall[fmt.Sprint(ev["callId"])] = fmt.Sprint(ev["output"])
+		}
+	}
+	var outputs []string
+	for _, id := range order {
+		if out, ok := byCall[id]; ok {
+			outputs = append(outputs, out)
 		}
 	}
 	if len(outputs) != 3 || approvals != 1 {

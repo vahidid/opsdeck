@@ -201,6 +201,22 @@ Record changes are audited as `dns.record.create`, `dns.record.update` and
 `dns.record.delete` on `domain/<name>`; connecting and disconnecting as `dns.connect` and
 `dns.disconnect`.
 
+## Certificates (ACME)
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/acme/cas` | → `[{id, label, directory, staging, wildcard, note}]` |
+| GET | `/api/workspaces/{ws}/certificates` | → `[{name, domains, ca, caLabel, staging, environment, protected, item, issued, info: {subject, domains, issuer, notBefore, notAfter, serial, fingerprint, keyType, chain, daysLeft}, issuedAt, renewDays, autoRenew, due, reason, error, job}]` for every Certificate resource |
+| GET | `/api/workspaces/{ws}/certificates/{name}` | the status plus `chain` (the public PEM chain) |
+| POST | `/api/workspaces/{ws}/certificates/{name}/issue` | starts an issuance (or returns the running one) → job |
+| GET | `/api/workspaces/{ws}/certificates/jobs` | the workspace's jobs of the last two hours, newest first |
+| GET | `/api/workspaces/{ws}/certificates/jobs/{id}?since=N&wait=1` | → `{id, cert, state: running\|done\|error, lines (from N), total, error, result: {item, info}, started, ended, actor}`; `wait` holds the answer up to 25 s while the job runs |
+| POST | `/api/workspaces/{ws}/certificates/{name}/deploy` | `{host, certPath?, keyPath?, leafPath?, chainPath?, bundlePath?, command?}` → `{written, exitCode, stdout, stderr}` (502 with `error` when a write or the command failed) |
+
+Issuances are audited as `certificate.issue` (started) and `certificate.issued`
+(finished; actor `user`, `system` for automatic renewals, or `agent:<session>`), deployments
+as `certificate.deploy`.
+
 ## Topology
 
 | Method | Path | |

@@ -322,6 +322,74 @@ func (m *Manager) open(ctx context.Context, ws *workspace.Workspace, c config.DN
 	return &Opened{Conn: c, Prov: p, Zone: z}, nil
 }
 
+// Provider opens the provider of a connector with its token from the vault
+// (ws scopes the lookup; nil for app-level use).
+func (m *Manager) Provider(ctx context.Context, ws *workspace.Workspace, c config.DNSConnection) (Provider, error) {
+	tok, err := m.Token(ctx, c, ws)
+	if err != nil {
+		return nil, err
+	}
+	return Open(c, tok)
+}
+
+// FindZone finds the zone that holds name: among the workspace's Domain
+// resources first (the longest matching zone), else in every connected
+// account. It returns the opened zone and the name relative to it.
+func (m *Manager) FindZone(ctx context.Context, ws *workspace.Workspace, name string) (*Opened, string, error) {
+	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	var best *workspace.Resource
+	for _, r := range ws.Resources {
+		if r.Kind != "Domain" {
+			continue
+		}
+		z := ZoneName(r)
+		if (name == z || strings.HasSuffix(name, "."+z)) && (best == nil || len(z) > len(ZoneName(best))) {
+			best = r
+		}
+	}
+	if best != nil {
+		o, err := m.ForDomain(ctx, ws, best)
+		if err != nil {
+			return nil, "", err
+		}
+		return o, Relative(name, o.Zone.Name), nil
+	}
+	var conns []config.DNSConnection
+	if m.Connections != nil {
+		conns = m.Connections()
+	}
+	var bestZone *Zone
+	var bestConn config.DNSConnection
+	for _, c := range conns {
+		p, err := m.Provider(ctx, ws, c)
+		if err != nil {
+			continue
+		}
+		zones, err := p.Zones(ctx, "")
+		if err != nil {
+			continue
+		}
+		for i := range zones {
+			z := zones[i].Name
+			if (name == z || strings.HasSuffix(name, "."+z)) && (bestZone == nil || len(z) > len(bestZone.Name)) {
+				zz := zones[i]
+				bestZone, bestConn = &zz, c
+			}
+		}
+	}
+	if bestZone == nil {
+		if len(conns) == 0 {
+			return nil, "", fmt.Errorf("%w for %s: connect Cloudflare or ArvanCloud under Connectors", ErrNoConnector, name)
+		}
+		return nil, "", fmt.Errorf("no connected DNS account has a zone for %s (add the domain to the workspace or connect its account)", name)
+	}
+	o, err := m.ForDomain(ctx, ws, &workspace.Resource{Kind: "Domain", Name: bestZone.Name, Spec: map[string]any{"zone": bestZone.Name, "connection": bestConn.ID}})
+	if err != nil {
+		return nil, "", err
+	}
+	return o, Relative(name, o.Zone.Name), nil
+}
+
 // Forget drops a cached zone (after an error that may mean it changed).
 func (m *Manager) Forget(c config.DNSConnection, name string) {
 	m.mu.Lock()

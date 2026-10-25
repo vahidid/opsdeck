@@ -20,6 +20,7 @@ import (
 
 	"github.com/pmezard/go-difflib/difflib"
 
+	"opsdeck/internal/acmex"
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/dbx"
@@ -43,6 +44,7 @@ type Env struct {
 	DB         *dbx.Manager
 	Git        *gitx.Manager
 	DNS        *dnsx.Manager
+	ACME       *acmex.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
@@ -300,7 +302,7 @@ func Tools() []Tool {
 		toolScript(), toolRunScript(),
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
-		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(), toolDNS(),
+		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(), toolDNS(), toolCertificate(),
 		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(), toolTasks(),
 	}
 }

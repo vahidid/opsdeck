@@ -208,6 +208,15 @@ spec: { ... }         # provider-specific
     zone: example.com
     connection: cloudflare                   # optional: the DNS connector of this computer; default: the account that has the zone
 
+- kind: Certificate                         # a TLS certificate from an ACME CA (docs/certificates.md)
+  name: web
+  environment: prod
+  spec:
+    domains: [example.com, "*.example.com"]
+    ca: letsencrypt                          # letsencrypt | letsencrypt-staging | buypass | buypass-test | custom
+    email: ops@example.com
+    autoRenew: true
+
 - kind: GitRemote
   name: deploy
   environment: prod

@@ -291,7 +291,7 @@ func (w *Workspace) FindRef(ref string) *Resource {
 		}
 	}
 	// Short aliases: panel/x, cluster/x, group/x, db/x
-	alias := map[string]string{"cluster": "KubernetesCluster", "k8s": "KubernetesCluster", "group": "HostGroup", "db": "Database", "git": "GitRemote", "domain": "Domain", "dns": "Domain", "zone": "Domain"}
+	alias := map[string]string{"cluster": "KubernetesCluster", "k8s": "KubernetesCluster", "group": "HostGroup", "db": "Database", "git": "GitRemote", "domain": "Domain", "dns": "Domain", "zone": "Domain", "cert": "Certificate", "certificate": "Certificate", "tls": "Certificate"}
 	if k, ok := alias[strings.ToLower(kind)]; ok {
 		return w.Find(k, name)
 	}

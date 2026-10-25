@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"opsdeck/internal/acmex"
 	"opsdeck/internal/agent"
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/audit"
@@ -54,6 +56,7 @@ type Server struct {
 	db       *dbx.Manager
 	git      *gitx.Manager
 	dns      *dnsx.Manager
+	acme     *acmex.Manager
 	ansible  *ansible.Manager
 	mcp      *mcpx.Manager
 	agents   *agent.Manager
@@ -64,6 +67,7 @@ type Server struct {
 	port      int
 	desktop   bool
 	updater   *update.Updater
+	stop      context.CancelFunc // ends background loops (certificate renewals)
 }
 
 // Options configure the server.
@@ -116,6 +120,8 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.git.Vault = v
 	s.dns = dnsx.New(v)
 	s.dns.Connections = s.cfg.DNSConnections
+	s.acme = acmex.New(v, s.dns)
+	s.acme.Record = s.acmeAudit
 	s.ansible = ansible.New(s.hub)
 	s.ansible.Touch = v.Touch
 	s.ansible.Redact = agent.NewRedactor(func() map[string]string {
@@ -129,7 +135,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.mcp.Trusted = func(ws string, c workspace.MCPServer) bool { return cfg.MCPTrusted(mcpx.Hash(ws, c)) }
 	s.forwards = connect.NewForwards()
 	s.agents = agent.NewManager(agent.Deps{
-		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, DB: s.db, Git: s.git, DNS: s.dns, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
+		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, DB: s.db, Git: s.git, DNS: s.dns, ACME: s.acme, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
 		Router:   s.router,
 		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {
@@ -189,6 +195,10 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	if s.token, err = loadToken(filepath.Join(dirs.State, "server.token")); err != nil {
 		return nil, err
 	}
+	// certificates with autoRenew are renewed while opsdeck runs unlocked
+	bg, stop := context.WithCancel(context.Background())
+	s.stop = stop
+	go s.acme.Renewals(bg, s.ws.List, 6*time.Hour)
 	return s, nil
 }
 
@@ -263,6 +273,9 @@ func (s *Server) URL() string {
 
 // Close shuts everything down.
 func (s *Server) Close() {
+	if s.stop != nil {
+		s.stop()
+	}
 	s.agents.InterruptAll()
 	s.forwards.StopWorkspace("")
 	s.mcp.CloseAll()

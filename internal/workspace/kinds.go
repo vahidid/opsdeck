@@ -187,6 +187,18 @@ var Kinds = []KindSchema{
 			Help: "The Cloudflare or ArvanCloud account (Connectors) that manages this domain. Empty: the connected account that has the zone"},
 		{Key: "notes", Label: "What points here", Type: "text", Advanced: true, Help: "Which services and hosts the records of this zone belong to (the agent reads it)"},
 	}},
+	{Kind: "Certificate", Label: "TLS certificate (ACME)", Category: "service", Icon: "certificate", Fields: []FieldSchema{
+		{Key: "domains", Label: "Domains", Type: "list", Required: true, Placeholder: "example.com, *.example.com",
+			Help: "Names the certificate covers (the first is its common name). Their zones must be reachable through a DNS connector: a Domain of this workspace, or a zone of a connected account"},
+		{Key: "ca", Label: "Certificate authority", Type: "select", Options: []string{"letsencrypt", "letsencrypt-staging", "buypass", "buypass-test", "custom"}, Default: "letsencrypt",
+			Help: "letsencrypt: 90-day certificates. letsencrypt-staging / buypass-test: for trying things out, not trusted by browsers. custom: another ACME directory (below)"},
+		{Key: "email", Label: "Contact email", Type: "string", Placeholder: "ops@example.com", Help: "For the ACME account: expiry warnings and problems with the certificate"},
+		{Key: "keyType", Label: "Key type", Type: "select", Options: []string{"ec256", "ec384", "rsa2048", "rsa4096"}, Default: "ec256"},
+		{Key: "renewDays", Label: "Renew before expiry (days)", Type: "number", Placeholder: "30", Help: "The certificate is due for renewal this many days before it expires"},
+		{Key: "autoRenew", Label: "Renew automatically", Type: "bool", Help: "While opsdeck runs with the vault unlocked, a due certificate is renewed by itself (into the vault; deploying it to servers stays a separate step)"},
+		{Key: "directoryUrl", Label: "ACME directory URL", Type: "string", Placeholder: "https://ca.example.internal/acme/acme/directory", Advanced: true, Help: "Only for ca: custom (step-ca, an internal CA). External account binding (ZeroSSL, Google) is not supported yet"},
+		{Key: "caCert", Label: "CA's TLS certificate (PEM)", Type: "text", Advanced: true, Help: "For a custom ACME CA served with a private certificate"},
+	}},
 	{Kind: "KubernetesCluster", Label: "Kubernetes cluster", Category: "cluster", Icon: "boxes", CanVia: true, Fields: []FieldSchema{
 		{Key: "kubeconfig", Label: "Kubeconfig", Type: "secretRef", Required: true, ItemTypes: []string{"kubeconfig"}},
 		{Key: "context", Label: "Context", Type: "string", Help: "Defaults to the kubeconfig's current context"},

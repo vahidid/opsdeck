@@ -751,6 +751,57 @@ export type DomainInfo = {
 };
 export const DNS_RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA", "PTR"];
 
+// TLS certificates (ACME): Certificate resources, their issued certificate
+// in the vault, issuance jobs and deployments.
+export type AcmeCA = { id: string; label: string; directory: string; staging: boolean; wildcard: boolean; note: string };
+export type CertInfo = {
+  subject: string;
+  domains: string[];
+  issuer: string;
+  notBefore: string;
+  notAfter: string;
+  serial: string;
+  fingerprint: string;
+  keyType: string;
+  chain: number;
+  daysLeft: number;
+};
+export type CertStatus = {
+  name: string;
+  domains: string[];
+  ca: string;
+  caLabel: string;
+  staging?: boolean;
+  environment?: string;
+  protected?: boolean;
+  item: string;
+  issued: boolean;
+  info?: CertInfo;
+  issuedAt?: string;
+  renewDays: number;
+  autoRenew: boolean;
+  due: boolean;
+  reason?: string;
+  error?: string;
+  job?: string;
+};
+export type CertDetail = CertStatus & { chain?: string };
+export type CertJob = {
+  id: string;
+  cert: string;
+  state: "running" | "done" | "error";
+  lines: string[];
+  total: number;
+  error?: string;
+  result?: { item: string; info: CertInfo };
+  started: string;
+  ended?: string;
+  actor: string;
+  workspace: string;
+};
+export type CertDeploy = { host: string; command?: string; certPath?: string; keyPath?: string; leafPath?: string; chainPath?: string; bundlePath?: string };
+export type CertDeployResult = { written: string[]; exitCode?: number; stdout?: string; stderr?: string; error?: string };
+
 // Topology: the workspace's infrastructure diagram (topology.yaml).
 export type TopoBox = { x: number; y: number; w?: number; h?: number };
 export type TopoZone = { id: string; label?: string; kind?: string; parent?: string; cidr?: string; provider?: string; notes?: string };

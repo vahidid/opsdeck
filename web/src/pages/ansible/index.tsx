@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AskAgentButton } from "../../components/AskAgent";
 import { useSearchParams } from "react-router-dom";
 import { FolderGit2, FolderOpen, FolderPlus, KeyRound, Lock, LockOpen, Pencil, Plus, RefreshCw, Workflow } from "lucide-react";
 import { api, errMsg } from "../../api/client";
@@ -67,6 +68,7 @@ export function AnsiblePage() {
         subtitle={project ? <ProjectLine p={project} /> : "Playbooks, inventories and vault files — from a folder or a Git repository."}
         actions={
           <>
+            <AskAgentButton prompt={"Explain what the playbooks of this Ansible project do and which hosts they target."} />
             {projects.length > 0 && (
               <>
                 <IconButton title="Refresh" onClick={() => void list.reload()}>

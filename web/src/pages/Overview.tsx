@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Bot, CircleCheck, GitBranch, Plus, Power, PowerOff, RefreshCw, Server, SquareTerminal, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Bot, CircleCheck, GitBranch, Lock, Plus, Power, PowerOff, RefreshCw, Server, SquareTerminal, XCircle } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { NetworkStatus, Topology, TopologyNode } from "../api/types";
 import { useApp, useWs } from "../context/app";
 import { useTerminals } from "../context/terminals";
 import { KindIcon } from "../components/icons";
-import { Badge, Button, Card, EmptyState, IconButton, StatusDot, cx } from "../components/ui";
+import { shortLabel } from "../components/AddResource";
+import { Badge, Button, Card, EmptyState, IconButton, StatusDot, Textarea, cx } from "../components/ui";
 import { useToast } from "../components/overlay";
 import { useAsync, useInterval } from "../hooks";
 import { fmtTime, timeAgo } from "../lib/format";
@@ -48,21 +49,35 @@ export function OverviewPage() {
 
   const W = `/w/${encodeURIComponent(ws)}`;
   const firstHost = resources.find((r) => r.kind === "Host");
+  const errors = (issues.data ?? []).filter((i) => i.level === "error").length;
+  const warnings = (issues.data ?? []).length - errors;
+  const used = kinds.filter((k) => counts[k.kind]);
+  const unused = kinds.length - used.length;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="px-6 pt-5 pb-4 border-b border-line bg-panel">
-        <div className="flex items-start justify-between gap-6">
+    <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 py-6 space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <span className="size-3 rounded-full" style={{ background: workspace?.color }} />
-              <h1 className="text-[20px] font-semibold tracking-tight">{workspace?.title || ws}</h1>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-[24px] font-semibold tracking-tight">{workspace?.title || ws}</h1>
               <span className="font-mono text-xs text-faint">{ws}</span>
+              {issues.data &&
+                (errors + warnings === 0 ? (
+                  <Badge tone="ok">
+                    <StatusDot tone="ok" /> Healthy
+                  </Badge>
+                ) : (
+                  <Badge tone={errors ? "err" : "warn"}>
+                    {errors ? `${errors} error${errors > 1 ? "s" : ""}` : `${warnings} warning${warnings > 1 ? "s" : ""}`}
+                  </Badge>
+                ))}
             </div>
             {workspace?.description && <p className="text-muted mt-1 max-w-3xl">{workspace.description}</p>}
-            <div className="flex flex-wrap gap-1.5 mt-2.5">
+            <div className="flex flex-wrap gap-1.5 mt-3">
               {workspace?.environments.map((e) => (
-                <Badge key={e.name} tone={e.protected ? "err" : "neutral"} title={e.protected ? "Protected environment" : undefined}>
+                <Badge key={e.name} tone={e.protected ? "err" : "neutral"} title={e.protected ? "Protected: the agent asks before every change" : undefined}>
+                  {e.protected && <Lock className="size-2.5" />}
                   {e.name}
                   {e.protected && " · protected"}
                 </Badge>
@@ -74,9 +89,9 @@ export function OverviewPage() {
               ))}
             </div>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <Button icon={<Plus className="size-4" />} onClick={() => navigate(`${W}/resources?new=Host`)}>
-              Add host
+          <div className="flex flex-wrap gap-2">
+            <Button icon={<Plus className="size-4" />} onClick={() => navigate(`${W}/resources?add=1`)}>
+              Add resource
             </Button>
             {firstHost && (
               <Button
@@ -89,36 +104,50 @@ export function OverviewPage() {
                 SSH {firstHost.name}
               </Button>
             )}
-            <Button variant="primary" icon={<Bot className="size-4" />} onClick={() => navigate(`${W}/agent?new=1`)}>
+            <Button variant="agent" icon={<Bot className="size-4" />} onClick={() => navigate(`${W}/agent?new=1`)}>
               Ask the agent
             </Button>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
-          {kinds.map((k) => (
+
+        <section aria-label="Inventory" className="rounded-xl border border-line bg-panel flex flex-wrap overflow-hidden">
+          {used.map((k) => (
             <Link
               key={k.kind}
-              to={`${W}/resources`}
-              className="rounded-md border border-line bg-panel-2 px-3 py-2 hover:border-line-strong transition-colors flex items-center gap-2.5"
+              to={`${W}/resources?kind=${encodeURIComponent(k.kind)}`}
+              className="flex-[1_1_130px] min-w-0 px-4 py-3.5 border-r border-b -mb-px border-line hover:bg-panel-2 transition-colors"
             >
-              <span className="text-muted">
-                <KindIcon kind={k.kind} icon={k.icon} className="size-4" />
+              <span className="flex items-center gap-1.5 text-xs text-muted truncate [&_svg]:size-3.5 [&_svg]:text-faint">
+                <KindIcon kind={k.kind} icon={k.icon} />
+                <span className="truncate">{shortLabel(k.label)}</span>
               </span>
-              <span className="flex-1 text-xs text-muted truncate">{k.label}</span>
-              <span className="text-[15px] font-semibold tabular-nums">{counts[k.kind] ?? 0}</span>
+              <span className="block text-[22px] font-semibold tabular-nums leading-tight mt-1">{counts[k.kind]}</span>
             </Link>
           ))}
-        </div>
-      </div>
+          <button
+            onClick={() => navigate(`${W}/resources?add=1`)}
+            className="flex-[1.4_1_180px] min-w-0 px-4 py-3.5 border-b -mb-px border-line text-left hover:bg-panel-2 transition-colors"
+          >
+            <span className="block text-xs text-muted">{used.length ? `${unused} more types, none yet` : "Nothing here yet"}</span>
+            <span className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-accent">
+              {used.length ? "VPNs, databases, clusters…" : "Add your first resource"} <ArrowRight className="size-3.5" />
+            </span>
+          </button>
+        </section>
 
-      <div className="p-5 grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card
-          className="xl:col-span-2"
+          className="xl:col-span-2 min-w-0"
           title="Topology"
           actions={
-            <IconButton title="Refresh" onClick={() => void topo.reload()}>
-              <RefreshCw className="size-3.5" />
-            </IconButton>
+            <>
+              <Link to={`${W}/topology`} className="text-[11.5px] text-accent hover:underline px-1">
+                Open
+              </Link>
+              <IconButton title="Refresh" onClick={() => void topo.reload()}>
+                <RefreshCw className="size-3.5" />
+              </IconButton>
+            </>
           }
           bodyClass="p-0"
         >
@@ -131,7 +160,8 @@ export function OverviewPage() {
           )}
         </Card>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
+          <AskAgentCard ws={ws} />
           <Card
             title="VPN & networks"
             bodyClass="p-0"
@@ -266,7 +296,7 @@ export function OverviewPage() {
         </div>
 
         <Card
-          className="xl:col-span-3"
+          className="xl:col-span-3 min-w-0"
           title="Recent activity"
           actions={
             <Link to={`${W}/activity`} className="text-xs text-muted hover:text-fg flex items-center gap-1">
@@ -282,7 +312,7 @@ export function OverviewPage() {
               {audit.data!.map((a) => (
                 <li key={a.seq} className="flex items-center gap-3 px-3 h-9 border-b border-line last:border-0 text-xs">
                   <span className="text-faint w-28 shrink-0 tabular-nums">{fmtTime(a.ts)}</span>
-                  <Badge tone={a.actor.startsWith("agent") ? "accent" : "neutral"}>{a.actor}</Badge>
+                  <Badge tone={a.actor.startsWith("agent") ? "agent" : "neutral"}>{a.actor}</Badge>
                   <span className="font-medium">{a.action}</span>
                   <span className="font-mono text-muted truncate flex-1">{a.target}</span>
                   <Badge tone={/ok|success|allow|approve/i.test(a.result) ? "ok" : /err|fail|deny/i.test(a.result) ? "err" : "neutral"}>{a.result || "—"}</Badge>
@@ -292,7 +322,53 @@ export function OverviewPage() {
           )}
         </Card>
       </div>
+      </div>
     </div>
+  );
+}
+
+const SUGGESTIONS = ["Check disk usage on prod", "Why is the shop slow?", "Summarise the last deploy"];
+
+// AskAgentCard starts an agent session from the overview with a draft.
+function AskAgentCard({ ws }: { ws: string }) {
+  const navigate = useNavigate();
+  const [text, setText] = useState("");
+  const go = (t: string) => navigate(`/w/${encodeURIComponent(ws)}/agent?new=1${t.trim() ? `&draft=${encodeURIComponent(t.trim())}` : ""}`);
+  return (
+    <section className="rounded-xl border border-agent/30 bg-agent/[0.06] p-4 space-y-3">
+      <h3 className="text-[13.5px] font-semibold flex items-center gap-2">
+        <span className="grid size-6 place-items-center rounded-md bg-agent text-agent-fg">
+          <Bot className="size-3.5" />
+        </span>
+        Ask the agent
+      </h3>
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            go(text);
+          }
+        }}
+        aria-label="Question for the agent"
+        placeholder="What should we look at?"
+        className="min-h-16 bg-panel resize-none focus:border-agent focus:ring-agent/20"
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {SUGGESTIONS.map((s) => (
+          <button key={s} onClick={() => go(s)} className="h-7 px-2.5 rounded-full border border-line bg-panel text-[12px] text-muted hover:text-fg hover:border-agent/50">
+            {s}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11.5px] text-faint">It asks before it changes anything on a protected environment.</span>
+        <Button size="sm" variant="agent" onClick={() => go(text)}>
+          Send
+        </Button>
+      </div>
+    </section>
   );
 }
 

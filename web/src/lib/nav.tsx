@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
-import { Activity, BadgeCheck, Bot, Boxes, Container, Database, FileCode2, FileText, GitBranch, Globe, KeyRound, LayoutGrid, Network, Rocket, ScrollText, Server, Settings, ShieldCheck, Sparkles, SquareTerminal, Workflow } from "lucide-react";
+import { Activity, BadgeCheck, BookOpen, Bot, Boxes, Container, Database, FileCode2, FileText, GitBranch, Globe, KeyRound, LayoutGrid, Network, Package, Rocket, ScrollText, Server, Settings, Shield, ShieldCheck, Sparkles, SquareTerminal, Workflow } from "lucide-react";
 
 export type NavGroup = "workspace" | "infra" | "deploy" | "library" | "security";
 
-// Groups of the sidebar, in order (the first has no heading).
-export const NAV_GROUPS: { id: NavGroup; label: string }[] = [
-  { id: "workspace", label: "Workspace" },
-  { id: "infra", label: "Infrastructure" },
-  { id: "deploy", label: "Deploy" },
-  { id: "library", label: "Library" },
-  { id: "security", label: "Security" },
+// Groups of the menu, in order: each is one button on the rail and opens
+// its sections in the panel next to it.
+export const NAV_GROUPS: { id: NavGroup; label: string; icon: ReactNode }[] = [
+  { id: "workspace", label: "Workspace", icon: <LayoutGrid /> },
+  { id: "infra", label: "Infrastructure", icon: <Server /> },
+  { id: "deploy", label: "Deploy", icon: <Package /> },
+  { id: "library", label: "Library", icon: <BookOpen /> },
+  { id: "security", label: "Security", icon: <Shield /> },
 ];
 
 // Sections of a workspace, in sidebar order.
@@ -43,6 +44,10 @@ export const SINGLETON_SECTIONS = new Set(["terminal"]);
 
 export function sectionOf(path: string): string {
   return path.split(/[/?#]/)[0] ?? "";
+}
+
+export function groupOf(section: string): NavGroup {
+  return NAV.find((n) => n.to === section)?.group ?? (section === "settings" ? "security" : "workspace");
 }
 
 export function sectionInfo(path: string) {

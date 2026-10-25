@@ -153,7 +153,7 @@ export function ToolCard({ item, ctx, nested, live, flush, openViews }: { item: 
     >
       <button onClick={() => setOpen(!expanded)} className={cx("w-full flex items-center gap-2 px-3 text-left hover:bg-panel-2", nested ? "h-8" : "h-9")}>
         {expanded ? <ChevronDown className="size-3.5 text-faint shrink-0" /> : <ChevronRight className="size-3.5 text-faint shrink-0" />}
-        <ToolIcon tool={tool} className={cx("size-3.5 shrink-0", isSub ? "text-accent" : "text-muted")} />
+        <ToolIcon tool={tool} className={cx("size-3.5 shrink-0", isSub ? "text-agent-ink" : "text-muted")} />
         <span className="font-mono text-[12px] font-medium shrink-0">{label}</span>
         {isSub && <Badge tone={item.sub?.start?.readOnly === false ? "warn" : "info"}>{item.sub?.start?.readOnly === false ? "can change" : "read-only"}</Badge>}
         {target && !isSub && (
@@ -642,7 +642,7 @@ function SubagentBody({ item, ctx, live }: { item: ToolItem; ctx: Ctx; live: boo
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2 text-[11.5px] text-muted flex-wrap">
-        <Bot className="size-3.5 text-accent" />
+        <Bot className="size-3.5 text-agent-ink" />
         <span>
           Subagent <b className="text-fg font-medium">{start?.agent ?? "…"}</b>
           {start?.model && (
@@ -669,14 +669,14 @@ function SubagentBody({ item, ctx, live }: { item: ToolItem; ctx: Ctx; live: boo
         </div>
       )}
       {blocks.length > 0 && (
-        <div className="border-l-2 border-accent/30 pl-3 space-y-2 -ml-0.5">
+        <div className="border-l-2 border-agent/35 pl-3 space-y-2 -ml-0.5">
           {blocks.map((b, i) =>
             b.kind === "tools" ? (
               <ToolGroup key={b.id} items={b.items} ctx={ctx} live={live && running && i === blocks.length - 1} expandAll={false} flush />
             ) : b.kind === "assistant" ? (
               <div key={b.id} className="text-[12.5px] text-muted">
                 {b.text ? <Markdown dir={textDir(b.text) === "rtl" ? "rtl" : "auto"}>{b.text}</Markdown> : <span className="text-faint">…</span>}
-                {b.streaming && <span className="inline-block w-1.5 h-3.5 bg-accent/60 ml-0.5 align-text-bottom pulse-dot" />}
+                {b.streaming && <span className="inline-block w-1.5 h-3.5 bg-agent-ink/70 ml-0.5 align-text-bottom pulse-dot" />}
               </div>
             ) : b.kind === "error" ? (
               <div key={b.id} className="text-[12px] text-err">

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AskAgentButton } from "../components/AskAgent";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ChevronDown, ChevronRight, Database, Eye, Info, KeyRound, Layers, Play, RefreshCw, ShieldAlert, Table2 } from "lucide-react";
@@ -106,6 +107,7 @@ export function DatabasesPage() {
         }
         actions={
           <>
+            <AskAgentButton prompt={"Check the health of this workspace's databases: connections, slow queries and disk usage."} />
             {supported && (
               <Select value={current} onChange={(e) => set({ database: e.target.value })} className="w-44" title="Database on the server">
                 {current && !(dbs.data ?? []).includes(current) && <option value={current}>{engine === "redis" ? `db ${current}` : current}</option>}

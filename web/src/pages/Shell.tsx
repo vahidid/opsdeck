@@ -2,26 +2,34 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import {
-  ChevronDown,
+  Bot,
   ChevronsUpDown,
   FileKey,
   FolderInput,
   Lock,
-  Moon,
+  PanelLeftClose,
+  PencilLine,
+  Pin,
+  PinOff,
   Plug,
   Plus,
   Search,
   Settings,
-  Sun,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import { useApp } from "../context/app";
+import { readableOn, useAppearance } from "../context/appearance";
 import { useTerminals } from "../context/terminals";
 import { useTabs } from "../context/tabs";
 import { UpdateBox } from "../context/update";
-import { NAV, NAV_GROUPS, SINGLETON_SECTIONS } from "../lib/nav";
+import { NAV, NAV_GROUPS, SETTINGS_NAV, SINGLETON_SECTIONS, groupOf } from "../lib/nav";
 import type { NavGroup } from "../lib/nav";
-import { Button, FormField, IconButton, Input, Kbd, Tabs, Textarea, cx } from "../components/ui";
+import { useMediaQuery } from "../hooks";
+import { Button, FormField, Input, Kbd, Tabs, Textarea, cx } from "../components/ui";
+import { TabStrip } from "../components/TabStrip";
+import { CustomizeDrawer } from "../components/Customize";
 import { MenuItem, Modal, Popover, useToast } from "../components/overlay";
 import { WORKSPACE_COLORS, slugify } from "../lib/format";
 import { Logo } from "./Boot";
@@ -30,95 +38,307 @@ import { CommandPalette } from "./CommandPalette";
 
 export function Shell({ children }: { children: ReactNode }) {
   const match = useMatch("/w/:ws/*");
-  const { theme, setTheme, lock, workspaces } = useApp();
+  const { workspaces } = useApp();
+  const { prefs } = useAppearance();
   const ws = match?.params.ws ?? lastWorkspace(workspaces.map((w) => w.name));
-  const { tabs } = useTerminals();
   const wsTabs = useTabs();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const wide = useMediaQuery("(min-width: 900px)");
+  const docked = wide && prefs.menu === "panel";
+  const section = useMatch("/w/:ws/:section/*")?.params.section ?? "";
+  const [group, setGroup] = useState<NavGroup>(() => groupOf(section));
+  const [flyout, setFlyout] = useState(false);
+
+  // the panel follows the open section; a flyout closes once you go somewhere
+  useEffect(() => {
+    setGroup(groupOf(section));
+    setFlyout(false);
+  }, [section]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "k") {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+      } else if (k === "j" && ws) {
+        e.preventDefault();
+        wsTabs.show(ws, "agent");
       }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  }, [ws, wsTabs]);
+
+  const pickGroup = (g: NavGroup) => {
+    if (docked) {
+      setGroup(g);
+      return;
+    }
+    setFlyout((open) => !(open && g === group));
+    setGroup(g);
+  };
 
   return (
-    <div className="flex h-full">
-      <aside className="w-[216px] shrink-0 border-r border-line bg-panel flex flex-col">
-        <div className="h-12 flex items-center gap-2 px-3 border-b border-line">
-          <Logo size={22} />
-          <span className="font-semibold tracking-tight">opsdeck</span>
-          <div className="flex-1" />
-          <IconButton title="Search (Ctrl+K)" onClick={() => setPaletteOpen(true)}>
-            <Search className="size-4" />
-          </IconButton>
-        </div>
-        <div className="p-2">
-          <WorkspaceSwitcher current={ws} />
-        </div>
-        <nav className="flex-1 overflow-y-auto px-2 pb-2">
-          {ws ? <SidebarNav ws={ws} terminals={tabs.length} /> : <div className="px-2.5 py-3 text-xs text-faint">Select or create a workspace to get started.</div>}
-        </nav>
-        <UpdateBox />
-        <div className="border-t border-line p-2 space-y-px">
-          {ws && (
-            <NavLink
-              to={`/w/${encodeURIComponent(ws)}/settings`}
-              {...tabClick(wsTabs, ws, "settings")}
-              className={({ isActive }) =>
-                cx(
-                  "flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] [&_svg]:size-4",
-                  isActive ? "bg-panel-3 text-fg" : "text-muted hover:text-fg hover:bg-panel-2",
-                )
-              }
-            >
-              <Settings />
-              Workspace settings
-            </NavLink>
-          )}
-          <NavLink
-            to="/connectors"
-            className={({ isActive }) =>
-              cx(
-                "flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] [&_svg]:size-4",
-                isActive ? "bg-panel-3 text-fg" : "text-muted hover:text-fg hover:bg-panel-2",
-              )
-            }
-          >
-            <Plug />
-            Connectors
-          </NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              cx(
-                "flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] [&_svg]:size-4",
-                isActive ? "bg-panel-3 text-fg" : "text-muted hover:text-fg hover:bg-panel-2",
-              )
-            }
-          >
-            <Settings />
-            App settings
-          </NavLink>
-          <div className="flex items-center gap-1 pt-1 px-1">
-            <IconButton title={theme === "dark" ? "Light theme" : "Dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </IconButton>
-            <div className="flex-1" />
-            <Button size="sm" variant="ghost" icon={<Lock className="size-3.5" />} onClick={() => void lock()} title="Lock vault">
-              Lock
-            </Button>
-          </div>
-        </div>
-      </aside>
-      <main className="flex-1 min-w-0 flex flex-col bg-bg">{children}</main>
+    <div className="flex h-full overflow-hidden">
+      <Rail ws={ws} group={group} openGroup={docked || flyout ? group : null} section={section} onGroup={pickGroup} onSearch={() => setPaletteOpen(true)} />
+      {docked && (
+        <aside className="w-[232px] shrink-0 border-r border-line bg-panel flex flex-col min-h-0">
+          <NavPanel ws={ws} group={group} section={section} />
+        </aside>
+      )}
+      {!docked && flyout && (
+        <>
+          <div className="fixed inset-0 z-30" onMouseDown={() => setFlyout(false)} />
+          <aside className="fixed left-[60px] top-0 bottom-0 z-40 w-[248px] border-r border-line-strong bg-panel flex flex-col min-h-0 shadow-2xl shadow-black/40">
+            <NavPanel ws={ws} group={group} section={section} onClose={() => setFlyout(false)} />
+          </aside>
+        </>
+      )}
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col bg-bg">
+        <TopBar ws={ws} onSearch={() => setPaletteOpen(true)} />
+        {children}
+      </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} ws={ws} />
+      <CustomizeDrawer />
     </div>
+  );
+}
+
+// Rail is the narrow column of icons: the five groups of a workspace, the
+// agent (in its own colour), search, personalisation and the lock.
+function Rail({
+  ws,
+  group,
+  openGroup,
+  section,
+  onGroup,
+  onSearch,
+}: {
+  ws: string | null;
+  group: NavGroup;
+  openGroup: NavGroup | null;
+  section: string;
+  onGroup: (g: NavGroup) => void;
+  onSearch: () => void;
+}) {
+  const { lock } = useApp();
+  const { setCustomizeOpen } = useAppearance();
+  const wsTabs = useTabs();
+  const navigate = useNavigate();
+  const current = groupOf(section);
+  const btn = "relative grid size-10 place-items-center rounded-[11px] transition-colors [&_svg]:size-[18px]";
+  return (
+    <nav aria-label="Main" className="w-[60px] shrink-0 border-r border-line bg-bg flex flex-col items-center gap-1 py-3 overflow-y-auto [scrollbar-width:none]">
+      <button
+        className="mb-2 rounded-[10px] focus-visible:outline-2 focus-visible:outline-accent"
+        title="Overview"
+        aria-label="Overview"
+        onClick={() => (ws ? wsTabs.show(ws, "overview") : navigate("/"))}
+      >
+        <Logo size={34} />
+      </button>
+      {NAV_GROUPS.map((g) => {
+        const open = openGroup === g.id;
+        const here = current === g.id && !!section;
+        return (
+          <button
+            key={g.id}
+            disabled={!ws}
+            onClick={() => onGroup(g.id)}
+            title={g.label}
+            aria-label={g.label}
+            aria-pressed={open}
+            className={cx(
+              btn,
+              "disabled:opacity-40",
+              open ? "bg-accent/15 text-accent" : here ? "text-fg bg-panel-2" : "text-faint hover:text-fg hover:bg-panel-2",
+              group === g.id && !open && !here && "text-muted",
+            )}
+          >
+            {g.icon}
+            {here && !open && <span className="absolute -left-[10px] top-2.5 bottom-2.5 w-[3px] rounded-r bg-accent" />}
+          </button>
+        );
+      })}
+      <div className="my-2 h-px w-6 bg-line" />
+      <button
+        disabled={!ws}
+        onClick={() => ws && wsTabs.show(ws, "agent")}
+        title="Agent (Ctrl/⌘+J)"
+        aria-label="Agent"
+        className={cx(
+          btn,
+          "disabled:opacity-40",
+          section === "agent" ? "bg-agent text-agent-fg shadow-md shadow-agent/30" : "bg-agent/12 text-agent-ink hover:bg-agent/20",
+        )}
+      >
+        <Bot />
+      </button>
+      <div className="flex-1" />
+      <button onClick={onSearch} title="Search (Ctrl/⌘+K)" aria-label="Search" className={cx(btn, "text-faint hover:text-fg hover:bg-panel-2")}>
+        <Search />
+      </button>
+      <button onClick={() => setCustomizeOpen(true)} title="Customize" aria-label="Customize" className={cx(btn, "text-faint hover:text-fg hover:bg-panel-2")}>
+        <SlidersHorizontal />
+      </button>
+      <NavLink to="/settings" title="App settings" aria-label="App settings" className={({ isActive }) => cx(btn, isActive ? "bg-panel-2 text-fg" : "text-faint hover:text-fg hover:bg-panel-2")}>
+        <Settings />
+      </NavLink>
+      <button onClick={() => void lock()} title="Lock vault" aria-label="Lock vault" className={cx(btn, "text-faint hover:text-fg hover:bg-panel-2")}>
+        <Lock />
+      </button>
+    </nav>
+  );
+}
+
+// NavPanel lists the sections of one group, below the workspace switcher and
+// the pinned sections.
+function NavPanel({ ws, group, section, onClose }: { ws: string | null; group: NavGroup; section: string; onClose?: () => void }) {
+  const { prefs, set, setCustomizeOpen } = useAppearance();
+  const { tabs } = useTerminals();
+  const g = NAV_GROUPS.find((x) => x.id === group)!;
+  const hidden = new Set(prefs.hidden);
+  const items: NavItem[] = [...NAV.filter((n) => n.group === group), ...(group === "security" ? [{ ...SETTINGS_NAV, group: "security" as NavGroup }] : [])].filter(
+    (n) => !hidden.has(n.to) || n.to === section,
+  );
+  const pinned = prefs.pinned.map((id) => NAV.find((n) => n.to === id)).filter((n): n is NavItem => !!n);
+  const hiddenHere = NAV.filter((n) => n.group === group && hidden.has(n.to) && n.to !== section).length;
+  return (
+    <>
+      <div className="p-3 pb-2">
+        <WorkspaceSwitcher current={ws} />
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-3">
+        {!ws ? (
+          <div className="px-2.5 py-3 text-xs text-faint">Select or create a workspace to get started.</div>
+        ) : (
+          <>
+            {pinned.length > 0 && (
+              <div className="mb-4">
+                <div className="px-2.5 h-7 flex items-center text-[10.5px] font-semibold uppercase tracking-wider text-faint">Pinned</div>
+                {pinned.map((n) => (
+                  <SectionLink key={n.to} ws={ws} n={n} terminals={tabs.length} />
+                ))}
+              </div>
+            )}
+            <div className="px-2.5 h-7 flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint">
+              <span className="flex-1">{g.label}</span>
+              {onClose ? (
+                <button onClick={onClose} title="Close" className="rounded p-1 hover:bg-panel-3 hover:text-fg">
+                  <X className="size-3.5" />
+                </button>
+              ) : (
+                <button onClick={() => set({ menu: "rail" })} title="Collapse the menu to icons" className="rounded p-1 hover:bg-panel-3 hover:text-fg">
+                  <PanelLeftClose className="size-3.5" />
+                </button>
+              )}
+            </div>
+            {items.map((n) => (
+              <SectionLink key={n.to} ws={ws} n={n} terminals={tabs.length} />
+            ))}
+            {hiddenHere > 0 && (
+              <button onClick={() => setCustomizeOpen(true)} className="mt-1 px-2.5 h-7 text-[11.5px] text-faint hover:text-fg">
+                {hiddenHere} hidden · show
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <UpdateBox />
+      <div className="border-t border-line p-2.5 space-y-px">
+        <button
+          onClick={() => setCustomizeOpen(true)}
+          className="flex w-full items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] text-muted hover:text-fg hover:bg-panel-2 [&_svg]:size-4"
+        >
+          <PencilLine />
+          Edit menu &amp; appearance
+        </button>
+        <NavLink
+          to="/connectors"
+          className={({ isActive }) =>
+            cx("flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] [&_svg]:size-4", isActive ? "bg-panel-3 text-fg" : "text-muted hover:text-fg hover:bg-panel-2")
+          }
+        >
+          <Plug />
+          Connectors
+        </NavLink>
+      </div>
+    </>
+  );
+}
+
+type NavItem = (typeof NAV)[number];
+
+function SectionLink({ ws, n, terminals }: { ws: string; n: NavItem; terminals: number }) {
+  const wsTabs = useTabs();
+  const { prefs, set } = useAppearance();
+  const isPinned = prefs.pinned.includes(n.to);
+  return (
+    <NavLink
+      to={`/w/${encodeURIComponent(ws)}/${n.to}`}
+      {...tabClick(wsTabs, ws, n.to)}
+      title={SINGLETON_SECTIONS.has(n.to) ? n.label : `${n.label} — Ctrl/⌘-click opens another tab`}
+      className={({ isActive }) =>
+        cx(
+          "group flex items-center gap-2.5 h-8 px-2.5 rounded-md text-[13px] transition-colors [&_svg]:size-4",
+          isActive ? "bg-panel-3 text-fg font-medium [&_svg]:text-accent" : "text-muted hover:text-fg hover:bg-panel-2 [&_svg]:text-faint",
+        )
+      }
+    >
+      {n.to === "agent" ? <span className="text-agent-ink [&_svg]:!text-agent-ink">{n.icon}</span> : n.icon}
+      <span className="flex-1 truncate">{n.label}</span>
+      {n.to === "terminal" && terminals > 0 && <span className="text-[11px] text-faint tabular-nums">{terminals}</span>}
+      {n.to !== "settings" && (
+        <span
+          role="button"
+          title={isPinned ? "Unpin" : "Pin to the top"}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            set({ pinned: isPinned ? prefs.pinned.filter((x) => x !== n.to) : [...prefs.pinned, n.to] });
+          }}
+          className="rounded p-0.5 text-faint opacity-0 group-hover:opacity-100 hover:text-fg hover:bg-panel-3 [&_svg]:!size-3.5 [&_svg]:!text-current"
+        >
+          {isPinned ? <PinOff /> : <Pin />}
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
+// TopBar holds the open tabs, the search box and the agent button.
+function TopBar({ ws, onSearch }: { ws: string | null; onSearch: () => void }) {
+  const wsTabs = useTabs();
+  const section = useMatch("/w/:ws/:section/*")?.params.section ?? "";
+  const inWs = !!useMatch("/w/:ws/*");
+  return (
+    <header className="h-12 shrink-0 flex items-center gap-2 border-b border-line bg-panel/60 pl-2 pr-3">
+      <div className="flex-1 min-w-0 h-full flex items-center">{inWs && ws ? <TabStrip ws={ws} /> : null}</div>
+      <button
+        onClick={onSearch}
+        className="flex items-center gap-2 h-8 rounded-lg border border-line bg-panel px-2.5 text-[12.5px] text-faint hover:text-muted hover:border-line-strong transition-colors sm:w-64 lg:w-72"
+        title="Search (Ctrl/⌘+K)"
+      >
+        <Search className="size-4 shrink-0" />
+        <span className="hidden sm:block flex-1 text-left truncate">Search or jump to…</span>
+        <span className="hidden sm:inline-flex">
+          <KbdHint />
+        </span>
+      </button>
+      {ws && (
+        <Button
+          variant={section === "agent" ? "agentSoft" : "agent"}
+          icon={<Bot className="size-4" />}
+          onClick={() => wsTabs.show(ws, "agent")}
+          title="Ask the agent (Ctrl/⌘+J)"
+          className="shrink-0"
+        >
+          <span className="hidden md:inline">Agent</span>
+        </Button>
+      )}
+    </header>
   );
 }
 
@@ -141,95 +361,6 @@ function tabClick(tabs: ReturnType<typeof useTabs>, ws: string, to: string) {
   };
 }
 
-const COLLAPSED_KEY = "opsdeck.nav.collapsed";
-
-function loadCollapsed(): Set<NavGroup> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as NavGroup[]);
-  } catch {
-    return new Set();
-  }
-}
-
-// SidebarNav lists a workspace's sections in groups that fold; a folded
-// group still shows the section that is open.
-function SidebarNav({ ws, terminals }: { ws: string; terminals: number }) {
-  const wsTabs = useTabs();
-  const [collapsed, setCollapsed] = useState(loadCollapsed);
-  const match = useMatch("/w/:ws/:section/*");
-  const current = match?.params.section ?? "";
-
-  const toggle = (g: NavGroup) =>
-    setCollapsed((c) => {
-      const n = new Set(c);
-      if (n.has(g)) n.delete(g);
-      else n.add(g);
-      try {
-        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...n]));
-      } catch {
-        /* ignore */
-      }
-      return n;
-    });
-
-  return (
-    <>
-      {NAV_GROUPS.map((g, gi) => {
-        const folded = collapsed.has(g.id);
-        const items = NAV.filter((n) => n.group === g.id && (!folded || n.to === current));
-        return (
-          <div key={g.id} className={cx(gi > 0 && "mt-1.5")}>
-            {gi > 0 && (
-              <button
-                onClick={() => toggle(g.id)}
-                className="group/h flex w-full items-center gap-1 h-6 px-2.5 text-[10.5px] font-medium uppercase tracking-wider text-faint hover:text-muted"
-                aria-expanded={!folded}
-              >
-                <span className="flex-1 text-left">{g.label}</span>
-                <ChevronDown className={cx("size-3 opacity-0 group-hover/h:opacity-100 transition-transform", folded && "-rotate-90 opacity-100")} />
-              </button>
-            )}
-            <div className="space-y-px">
-              {items.map((n) => (
-                <NavLink
-                  key={n.to}
-                  to={`/w/${encodeURIComponent(ws)}/${n.to}`}
-                  {...tabClick(wsTabs, ws, n.to)}
-                  title={SINGLETON_SECTIONS.has(n.to) ? n.label : `${n.label} — opens in its own tab; Ctrl/⌘-click opens another`}
-                  className={({ isActive }) =>
-                    cx(
-                      "group flex items-center gap-2.5 h-7 px-2.5 rounded-md text-[13px] transition-colors [&_svg]:size-4",
-                      isActive ? "bg-panel-3 text-fg [&_svg]:text-accent" : "text-muted hover:text-fg hover:bg-panel-2",
-                    )
-                  }
-                >
-                  {n.icon}
-                  <span className="flex-1">{n.label}</span>
-                  {n.to === "terminal" && terminals > 0 && <span className="text-[11px] text-faint tabular-nums">{terminals}</span>}
-                  {!SINGLETON_SECTIONS.has(n.to) && (
-                    <span
-                      role="button"
-                      title="Open another tab"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        wsTabs.open(ws, n.to);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-faint hover:text-fg hover:bg-panel-3 [&_svg]:!size-3.5 [&_svg]:!text-current"
-                    >
-                      <Plus />
-                    </span>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
 function WorkspaceSwitcher({ current }: { current: string | null }) {
   const { workspaces } = useApp();
   const [open, setOpen] = useState(false);
@@ -240,11 +371,11 @@ function WorkspaceSwitcher({ current }: { current: string | null }) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 rounded-md border border-line bg-panel-2 px-2 h-10 text-left hover:border-line-strong transition-colors"
+        className="w-full flex items-center gap-2.5 rounded-lg border border-line bg-bg px-2 h-11 text-left hover:border-line-strong transition-colors"
       >
         {cur ? (
           <>
-            <span className="size-5 rounded-md shrink-0 grid place-items-center text-[10px] font-bold text-white" style={{ background: cur.color || "#10b981" }}>
+            <span className="size-7 rounded-md shrink-0 grid place-items-center text-[12px] font-bold" style={{ background: cur.color || "#10b981", color: readableOn(cur.color || "#10b981") }}>
               {(cur.title || cur.name).slice(0, 1).toUpperCase()}
             </span>
             <span className="min-w-0 flex-1">

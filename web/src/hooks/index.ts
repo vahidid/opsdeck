@@ -104,3 +104,17 @@ export function useAction() {
   }, []);
   return { busy, run };
 }
+
+/** True while the media query matches (e.g. "(min-width: 768px)"). */
+export function useMediaQuery(query: string): boolean {
+  const [match, setMatch] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const h = () => setMatch(mq.matches);
+    h();
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, [query]);
+  return match;
+}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AskAgentButton } from "../components/AskAgent";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, Cloud, CloudOff, ExternalLink, Globe, Lock, Pencil, Plug, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
@@ -71,6 +72,7 @@ export function DomainsPage() {
         }
         actions={
           <>
+            <AskAgentButton prompt={"Review the DNS records of this workspace's domains and point out anything broken or risky."} />
             <Select value={current} onChange={(e) => setParams({ domain: e.target.value }, { replace: true })} className="w-56" title="Domain">
               {all.map((r) => (
                 <option key={r.name} value={r.name}>

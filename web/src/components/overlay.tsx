@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 import { Button, IconButton, Input, cx } from "./ui";
 
-function useEscape(onClose: () => void, active = true) {
+export function useEscape(onClose: () => void, active = true) {
   useEffect(() => {
     if (!active) return;
     const h = (e: KeyboardEvent) => {

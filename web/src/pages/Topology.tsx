@@ -1093,7 +1093,7 @@ function Palette({ catalog, onAdd, onZone }: { catalog: TopoCatalog; onAdd: (nt:
     return g;
   }, [catalog, q]);
   return (
-    <aside className="w-56 shrink-0 border-r border-line bg-panel flex flex-col">
+    <aside className="w-56 shrink-0 border-r border-line bg-panel max-md:hidden flex flex-col">
       <div className="p-2 space-y-2 border-b border-line">
         <SearchInput value={q} onChange={setQ} placeholder="Router, WAF, nginx…" />
         <div className="relative">

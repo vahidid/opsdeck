@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AskAgentButton } from "../../components/AskAgent";
 import { useSearchParams } from "react-router-dom";
 import { Container as ContainerIcon, RefreshCw } from "lucide-react";
 import { api } from "../../api/client";
@@ -106,6 +107,7 @@ export function DockerPage() {
             }
             actions={
               <>
+                <AskAgentButton prompt={"Look at the Docker containers on this workspace's hosts and tell me if anything is unhealthy or restarting."} />
                 <IconButton title="Refresh engine info" onClick={() => void info.reload()}>
                   <RefreshCw className={cx("size-4", info.loading && "animate-spin")} />
                 </IconButton>

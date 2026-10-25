@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import { api } from "../api/client";
 import type { ItemType, KindSchema, Resource, Workspace, WorkspaceSummary } from "../api/types";
-import { useLocalStorage } from "../hooks";
+import { readableOn, useAppearance } from "./appearance";
 
 type Theme = "dark" | "light";
 
@@ -20,16 +20,12 @@ type AppCtx = {
 const Ctx = createContext<AppCtx | null>(null);
 
 export function AppProvider({ children, onLock }: { children: ReactNode; onLock: () => void }) {
-  const [theme, setTheme] = useLocalStorage<Theme>("opsdeck.theme", "dark");
+  const { theme, set: setAppearance } = useAppearance();
+  const setTheme = useCallback((t: Theme) => setAppearance({ theme: t }), [setAppearance]);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [workspacesLoaded, setLoaded] = useState(false);
   const [kinds, setKinds] = useState<KindSchema[]>([]);
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("light", theme === "light");
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
 
   const reloadWorkspaces = useCallback(async () => {
     try {
@@ -117,13 +113,20 @@ export function WorkspaceProvider({ name, children }: { name: string; children: 
     void reload();
   }, [reload]);
 
+  // the workspace colour is the accent unless the viewer picked a fixed one
+  const { prefs } = useAppearance();
+  const useWsColor = prefs.accent === "workspace";
   useEffect(() => {
+    if (!useWsColor) return;
     const color = workspace?.color || "#10b981";
-    document.documentElement.style.setProperty("--c-accent", color);
+    const st = document.documentElement.style;
+    st.setProperty("--c-accent", color);
+    st.setProperty("--c-accent-fg", readableOn(color));
     return () => {
-      document.documentElement.style.removeProperty("--c-accent");
+      st.removeProperty("--c-accent");
+      st.removeProperty("--c-accent-fg");
     };
-  }, [workspace?.color]);
+  }, [workspace?.color, useWsColor]);
 
   const value = useMemo<WsCtx>(
     () => ({

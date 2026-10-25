@@ -115,7 +115,7 @@ export function AgentPage() {
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="w-64 shrink-0 border-r border-line bg-panel flex flex-col">
+      <aside className="hidden sm:flex w-52 md:w-64 shrink-0 border-r border-line bg-panel flex-col min-h-0">
         <div className="p-2 border-b border-line">
           <Button className="w-full" icon={<MessageSquarePlus className="size-4" />} {...openInTab("agent")}>
             New session
@@ -393,7 +393,7 @@ function HarnessStrip({ h }: { h?: HarnessInfo }) {
       </span>
       {h.subagents.length > 0 && (
         <span className="inline-flex items-center gap-1.5" title={h.subagents.map((s) => `${s.name}: ${s.description}`).join("\n")}>
-          <Bot className="size-3.5 text-accent" /> Subagents: {h.subagents.map((s) => s.name).join(", ")}
+          <Bot className="size-3.5 text-agent-ink" /> Subagents: {h.subagents.map((s) => s.name).join(", ")}
         </span>
       )}
       {h.commands.length > 0 && (
@@ -415,7 +415,15 @@ function NewSessionView({ ws, models, defaultModel, onCreated }: { ws: string; m
   const [mode, setMode] = useState<SessionMode>("ask");
   const [model, setModel] = useState(defaultModel);
   const toast = useToast();
-  const [seed, setSeed] = useState("");
+  // ?draft= (from the overview or a log line) pre-fills the first message
+  const [params, setParams] = useSearchParams();
+  const [seed, setSeed] = useState(() => params.get("draft") ?? "");
+  useEffect(() => {
+    if (params.get("draft")) {
+      params.delete("draft");
+      setParams(params, { replace: true });
+    }
+  }, [params, setParams]);
   const harness = useAsync(() => api.harness(ws), [ws]);
   const commands = useCommands(harness.data, NEW_COMMANDS);
   useEffect(() => {
@@ -443,7 +451,7 @@ function NewSessionView({ ws, models, defaultModel, onCreated }: { ws: string; m
     <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
       <div className="w-full max-w-[760px]">
         <div className="flex items-center gap-3 mb-1">
-          <span className="size-9 rounded-lg grid place-items-center bg-accent/15 text-accent">
+          <span className="size-10 rounded-xl grid place-items-center bg-agent text-agent-fg shadow-lg shadow-agent/30">
             <Bot className="size-5" />
           </span>
           <div>
@@ -1009,12 +1017,12 @@ function UserMsg({ text, command, onFork }: { text: string; command?: string; on
 function AssistantMsg({ text, streaming }: { text: string; streaming: boolean }) {
   return (
     <div className="flex gap-3">
-      <span className="size-6 rounded-md bg-accent/15 grid place-items-center shrink-0 mt-0.5">
-        <Bot className="size-3.5 text-accent" />
+      <span className="size-6 rounded-md bg-agent text-agent-fg grid place-items-center shrink-0 mt-0.5">
+        <Bot className="size-3.5 text-agent-fg" />
       </span>
       <div className="flex-1 min-w-0 text-[13.5px] pt-0.5">
         {text ? <Markdown dir={textDir(text) === "rtl" ? "rtl" : "auto"}>{text}</Markdown> : <span className="text-faint">…</span>}
-        {streaming && <span className="inline-block w-1.5 h-4 bg-accent/70 ml-0.5 align-text-bottom pulse-dot" />}
+        {streaming && <span className="inline-block w-1.5 h-4 bg-agent-ink/80 ml-0.5 align-text-bottom pulse-dot" />}
       </div>
     </div>
   );

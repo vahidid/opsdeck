@@ -5,6 +5,28 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Interface
+
+- **New layout** — a rail of icons for the five groups (Workspace, Infrastructure, Deploy,
+  Library, Security) opens their sections in a panel beside it, so the menu shows a handful
+  of entries instead of every section at once; sections can be pinned to the top. The top
+  bar holds the tabs, search (Ctrl/⌘+K, now with actions such as *Add resource*) and the
+  agent (Ctrl/⌘+J). Each pane scrolls on its own and the window never does.
+- **The agent has its own colour** — violet marks everything that hands work to the agent:
+  the rail and top-bar buttons, *Ask the agent* on the overview (with a draft box), the
+  composer and *Ask the agent* / *Explain errors* on Docker, Logs, VPN, Kubernetes,
+  Databases, Domains, Certificates, Deployments, Ansible and the resource editor.
+- **Add resource by product** — the picker lists the products you know (Cisco AnyConnect,
+  GlobalProtect, FortiGate, PostgreSQL, Redis, Grafana, GitLab, Argo CD…) with their logos
+  and colours, searchable and by category, and opens the form already set up for that
+  product (an OpenConnect resource with `protocol: gp` for GlobalProtect). The editor is a
+  wider dialog with a live YAML preview; resources show their product's logo in the list.
+- **Customize** — theme (dark, light, system), accent (the workspace colour or a fixed one),
+  density, interface size and corners, the menu layout (icons + panel or icons only), the
+  pinned sections and which sections the menu shows; saved in the browser.
+- A modern Overview (health, the non-empty resource kinds, topology, networks, activity),
+  Inter and JetBrains Mono bundled, and narrower windows stack list/detail pages.
+
 ### Workbench
 
 - **Deployments** — a workspace's **Portainer**, **Argo CD** and **Komodo** become resources

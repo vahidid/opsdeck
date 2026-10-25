@@ -62,8 +62,8 @@ export function VaultPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-[340px] shrink-0 border-r border-line bg-panel flex flex-col">
+    <div className="flex max-md:flex-col h-full min-h-0">
+      <aside className="w-[340px] max-md:w-full max-md:max-h-[42%] max-md:border-r-0 max-md:border-b shrink-0 border-r border-line bg-panel flex flex-col min-h-0">
         <div className="p-3 space-y-2 border-b border-line">
           <div className="flex items-center justify-between">
             <span className="font-semibold flex items-center gap-2">

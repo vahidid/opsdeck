@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AskAgentButton } from "../components/AskAgent";
 import { AlertTriangle, BadgeCheck, CheckCircle2, ChevronDown, ChevronRight, Clock, Pencil, Plus, RefreshCw, Server, ShieldAlert, Upload } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { CertDeploy, CertJob, CertStatus, Resource } from "../api/types";
@@ -68,6 +69,7 @@ export function CertificatesPage() {
         subtitle="TLS certificates from ACME CAs, proven over DNS through the connectors, kept in the vault"
         actions={
           <>
+            <AskAgentButton prompt={"Check this workspace's TLS certificates and tell me which expire soon or fail to renew."} />
             <IconButton title="Reload" onClick={() => void list.reload()}>
               <RefreshCw className={cx("size-4", list.loading && "animate-spin")} />
             </IconButton>

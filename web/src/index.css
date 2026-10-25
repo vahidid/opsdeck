@@ -4,25 +4,42 @@
 @import "@fontsource/vazirmatn/arabic-500.css";
 @import "@fontsource/vazirmatn/arabic-600.css";
 @import "@fontsource/vazirmatn/arabic-700.css";
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-700.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Appearance (see context/appearance): the theme is a class on <html>, the
+   accent, density and corners are data attributes. */
 :root {
-  --c-bg: #0a0c0f;
-  --c-panel: #101317;
+  --c-bg: #0b0d10;
+  --c-panel: #111418;
   --c-panel-2: #161a1f;
-  --c-panel-3: #1d2228;
-  --c-border: #232930;
-  --c-border-strong: #313842;
-  --c-text: #e5e8ec;
-  --c-muted: #8c95a3;
-  --c-faint: #5d6672;
+  --c-panel-3: #1c2128;
+  --c-border: #1f242b;
+  --c-border-strong: #2c333c;
+  --c-text: #e6e9ed;
+  --c-muted: #a0a8b3;
+  --c-faint: #7f8995;
   --c-accent: #10b981;
-  --c-accent-fg: #ffffff;
+  --c-accent-fg: #03140d;
+  /* the agent has its own colour everywhere, so its actions read as the harness */
+  --c-agent: #7c3aed;
+  --c-agent-fg: #ffffff;
+  --c-agent-ink: #b9a3fe;
   --c-ok: #34d399;
   --c-warn: #fbbf24;
   --c-err: #f87171;
   --c-info: #60a5fa;
+  --r-sm: 4px;
+  --r-md: 7px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --row-h: 38px;
   /* chart series, in this order (validated for colour-blind separation) */
   --viz-1: #3987e5;
   --viz-2: #d95926;
@@ -43,8 +60,13 @@
   --c-border: #e1e4ea;
   --c-border-strong: #cdd2da;
   --c-text: #14171c;
-  --c-muted: #5a6371;
-  --c-faint: #8b93a1;
+  --c-muted: #4f5967;
+  --c-faint: #646e7b;
+  --c-accent: #047857;
+  --c-accent-fg: #ffffff;
+  --c-agent: #7c3aed;
+  --c-agent-fg: #ffffff;
+  --c-agent-ink: #6d28d9;
   --c-ok: #059669;
   --c-warn: #b45309;
   --c-err: #dc2626;
@@ -60,7 +82,29 @@
   color-scheme: light;
 }
 
+/* accent presets: bright with dark text on the dark theme, deeper with white text on the light one */
+:root[data-accent="blue"] { --c-accent: #3b82f6; --c-accent-fg: #04122b; }
+:root[data-accent="amber"] { --c-accent: #f59e0b; --c-accent-fg: #1f1300; }
+:root[data-accent="rose"] { --c-accent: #fb7185; --c-accent-fg: #2a0710; }
+:root[data-accent="cyan"] { --c-accent: #22d3ee; --c-accent-fg: #02161b; }
+:root.light[data-accent="blue"] { --c-accent: #2563eb; --c-accent-fg: #ffffff; }
+:root.light[data-accent="amber"] { --c-accent: #b45309; --c-accent-fg: #ffffff; }
+:root.light[data-accent="rose"] { --c-accent: #e11d48; --c-accent-fg: #ffffff; }
+:root.light[data-accent="cyan"] { --c-accent: #0e7490; --c-accent-fg: #ffffff; }
+
+:root[data-corners="sharp"] { --r-sm: 2px; --r-md: 3px; --r-lg: 4px; --r-xl: 6px; }
+:root[data-corners="round"] { --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px; }
+:root[data-density="compact"] { --row-h: 30px; }
+
 @theme inline {
+  --radius-sm: var(--r-sm);
+  --radius: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --color-agent: var(--c-agent);
+  --color-agent-fg: var(--c-agent-fg);
+  --color-agent-ink: var(--c-agent-ink);
   --color-bg: var(--c-bg);
   --color-panel: var(--c-panel);
   --color-panel-2: var(--c-panel-2);
@@ -86,12 +130,26 @@ body,
   height: 100%;
 }
 
+/* the window never scrolls: each pane scrolls on its own, so nothing jumps */
+html,
+body {
+  overflow: hidden;
+}
+
 body {
   background: var(--c-bg);
   color: var(--c-text);
   font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* interface size (Customize › Text size) scales the whole app */
+:root[data-scale="s"] #root {
+  zoom: 0.92;
+}
+:root[data-scale="l"] #root {
+  zoom: 1.1;
 }
 
 * {

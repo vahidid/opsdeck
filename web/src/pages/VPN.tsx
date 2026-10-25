@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AskAgentButton } from "../components/AskAgent";
 import { Link } from "react-router-dom";
 import { CircleCheck, CircleX, ExternalLink, Pencil, Plus, Power, PowerOff, ScrollText, ShieldCheck, TriangleAlert } from "lucide-react";
 import { api, errMsg } from "../api/client";
@@ -182,7 +183,12 @@ export function VPNPage() {
         icon={<ShieldCheck />}
         title="VPN & networks"
         subtitle="Private networks this workspace is reached through. Userspace tunnels live inside opsdeck; system tunnels route the whole computer."
-        actions={newMenu}
+        actions={
+          <>
+            <AskAgentButton prompt="Check the VPN profiles of this workspace and tell me why one does not connect." label="Troubleshoot" />
+            {newMenu}
+          </>
+        }
       />
       <div className="px-5 pb-8 space-y-4 max-w-5xl">
         {nets.data && list.length === 0 && (

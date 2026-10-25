@@ -1,3 +1,7 @@
+import type { Product } from "../lib/catalog";
+import { readableOn } from "../context/appearance";
+import { cx } from "./ui";
+
 // Marks of the Git hosting services (simple-icons, CC0).
 
 export function GitHubMark({ className = "size-4" }: { className?: string }) {
@@ -49,4 +53,31 @@ export function ProviderMark({ provider, className }: { provider: string; classN
       return <ArvanCloudMark className={className} />;
   }
   return <GitLabMark className={className} />;
+}
+
+// BrandLogo draws a product's tile: its mark on its brand colour (see
+// lib/catalog). The text colour is picked for contrast with the tile.
+export function BrandLogo({ product, size = 28, className }: { product: Product; size?: number; className?: string }) {
+  const fg = readableOn(product.color);
+  const m = product.mark;
+  const inner = Math.round(size * 0.56);
+  return (
+    <span
+      aria-hidden
+      className={cx("inline-grid shrink-0 place-items-center font-bold tracking-tight ring-1 ring-inset ring-white/10", className)}
+      style={{ width: size, height: size, borderRadius: Math.max(5, Math.round(size * 0.26)), background: product.color, color: fg, fontSize: Math.round(size * 0.38) }}
+    >
+      {"si" in m ? (
+        <svg viewBox="0 0 24 24" width={inner} height={inner} fill="currentColor">
+          <path d={m.si.path} />
+        </svg>
+      ) : "text" in m ? (
+        m.text
+      ) : (
+        <span className="grid place-items-center [&_svg]:stroke-[2]" style={{ width: inner, height: inner }}>
+          <span className="[&_svg]:size-full size-full grid">{m.icon}</span>
+        </span>
+      )}
+    </span>
+  );
 }

@@ -35,10 +35,10 @@ export function TabStrip({ ws }: { ws: string }) {
   }, [active]);
 
   return (
-    <div className="h-9 shrink-0 flex items-stretch border-b border-line bg-panel">
+    <div className="h-full flex-1 min-w-0 flex items-center">
       <div
         ref={strip}
-        className="flex items-stretch overflow-x-auto min-w-0 [scrollbar-width:none]"
+        className="flex items-center gap-1 overflow-x-auto min-w-0 h-full [scrollbar-width:none]"
         onDoubleClick={(e) => {
           if (e.target === e.currentTarget) setMenu(true);
         }}
@@ -68,12 +68,11 @@ export function TabStrip({ ws }: { ws: string }) {
               }}
               title={tabLabel(t) + (i < 9 ? `  (Alt+${i + 1})` : "")}
               className={cx(
-                "group relative flex items-center gap-1.5 pl-3 pr-1.5 min-w-[110px] max-w-[220px] border-r border-line cursor-pointer select-none text-[12.5px] [&_svg]:size-3.5",
-                isActive ? "bg-bg text-fg" : "text-muted hover:text-fg hover:bg-panel-2",
+                "group relative shrink-0 flex items-center gap-1.5 h-8 pl-2.5 pr-1 min-w-[96px] max-w-[220px] rounded-lg cursor-pointer select-none text-[12.5px] font-medium [&_svg]:size-3.5",
+                isActive ? "bg-panel-3 text-fg ring-1 ring-line-strong" : "text-muted hover:text-fg hover:bg-panel-2",
               )}
             >
-              {isActive && <span className="absolute inset-x-0 top-0 h-0.5 bg-accent" />}
-              <span className={cx("shrink-0", isActive ? "[&_svg]:text-accent" : "[&_svg]:text-faint")}>{info?.icon}</span>
+              <span className={cx("shrink-0", t.path.startsWith("agent") ? "[&_svg]:text-agent-ink" : isActive ? "[&_svg]:text-accent" : "[&_svg]:text-faint")}>{info?.icon}</span>
               <span className="truncate flex-1" dir="auto">
                 {tabLabel(t)}
               </span>
@@ -92,8 +91,8 @@ export function TabStrip({ ws }: { ws: string }) {
           );
         })}
       </div>
-      <div className="relative flex items-center px-1">
-        <button onClick={() => setMenu((v) => !v)} className="rounded p-1.5 text-muted hover:text-fg hover:bg-panel-2" title="New tab">
+      <div className="relative flex items-center pl-1">
+        <button onClick={() => setMenu((v) => !v)} className="rounded-lg p-1.5 text-muted hover:text-fg hover:bg-panel-2" title="New tab">
           <Plus className="size-4" />
         </button>
         <Popover open={menu} onClose={() => setMenu(false)} className="left-0 top-full mt-1 w-56 max-h-[70vh] overflow-y-auto">
@@ -117,7 +116,7 @@ export function TabStrip({ ws }: { ws: string }) {
           ))}
         </Popover>
       </div>
-      <div className="flex-1" onDoubleClick={() => setMenu(true)} />
+      <div className="flex-1 h-full" onDoubleClick={() => setMenu(true)} />
     </div>
   );
 }

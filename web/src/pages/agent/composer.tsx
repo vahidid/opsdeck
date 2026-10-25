@@ -154,7 +154,7 @@ export function Composer({
       <div
         className={cx(
           "rounded-xl border bg-panel shadow-lg shadow-black/10 transition-colors",
-          sh ? "border-info/60 focus-within:border-info" : "border-line-strong focus-within:border-accent/60",
+          sh ? "border-info/60 focus-within:border-info" : "border-line-strong focus-within:border-agent/70 focus-within:ring-2 focus-within:ring-agent/15",
         )}
       >
         {sh && (
@@ -213,7 +213,7 @@ export function Composer({
             <button
               onClick={() => void send()}
               disabled={!text.trim() || disabled || sending || (running && !sh)}
-              className={cx("size-8 rounded-lg grid place-items-center disabled:opacity-30 hover:brightness-110 transition", sh ? "bg-info text-white" : "bg-accent text-accent-fg")}
+              className={cx("size-8 rounded-lg grid place-items-center disabled:opacity-30 hover:brightness-110 transition", sh ? "bg-info text-white" : "bg-agent text-agent-fg shadow-sm shadow-agent/30")}
               aria-label={sh ? "Run" : "Send"}
             >
               {sending ? <Loader2 className="size-4 animate-spin" /> : sh ? <SquareTerminal className="size-4" /> : <ArrowUp className="size-4" />}

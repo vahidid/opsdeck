@@ -4,8 +4,8 @@ import { Layers, Plus } from "lucide-react";
 import { AppProvider, WorkspaceProvider, useApp, useWs } from "./context/app";
 import { TerminalProvider } from "./context/terminals";
 import { UpdateProvider } from "./context/update";
+import { AppearanceProvider } from "./context/appearance";
 import { TabCtx, TabsProvider, useTabs } from "./context/tabs";
-import { TabStrip } from "./components/TabStrip";
 import { sectionInfo } from "./lib/nav";
 import { ConfirmProvider, ToastProvider, useToast } from "./components/overlay";
 import { installDesktop, isDesktop } from "./lib/desktop";
@@ -40,6 +40,7 @@ import { WorkspaceSettingsPage } from "./pages/WorkspaceSettings";
 
 export function App() {
   return (
+    <AppearanceProvider>
     <ToastProvider>
       {isDesktop && <DesktopBridge />}
       <ConfirmProvider>
@@ -69,6 +70,7 @@ export function App() {
         </Boot>
       </ConfirmProvider>
     </ToastProvider>
+    </AppearanceProvider>
   );
 }
 
@@ -194,8 +196,7 @@ function TabbedWorkspace({ ws }: { ws: string }) {
   };
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col" onClickCapture={intercept} onAuxClickCapture={intercept}>
-      {list.length > 0 && <TabStrip ws={ws} />}
+    <div className="flex-1 min-h-0 flex flex-col max-md:overflow-x-auto max-md:overflow-y-hidden" onClickCapture={intercept} onAuxClickCapture={intercept}>
       {list.map((t) => {
         const isActive = t.id === active;
         const [pathname, search = ""] = t.path.split("?");

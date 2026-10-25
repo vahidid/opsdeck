@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AskAgentButton } from "../../components/AskAgent";
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Activity, Boxes, ChevronDown, ChevronRight, LayoutDashboard, Package, RefreshCw, Upload } from "lucide-react";
@@ -140,6 +141,7 @@ export function KubernetesPage() {
             }
             actions={
               <>
+                <AskAgentButton prompt={"Check the Kubernetes cluster of this workspace: failing pods, pending workloads and recent warning events."} />
                 <Button size="sm" icon={<Upload className="size-3.5" />} onClick={() => ctx.apply()}>
                   Apply YAML
                 </Button>

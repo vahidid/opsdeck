@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AskAgentButton } from "../components/AskAgent";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ExternalLink, GitBranch, History, Pencil, Play, Plus, RefreshCw, Rocket, RotateCcw, Square, Undo2 } from "lucide-react";
 import { api, errMsg } from "../api/client";
@@ -71,6 +72,7 @@ export function DeploymentsPage() {
         subtitle={platforms.error ? <span className="text-err">{platforms.error}</span> : info ? <PlatformSummary p={info} /> : "Stacks and applications of this workspace's deployment platforms"}
         actions={
           <>
+            <AskAgentButton prompt={"Summarise the state of this workspace's deployments and tell me if anything failed recently."} />
             <Select value={current} onChange={(e) => setParams({ platform: e.target.value }, { replace: true })} className="w-56" title="Platform">
               {all.map((r) => (
                 <option key={r.name} value={r.name}>

@@ -3,7 +3,9 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Activity,
   BarChart3,
+  Bot,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ExternalLink,
   FolderOpen,
@@ -14,7 +16,9 @@ import {
   SquareTerminal,
   TerminalSquare,
   Trash2,
+  X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { api, errMsg } from "../api/client";
 import type { KindField, KindSchema, PathHop, Resource } from "../api/types";
 import { NETWORK_KINDS } from "../api/types";
@@ -25,6 +29,7 @@ import { KindIcon } from "../components/icons";
 import {
   Badge,
   Button,
+  cx,
   ChipInput,
   EmptyState,
   FormField,
@@ -32,16 +37,20 @@ import {
   Input,
   PageHeader,
   SearchInput,
+  Segmented,
   Select,
   Table,
-  Tabs,
   Td,
   Textarea,
   Th,
   Toggle,
   Tr,
 } from "../components/ui";
-import { Drawer, MenuItem, Popover, useConfirm, useToast } from "../components/overlay";
+import { MenuItem, Popover, useConfirm, useEscape, useToast } from "../components/overlay";
+import { BrandLogo } from "../components/brand";
+import { AddResourcePicker, catalogFor, shortLabel } from "../components/AddResource";
+import { productFor } from "../lib/catalog";
+import type { Product } from "../lib/catalog";
 import { SecretRefPicker } from "../components/VaultItemForm";
 import { ExecModal, FilesModal, PathView, StatsDrawer, useHostCheck } from "./HostTools";
 import { str } from "../lib/format";
@@ -56,7 +65,15 @@ export function resourceSummary(r: Resource): string {
     case "WireGuard":
       return str(s.config);
     case "SocksProxy":
+    case "Database":
       return str(s.address);
+    case "OpenConnect":
+    case "OpenFortiVPN":
+      return str(s.server);
+    case "Tailscale":
+      return str(s.controlUrl) || "tailscale.com";
+    case "NetBird":
+      return str(s.managementUrl) || "netbird.io";
     case "Panel":
     case "Prometheus":
     case "Loki":
@@ -94,7 +111,7 @@ export function ResourcesPage() {
   const [kind, setKind] = useState<string>("all");
   const [env, setEnv] = useState("");
   const [q, setQ] = useState("");
-  const [editing, setEditing] = useState<{ res: Resource | null; kind: string } | null>(null);
+  const [editing, setEditing] = useState<{ res: Resource | null; kind: string; product?: Product } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [statsHost, setStatsHost] = useState<string | null>(null);
   const [filesHost, setFilesHost] = useState<string | null>(null);
@@ -102,11 +119,19 @@ export function ResourcesPage() {
   const [menu, setMenu] = useState<string | null>(null);
   const check = useHostCheck(ws);
 
-  // deep link: ?edit=Kind/name or ?new=Kind
+  // deep link: ?edit=Kind/name, ?new=Kind, ?add=1 (the picker) or ?kind=Kind (a filter)
   useEffect(() => {
     const ed = params.get("edit");
     const nw = params.get("new");
-    if (ed) {
+    if (params.get("add")) {
+      setAddOpen(true);
+      params.delete("add");
+      setParams(params, { replace: true });
+    } else if (params.get("kind")) {
+      setKind(params.get("kind")!);
+      params.delete("kind");
+      setParams(params, { replace: true });
+    } else if (ed) {
       const [k, ...rest] = ed.split("/");
       const r = resources.find((x) => x.kind === k && x.name === rest.join("/"));
       if (r) {
@@ -143,10 +168,7 @@ export function ResourcesPage() {
       .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
   }, [resources, kind, env, q]);
 
-  const kindTabs = [
-    { id: "all", label: "All", count: resources.length },
-    ...kinds.map((k) => ({ id: k.kind, label: k.label, count: counts[k.kind] ?? 0 })),
-  ];
+  const usedKinds = kinds.filter((k) => counts[k.kind] || k.kind === kind);
 
   async function remove(r: Resource) {
     const ok = await confirm({
@@ -177,56 +199,68 @@ export function ResourcesPage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <PageHeader
-        icon={<Server />}
         title="Resources"
-        subtitle="Servers, networks, panels and clusters of this workspace. Stored as YAML — no secrets inside."
+        subtitle="Servers, networks, panels and clusters of this workspace. Stored as YAML, no secrets inside."
         actions={
-          <div className="relative">
-            <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAddOpen((o) => !o)}>
-              Add resource
-            </Button>
-            <Popover open={addOpen} onClose={() => setAddOpen(false)} className="right-0 mt-1 w-56">
-              {kinds.map((k) => (
-                <MenuItem
-                  key={k.kind}
-                  icon={<KindIcon kind={k.kind} icon={k.icon} />}
-                  onClick={() => {
-                    setAddOpen(false);
-                    setEditing({ res: null, kind: k.kind });
-                  }}
-                  hint={k.category}
-                >
-                  {k.label}
-                </MenuItem>
-              ))}
-            </Popover>
-          </div>
+          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAddOpen(true)}>
+            Add resource
+          </Button>
         }
       />
-      <Tabs className="px-3" tabs={kindTabs} value={kind} onChange={setKind} />
-      <div className="flex items-center gap-2 px-5 py-2.5">
-        <SearchInput value={q} onChange={setQ} placeholder="Filter by name, address, tag…" className="w-72" />
-        <Select value={env} onChange={(e) => setEnv(e.target.value)} className="w-40">
-          <option value="">All environments</option>
-          {workspace?.environments.map((e) => (
-            <option key={e.name} value={e.name}>
-              {e.name}
-            </option>
-          ))}
-        </Select>
+      <div role="group" aria-label="Filter by kind" className="flex flex-wrap items-center gap-1.5 px-4 sm:px-5 shrink-0">
+        {[{ kind: "all", label: "All", icon: undefined as string | undefined }, ...usedKinds].map((k) => {
+          const on = kind === k.kind;
+          const n = k.kind === "all" ? resources.length : (counts[k.kind] ?? 0);
+          return (
+            <button
+              key={k.kind}
+              onClick={() => setKind(k.kind)}
+              aria-pressed={on}
+              className={cx(
+                "inline-flex items-center gap-1.5 h-7 px-3 rounded-full border text-[12.5px] font-medium transition-colors [&_svg]:size-3.5",
+                on ? "bg-fg text-bg border-fg" : "border-line text-muted hover:text-fg hover:border-line-strong",
+              )}
+            >
+              {k.kind !== "all" && <KindIcon kind={k.kind} icon={k.icon} />}
+              {shortLabel(k.label)}
+              <span className="tabular-nums opacity-60">{n}</span>
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setAddOpen(true)}
+          className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full border border-dashed border-line-strong text-[12.5px] text-muted hover:text-fg"
+        >
+          <Plus className="size-3.5" /> Add another type
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 shrink-0">
+        <SearchInput value={q} onChange={setQ} placeholder="Filter by name, address, tag…" className="w-full sm:w-72" />
+        {(workspace?.environments.length ?? 0) > 0 && (workspace?.environments.length ?? 0) <= 5 ? (
+          <Segmented value={env} onChange={setEnv} options={[{ id: "", label: "All envs" }, ...workspace!.environments.map((e) => ({ id: e.name, label: e.name }))]} />
+        ) : (
+          <Select value={env} onChange={(e) => setEnv(e.target.value)} className="w-40">
+            <option value="">All environments</option>
+            {workspace?.environments.map((e) => (
+              <option key={e.name} value={e.name}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+        )}
         <div className="flex-1" />
         <span className="text-xs text-faint">{filtered.length} shown</span>
       </div>
-      <div className="flex-1 min-h-0 px-5 pb-5">
-        <div className="h-full rounded-lg border border-line bg-panel overflow-hidden flex flex-col">
+      <div className="flex-1 min-h-0 px-4 sm:px-5 pb-6">
+        <div className="h-full rounded-xl border border-line bg-panel overflow-hidden flex flex-col">
           {filtered.length === 0 ? (
             <EmptyState
               icon={<Server />}
               title={resources.length ? "No matching resources" : "No resources yet"}
               action={
                 !resources.length && (
-                  <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing({ res: null, kind: "Host" })}>
-                    Add your first host
+                  <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAddOpen(true)}>
+                    Add your first resource
                   </Button>
                 )
               }
@@ -249,18 +283,25 @@ export function ResourcesPage() {
               <tbody>
                 {filtered.map((r) => {
                   const key = `${r.kind}/${r.name}`;
+                  const prod = productFor(r);
                   return (
                     <Tr key={key} onClick={() => setEditing({ res: r, kind: r.kind })}>
                       <Td>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted">
-                            <KindIcon kind={r.kind} icon={kindMap[r.kind]?.icon} />
+                        <div className="flex items-center gap-2.5">
+                          {prod ? (
+                            <BrandLogo product={prod} size={24} />
+                          ) : (
+                            <span className="text-muted">
+                              <KindIcon kind={r.kind} icon={kindMap[r.kind]?.icon} />
+                            </span>
+                          )}
+                          <span className="min-w-0">
+                            <span className="block font-medium whitespace-nowrap">{r.name}</span>
+                            {r.description && <span className="block text-[11px] text-faint truncate max-w-72">{r.description}</span>}
                           </span>
-                          <span className="font-medium">{r.name}</span>
                         </div>
-                        {r.description && <div className="text-[11px] text-faint truncate max-w-72">{r.description}</div>}
                       </Td>
-                      {kind === "all" && <Td className="text-muted">{kindMap[r.kind]?.label ?? r.kind}</Td>}
+                      {kind === "all" && <Td className="text-muted whitespace-nowrap">{prod?.name ?? shortLabel(kindMap[r.kind]?.label ?? r.kind)}</Td>}
                       <Td>{r.environment ? <Badge tone={envTone(workspace, r.environment)}>{r.environment}</Badge> : <span className="text-faint">—</span>}</Td>
                       <Td mono className="max-w-80 truncate" title={resourceSummary(r)}>
                         {resourceSummary(r) || <span className="text-faint">—</span>}
@@ -276,7 +317,7 @@ export function ResourcesPage() {
                         </div>
                       </Td>
                       <Td>
-                        <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-0.5 justify-end opacity-60 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                           {r.kind === "Host" && (
                             <>
                               <IconButton
@@ -334,10 +375,22 @@ export function ResourcesPage() {
           )}
         </div>
       </div>
+      <AddResourcePicker
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onPick={(p) => {
+          setAddOpen(false);
+          setEditing({ res: null, kind: p.kind, product: p });
+        }}
+      />
       {editing && kindMap[editing.kind] && (
         <ResourceDrawer
+          key={`${editing.kind}/${editing.res?.name ?? ""}/${editing.product?.id ?? ""}`}
           schema={kindMap[editing.kind]}
           resource={editing.res}
+          product={editing.product}
+          initial={editing.product?.spec ? { spec: editing.product.spec } : undefined}
+          onBack={editing.product ? () => (setEditing(null), setAddOpen(true)) : undefined}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
@@ -362,6 +415,8 @@ export function ResourceDrawer({
   resource,
   initial,
   title,
+  product: chosen,
+  onBack,
   onClose,
   onSaved,
   onDelete,
@@ -370,11 +425,14 @@ export function ResourceDrawer({
   resource: Resource | null;
   initial?: Partial<Resource>; // preset for a new resource
   title?: string;
+  product?: Product; // the catalog product picked in the add flow
+  onBack?: () => void;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
   onDelete?: () => void;
 }) {
   const { name: ws, workspace, resources } = useWs();
+  const navigate = useNavigate();
   const toast = useToast();
   const [r, setR] = useState<Resource>(() =>
     resource ? structuredClone(resource) : { ...emptyResource(schema.kind), ...initial, spec: { ...(initial?.spec ?? {}) } },
@@ -383,8 +441,12 @@ export function ResourceDrawer({
   const [err, setErr] = useState("");
   const [path, setPath] = useState<PathHop[] | null>(null);
   const [docs, setDocs] = useState<string[]>([]);
-  const shown = schema.fields.filter((f) => !f.showIf || r.spec[f.showIf] === true || r.spec[f.showIf] === "true");
-  const advancedSet = shown.filter((f) => f.advanced && r.spec[f.key] !== undefined && r.spec[f.key] !== "" && r.spec[f.key] !== f.default).length;
+  // a field the chosen product already sets (protocol, engine…) moves to Advanced
+  const presetKeys = new Set(Object.keys(chosen?.spec ?? {}));
+  const shown = schema.fields
+    .filter((f) => !f.showIf || r.spec[f.showIf] === true || r.spec[f.showIf] === "true")
+    .map((f) => (presetKeys.has(f.key) ? { ...f, advanced: true } : f));
+  const advancedSet = shown.filter((f) => f.advanced && !presetKeys.has(f.key) && r.spec[f.key] !== undefined && r.spec[f.key] !== "" && r.spec[f.key] !== f.default).length;
   const [advanced, setAdvanced] = useState<boolean | null>(null);
   const advancedOpen = advanced ?? advancedSet > 0;
 
@@ -407,6 +469,10 @@ export function ResourceDrawer({
   );
   const missing = schema.fields.filter((f) => f.required && (r.spec[f.key] === undefined || r.spec[f.key] === "" || (Array.isArray(r.spec[f.key]) && !(r.spec[f.key] as unknown[]).length)));
   const nameOk = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(r.name);
+  const product = chosen ?? (resource ? productFor(resource) : undefined) ?? catalogFor([schema])[0];
+  const preset = Object.entries(chosen?.spec ?? {});
+  const envs = workspace?.environments ?? [];
+  useEscape(onClose);
 
   async function save() {
     setBusy(true);
@@ -433,29 +499,48 @@ export function ResourceDrawer({
     }
   }
 
-  return (
-    <Drawer
-      open
-      onClose={onClose}
-      width={560}
-      title={resource ? `${schema.label}: ${resource.name}` : title ?? `New ${schema.label}`}
-      subtitle={resource ? "Saved to the workspace YAML files" : undefined}
-      footer={
-        <>
-          {onDelete && (
-            <Button variant="danger" icon={<Trash2 className="size-3.5" />} onClick={onDelete} className="mr-auto">
-              Delete
-            </Button>
+  const heading = resource ? resource.name : title ?? (chosen ? chosen.name : `New ${shortLabel(schema.label)}`);
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 sm:p-6 backdrop-blur-[2px]" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={heading}
+        className="w-full max-w-[1000px] h-[min(760px,calc(100vh-24px))] rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/40 flex flex-col overflow-hidden"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-line shrink-0">
+          {onBack && (
+            <IconButton title="Back to all types" onClick={onBack}>
+              <ChevronLeft className="size-4" />
+            </IconButton>
           )}
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={save} loading={busy} disabled={!nameOk || missing.length > 0}>
-            {resource ? "Save" : "Create"}
-          </Button>
-        </>
-      }
-    >
+          {product && <BrandLogo product={product} size={44} />}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[17px] font-semibold tracking-tight truncate">{heading}</h2>
+            <p className="text-[12px] text-muted truncate">
+              {resource ? (
+                <>
+                  {product?.name ?? shortLabel(schema.label)} · saved in the workspace YAML files
+                </>
+              ) : (
+                <>
+                  saved as <span className="font-mono">{schema.kind}</span>
+                  {preset.length > 0 && (
+                    <>
+                      {" "}with <span className="font-mono">{preset.map(([k, v]) => `${k}: ${String(v)}`).join(", ")}</span>
+                    </>
+                  )}
+                </>
+              )}
+            </p>
+          </div>
+          <IconButton title="Close" onClick={onClose}>
+            <X className="size-4" />
+          </IconButton>
+        </header>
+        <div className="flex-1 min-h-0 flex">
+          <div className="flex-1 min-w-0 overflow-y-auto px-4 sm:px-5 py-5">
       <div className="space-y-3.5">
         {resource && (
           <div className="rounded-md border border-line bg-panel-2 p-2.5">
@@ -465,9 +550,18 @@ export function ResourceDrawer({
         )}
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Name" required help={!nameOk && r.name ? "Letters, digits, . _ -" : undefined}>
-            <Input mono autoFocus={!resource} value={r.name} onChange={(e) => setR({ ...r, name: e.target.value })} placeholder={schema.kind === "Host" ? "app-1" : "name"} />
+            <Input mono autoFocus={!resource} value={r.name} onChange={(e) => setR({ ...r, name: e.target.value })} placeholder={product?.defaultName ?? NAME_HINT[product?.category ?? ""] ?? "name"} />
           </FormField>
-          <FormField label="Environment">
+          <FormField label="Environment" help={envs.find((e) => e.name === r.environment)?.protected ? "Protected: the agent asks before every change" : undefined}>
+            {envs.length > 0 && envs.length <= 4 ? (
+              <div>
+                <Segmented
+                  value={r.environment ?? ""}
+                  onChange={(v) => setR({ ...r, environment: v })}
+                  options={[{ id: "", label: "none" }, ...envs.map((e) => ({ id: e.name, label: e.name }))]}
+                />
+              </div>
+            ) : (
             <Select value={r.environment ?? ""} onChange={(e) => setR({ ...r, environment: e.target.value })}>
               <option value="">— none —</option>
               {workspace?.environments.map((e) => (
@@ -477,6 +571,7 @@ export function ResourceDrawer({
                 </option>
               ))}
             </Select>
+            )}
           </FormField>
         </div>
         {schema.canVia && (
@@ -546,8 +641,101 @@ export function ResourceDrawer({
         </div>
         {err && <div className="text-err text-xs whitespace-pre-wrap">{err}</div>}
       </div>
-    </Drawer>
+          </div>
+          <aside aria-label="Summary" className="hidden md:flex w-[300px] shrink-0 flex-col gap-5 overflow-y-auto border-l border-line bg-bg px-5 py-5">
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-faint mb-2">Saved as</div>
+              <pre className="rounded-lg border border-line bg-panel px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-muted overflow-x-auto">{toYaml(r)}</pre>
+              <p className="mt-2 text-[11.5px] text-faint">Plain YAML in the workspace. Passwords and keys stay in the vault; only references are stored.</p>
+            </div>
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-faint mb-2">Shows up in</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(SHOWS_IN[schema.kind] ?? []).concat("Agent tools").map((x) => (
+                  <Badge key={x}>{x}</Badge>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-faint mb-2">Need help?</div>
+              <Button
+                size="sm"
+                variant="agentSoft"
+                icon={<Bot className="size-3.5" />}
+                onClick={() => {
+                  onClose();
+                  navigate(
+                    `/w/${encodeURIComponent(ws)}/agent?new=1&draft=${encodeURIComponent(
+                      resource ? `Check the ${schema.kind} "${resource.name}" and tell me what is wrong or missing.` : `Help me add a ${product?.name ?? schema.label} resource to this workspace.`,
+                    )}`,
+                  );
+                }}
+              >
+                Ask the agent
+              </Button>
+            </div>
+          </aside>
+        </div>
+        <footer className="flex items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-line shrink-0">
+          {onDelete && (
+            <Button variant="danger" icon={<Trash2 className="size-3.5" />} onClick={onDelete} className="mr-auto">
+              Delete
+            </Button>
+          )}
+          {!onDelete && missing.length > 0 && (
+            <span className="mr-auto text-[11.5px] text-faint truncate">Required: {missing.map((f) => f.label || f.key).join(", ")}</span>
+          )}
+          <Button variant="ghost" onClick={onBack ?? onClose}>
+            {onBack ? "Back" : "Cancel"}
+          </Button>
+          <Button variant="primary" onClick={save} loading={busy} disabled={!nameOk || missing.length > 0}>
+            {resource ? "Save" : `Add ${product?.name ?? "resource"}`}
+          </Button>
+        </footer>
+      </div>
+    </div>,
+    document.body,
   );
+}
+
+const NAME_HINT: Record<string, string> = { servers: "app-1", vpn: "corp-vpn", db: "shop-db", obs: "monitoring", code: "shop", k8s: "prod-cluster", web: "acme-shop" };
+
+const SHOWS_IN: Record<string, string[]> = {
+  Host: ["Terminal", "Logs", "Docker", "Topology"],
+  HostGroup: ["Ansible", "Topology"],
+  WireGuard: ["VPN", "Topology"],
+  Tailscale: ["VPN", "Topology"],
+  NetBird: ["VPN", "Topology"],
+  OpenVPN: ["VPN", "Topology"],
+  OpenConnect: ["VPN", "Topology"],
+  OpenFortiVPN: ["VPN", "Topology"],
+  SocksProxy: ["VPN", "Topology"],
+  Database: ["Databases", "Topology"],
+  Prometheus: ["Logs"],
+  Loki: ["Logs"],
+  Elasticsearch: ["Logs"],
+  Panel: ["Topology"],
+  GitRemote: ["Repositories", "Docs"],
+  AnsibleProject: ["Ansible"],
+  DeployPlatform: ["Deployments"],
+  KubernetesCluster: ["Kubernetes", "Topology"],
+  Domain: ["Domains"],
+  Certificate: ["Certificates"],
+};
+
+// toYaml previews the resource file (a sketch; the server writes the real one).
+function toYaml(r: Resource): string {
+  const v = (x: unknown): string => (Array.isArray(x) ? `[${x.map(String).join(", ")}]` : typeof x === "string" && /[:#{}[\],&*?|<>=!%@`]|^\s|\s$/.test(x) ? JSON.stringify(x) : String(x));
+  const lines = [`kind: ${r.kind}`, `name: ${r.name || "…"}`];
+  if (r.environment) lines.push(`environment: ${r.environment}`);
+  if (r.via) lines.push(`via: ${r.via}`);
+  if (r.tags?.length) lines.push(`tags: ${v(r.tags)}`);
+  const spec = Object.entries(r.spec).filter(([, x]) => x !== "" && x !== undefined && x !== null && !(Array.isArray(x) && !x.length));
+  if (spec.length) {
+    lines.push("spec:");
+    for (const [k, x] of spec) lines.push(`  ${k}: ${typeof x === "string" && x.includes("\n") ? "|" : v(x)}`);
+  }
+  return lines.join("\n");
 }
 
 function SpecField({

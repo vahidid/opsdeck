@@ -6,7 +6,9 @@ export function cx(...c: (string | false | null | undefined)[]): string {
   return c.filter(Boolean).join(" ");
 }
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "subtle";
+// "agent" marks what hands work to the agent; it has its own colour so the
+// harness is recognisable on every screen.
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "subtle" | "agent" | "agentSoft";
 type Size = "xs" | "sm" | "md";
 const variants: Record<Variant, string> = {
   primary: "bg-accent text-accent-fg hover:brightness-110 border border-transparent",
@@ -14,6 +16,8 @@ const variants: Record<Variant, string> = {
   ghost: "text-muted hover:text-fg hover:bg-panel-3 border border-transparent",
   subtle: "bg-panel-3 text-fg border border-transparent hover:border-line-strong",
   danger: "bg-err/15 text-err border border-err/30 hover:bg-err/25",
+  agent: "bg-agent text-agent-fg hover:brightness-110 border border-transparent shadow-sm shadow-agent/25",
+  agentSoft: "bg-agent/12 text-agent-ink border border-agent/30 hover:bg-agent/20",
 };
 const sizes: Record<Size, string> = {
   xs: "h-6 px-2 text-[11px] gap-1 rounded",
@@ -167,7 +171,7 @@ export function Toggle({
   );
 }
 
-export type Tone = "neutral" | "ok" | "warn" | "err" | "info" | "accent";
+export type Tone = "neutral" | "ok" | "warn" | "err" | "info" | "accent" | "agent";
 const tones: Record<Tone, string> = {
   neutral: "bg-panel-3 text-muted border-line",
   ok: "bg-ok/12 text-ok border-ok/25",
@@ -175,6 +179,7 @@ const tones: Record<Tone, string> = {
   err: "bg-err/12 text-err border-err/25",
   info: "bg-info/12 text-info border-info/25",
   accent: "bg-accent/15 text-accent border-accent/30",
+  agent: "bg-agent/15 text-agent-ink border-agent/30",
 };
 export function Badge({
   tone = "neutral",
@@ -193,7 +198,7 @@ export function Badge({
     <span
       title={title}
       className={cx(
-        "inline-flex items-center gap-1 rounded border px-1.5 h-[18px] text-[10.5px] font-medium leading-none whitespace-nowrap",
+        "inline-flex items-center gap-1 rounded-full border px-2 h-[19px] text-[10.5px] font-medium leading-none whitespace-nowrap",
         tones[tone],
         mono && "font-mono",
         className,
@@ -219,6 +224,7 @@ export function StatusDot({ tone, pulse }: { tone: Tone; pulse?: boolean }) {
     err: "bg-err",
     info: "bg-info",
     accent: "bg-accent",
+    agent: "bg-agent",
   };
   return <span className={cx("inline-block size-2 rounded-full shrink-0", color[tone], pulse && "pulse-dot")} />;
 }
@@ -285,14 +291,14 @@ export function Card({
   bodyClass?: string;
 }) {
   return (
-    <section className={cx("rounded-lg border border-line bg-panel", className)}>
+    <section className={cx("rounded-xl border border-line bg-panel", className)}>
       {(title || actions) && (
-        <header className="flex items-center justify-between gap-2 border-b border-line px-3 h-10">
-          <h3 className="text-[13px] font-semibold flex items-center gap-2">{title}</h3>
+        <header className="flex items-center justify-between gap-2 border-b border-line px-4 h-11">
+          <h3 className="text-[13.5px] font-semibold flex items-center gap-2">{title}</h3>
           <div className="flex items-center gap-1">{actions}</div>
         </header>
       )}
-      <div className={cx("p-3", bodyClass)}>{children}</div>
+      <div className={cx("p-4", bodyClass)}>{children}</div>
     </section>
   );
 }
@@ -444,7 +450,7 @@ export function Segmented<T extends string>({
   size?: "sm" | "xs";
 }) {
   return (
-    <div className="inline-flex rounded-md border border-line bg-panel-2 p-0.5">
+    <div className="inline-flex rounded-lg border border-line bg-panel-2 p-0.5">
       {options.map((o) => (
         <button
           key={o.id}
@@ -452,9 +458,9 @@ export function Segmented<T extends string>({
           type="button"
           onClick={() => onChange(o.id)}
           className={cx(
-            "rounded px-2 font-medium transition-colors flex items-center gap-1",
+            "rounded-md px-2.5 font-medium transition-colors flex items-center gap-1",
             size === "sm" ? "h-6 text-xs" : "h-5 text-[11px]",
-            value === o.id ? "bg-panel-3 text-fg shadow-sm" : "text-muted hover:text-fg",
+            value === o.id ? "bg-panel text-fg shadow-sm shadow-black/20 ring-1 ring-line" : "text-muted hover:text-fg",
           )}
         >
           {o.label}
@@ -476,15 +482,15 @@ export function PageHeader({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-5 pt-4 pb-3">
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-4 sm:px-5 pt-5 pb-4 shrink-0">
       <div className="min-w-0">
-        <h1 className="text-[17px] font-semibold flex items-center gap-2 [&_svg]:size-4.5 [&_svg]:text-muted">
+        <h1 className="text-[20px] font-semibold tracking-tight flex items-center gap-2.5 [&_svg]:size-[18px] [&_svg]:text-faint">
           {icon}
           {title}
         </h1>
-        {subtitle && <div className="text-muted mt-0.5 truncate">{subtitle}</div>}
+        {subtitle && <div className="text-muted mt-1 line-clamp-2 max-w-3xl">{subtitle}</div>}
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full [&>select]:max-w-full">{actions}</div>}
     </div>
   );
 }
@@ -510,7 +516,7 @@ export function Th({ children, className }: { children?: ReactNode; className?: 
 }
 export function Td({ children, className, mono, title, colSpan }: { children?: ReactNode; className?: string; mono?: boolean; title?: string; colSpan?: number }) {
   return (
-    <td title={title} colSpan={colSpan} className={cx("px-3 h-9 border-b border-line/70 align-middle", mono && "font-mono text-[11.5px]", className)}>
+    <td title={title} colSpan={colSpan} className={cx("px-3 h-[var(--row-h)] border-b border-line/70 align-middle", mono && "font-mono text-[11.5px]", className)}>
       {children}
     </td>
   );

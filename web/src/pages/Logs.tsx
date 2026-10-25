@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AskAgentButton } from "../components/AskAgent";
 import { Play, ScrollText, Square } from "lucide-react";
 import { api } from "../api/client";
 import type { Container } from "../api/types";
@@ -56,7 +57,17 @@ export function LogsPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <PageHeader icon={<ScrollText />} title="Logs" subtitle="Stream journald units, log files or container logs over SSH." />
+      <PageHeader
+        icon={<ScrollText />}
+        title="Logs"
+        subtitle="Stream journald units, log files or container logs over SSH."
+        actions={
+          <AskAgentButton
+            label="Explain errors"
+            prompt={`Read the recent logs of ${source === "docker" ? `the container ${container || "…"}` : source === "journal" ? `the unit ${unit || "…"}` : "this log"} on ${host || "the host"} and explain the errors and their cause.`}
+          />
+        }
+      />
       <div className="px-5 pb-3 flex flex-wrap items-end gap-3">
         <FormField label="Host" className="w-48">
           <Select value={host} onChange={(e) => setHost(e.target.value)}>

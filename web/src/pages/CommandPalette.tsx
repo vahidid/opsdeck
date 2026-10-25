@@ -3,20 +3,22 @@ import { NAV, SETTINGS_NAV } from "../lib/nav";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Bot, Moon, Search, SquareTerminal } from "lucide-react";
+import { ArrowRight, Bot, Moon, Plus, Search, SlidersHorizontal, SquareTerminal } from "lucide-react";
 import { api } from "../api/client";
 import type { Resource } from "../api/types";
 import { useApp } from "../context/app";
+import { useAppearance } from "../context/appearance";
 import { useTerminals } from "../context/terminals";
 import { useTabs } from "../context/tabs";
 import { KindIcon } from "../components/icons";
-import { cx } from "../components/ui";
+import { Kbd, cx } from "../components/ui";
 
 type Cmd = { id: string; group: string; label: string; hint?: string; icon: ReactNode; run: () => void };
 
 
 export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: () => void; ws: string | null }) {
   const { workspaces, theme, setTheme } = useApp();
+  const { setCustomizeOpen } = useAppearance();
   const terms = useTerminals();
   const navigate = useNavigate();
   const tabs = useTabs();
@@ -63,9 +65,17 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
       out.push({
         id: "new-session",
         group: "Actions",
-        label: "New agent session",
-        icon: <Bot className="size-4" />,
+        label: "Ask the agent…",
+        hint: "Ctrl/⌘ J",
+        icon: <Bot className="size-4 text-agent-ink" />,
         run: () => navigate(`${W}/agent?new=1`),
+      });
+      out.push({
+        id: "add-resource",
+        group: "Actions",
+        label: "Add resource",
+        icon: <Plus className="size-4" />,
+        run: () => navigate(`${W}/resources?add=1`),
       });
       for (const s of [...NAV, SETTINGS_NAV]) {
         out.push({
@@ -94,13 +104,24 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
       icon: <Moon className="size-4" />,
       run: () => setTheme(theme === "dark" ? "light" : "dark"),
     });
+    out.push({
+      id: "customize",
+      group: "Actions",
+      label: "Customize menu and appearance",
+      icon: <SlidersHorizontal className="size-4" />,
+      run: () => setCustomizeOpen(true),
+    });
     out.push({ id: "app-settings", group: "Go to", label: "App settings", icon: <ArrowRight className="size-4" />, run: () => navigate("/settings") });
     return out;
-  }, [ws, resources, workspaces, theme, setTheme, navigate, terms, tabs]);
+  }, [ws, resources, workspaces, theme, setTheme, navigate, terms, tabs, setCustomizeOpen]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return cmds.filter((c) => c.group !== "Resources").slice(0, 60);
+    if (!t) {
+      // actions first when nothing is typed
+      const rest = cmds.filter((c) => c.group !== "Resources");
+      return [...rest.filter((c) => c.group === "Actions"), ...rest.filter((c) => c.group !== "Actions")].slice(0, 60);
+    }
     const scored = cmds
       .map((c) => {
         const hay = `${c.label} ${c.hint ?? ""} ${c.group}`.toLowerCase();
@@ -132,16 +153,23 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
   };
   let lastGroup = "";
   return createPortal(
-    <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center pt-[14vh] p-4" onMouseDown={onClose}>
-      <div className="w-full max-w-[560px] rounded-xl border border-line-strong bg-panel shadow-2xl overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-3 h-12 border-b border-line">
+    <div className="fixed inset-0 z-[60] bg-black/55 backdrop-blur-[2px] flex items-start justify-center pt-[12vh] p-4" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search or jump to"
+        className="w-full max-w-[620px] rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/50 overflow-hidden"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2.5 px-4 h-14 border-b border-line">
           <Search className="size-4 text-muted" />
           <input
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Jump to host, resource, screen, workspace…"
-            className="flex-1 bg-transparent outline-none text-[14px] placeholder:text-faint"
+            placeholder="Search sections, hosts, resources, actions…"
+            aria-label="Search sections, hosts, resources and actions"
+            className="flex-1 bg-transparent outline-none text-[15px] placeholder:text-faint"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -156,19 +184,21 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
             }}
           />
         </div>
-        <div ref={listRef} className="max-h-[50vh] overflow-y-auto py-1">
+        <div ref={listRef} role="listbox" className="max-h-[52vh] overflow-y-auto p-1.5">
           {filtered.length === 0 && <div className="px-4 py-6 text-center text-muted">No matches</div>}
           {filtered.map((c, i) => {
             const header = c.group !== lastGroup ? c.group : null;
             lastGroup = c.group;
             return (
               <div key={c.id}>
-                {header && <div className="px-3 pt-2 pb-1 text-[10.5px] uppercase tracking-wider text-faint">{header}</div>}
+                {header && <div className="px-2.5 pt-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint">{header}</div>}
                 <button
                   data-idx={i}
+                  role="option"
+                  aria-selected={i === sel}
                   onMouseEnter={() => setSel(i)}
                   onClick={() => run(c)}
-                  className={cx("w-full flex items-center gap-2.5 px-3 h-9 text-left text-[13px]", i === sel ? "bg-panel-3" : "")}
+                  className={cx("w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-left text-[13px]", i === sel ? "bg-accent/12 text-fg" : "")}
                 >
                   <span className="text-muted">{c.icon}</span>
                   <span className="flex-1 truncate">{c.label}</span>
@@ -177,6 +207,18 @@ export function CommandPalette({ open, onClose, ws }: { open: boolean; onClose: 
               </div>
             );
           })}
+        </div>
+        <div className="flex items-center gap-4 px-4 h-10 border-t border-line text-[11.5px] text-faint">
+          <span className="flex items-center gap-1.5">
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd> move
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>↵</Kbd> open
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>esc</Kbd> close
+          </span>
         </div>
       </div>
     </div>,

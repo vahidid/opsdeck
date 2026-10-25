@@ -111,7 +111,7 @@ export function Logo({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
       <rect width="32" height="32" rx="8" fill="var(--c-accent)" />
-      <path d="M8.5 11l6 5-6 5M16.5 22h7" stroke="white" strokeWidth="2.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 11l6 5-6 5M16.5 22h7" stroke="var(--c-accent-fg)" strokeWidth="2.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

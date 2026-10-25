@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BellRing, ExternalLink, Globe, Package, ShieldAlert, Tag } from "lucide-react";
+import { BellRing, ExternalLink, Globe, Package, Rocket, ShieldAlert, Tag } from "lucide-react";
 import type { ToolView } from "../../api/types";
-import { Badge, cx } from "../../components/ui";
+import { Badge, StatusDot, cx } from "../../components/ui";
 import type { Tone } from "../../components/ui";
 import { fmtBytes, fmtMs, timeAgo } from "../../lib/format";
+import { healthTone, shortRev } from "../../lib/deploy";
 
 /** structured results a tool attached to its call, shown above its raw output */
 export function ToolViewBlock({ view }: { view: ToolView }) {
@@ -30,6 +31,8 @@ export function ToolViewBlock({ view }: { view: ToolView }) {
       return <ReleasesView v={view} />;
     case "dns":
       return <DnsView v={view} />;
+    case "deploy":
+      return <DeployView v={view} />;
   }
   return null;
 }
@@ -559,6 +562,69 @@ function DnsView({ v }: { v: Extract<ToolView, { kind: "dns" }> }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DeployView({ v }: { v: Extract<ToolView, { kind: "deploy" }> }) {
+  const rows = v.targets ?? (v.detail ? [v.detail] : []);
+  if (rows.length === 0) return <div className="text-xs text-muted">Nothing deployed on {v.platform}.</div>;
+  const d = v.detail;
+  return (
+    <div className="rounded-md border border-line bg-panel-2 overflow-hidden">
+      <div className="px-3 h-8 flex items-center gap-2 text-[11px] text-faint border-b border-line">
+        <Rocket className="size-3" />
+        <span className="font-mono">{v.platform}</span>
+        {v.targets && <span>· {v.targets.length} targets</span>}
+        {d?.operation && (
+          <span>
+            · {d.operation.name} {d.operation.phase}
+          </span>
+        )}
+      </div>
+      <table className="w-full text-[12px]">
+        <tbody>
+          {rows.map((t) => (
+            <tr key={t.id} className="border-b border-line/60 last:border-0">
+              <td className="px-3 h-8 font-medium truncate max-w-[200px]" title={t.id}>
+                {t.url ? (
+                  <ExtLink href={t.url} className="hover:text-accent">
+                    {t.name}
+                  </ExtLink>
+                ) : (
+                  t.name
+                )}
+              </td>
+              <td className="px-2 whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot tone={healthTone(t.health)} pulse={t.health === "busy"} />
+                  {t.status}
+                </span>
+              </td>
+              <td className="px-2 whitespace-nowrap">
+                {t.sync && <Badge tone={t.outOfSync ? "warn" : "ok"}>{t.sync}</Badge>}
+                {!t.sync && t.outOfSync && <Badge tone="warn">out of sync</Badge>}
+                {t.updateAvailable && <Badge tone="info">update</Badge>}
+              </td>
+              <td className="px-2 text-muted truncate max-w-[200px]">{t.where}</td>
+              <td className="px-3 font-mono text-[11px] text-faint truncate max-w-[120px]" title={t.revision}>
+                {shortRev(t.revision)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {d && d.services.length > 0 && (
+        <div className="px-3 py-1.5 border-t border-line flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+          {d.services.map((s) => (
+            <span key={`${s.kind}/${s.namespace}/${s.name}/${s.container}`} className="inline-flex items-center gap-1" title={s.message}>
+              <StatusDot tone={healthTone(s.health)} />
+              {s.kind ? `${s.kind}/` : ""}
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

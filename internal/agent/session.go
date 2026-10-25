@@ -19,6 +19,7 @@ import (
 	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/dbx"
+	"opsdeck/internal/deployx"
 	"opsdeck/internal/dnsx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
@@ -124,6 +125,7 @@ type Deps struct {
 	DB         *dbx.Manager
 	Git        *gitx.Manager
 	DNS        *dnsx.Manager
+	Deploy     *deployx.Manager
 	ACME       *acmex.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault

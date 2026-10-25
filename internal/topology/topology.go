@@ -602,6 +602,8 @@ func typeForResource(r *workspace.Resource) (string, string) {
 		return "forward-proxy", ""
 	case "Prometheus":
 		return "monitoring", ""
+	case "DeployPlatform":
+		return "ci-cd", "CD / GitOps"
 	case "Loki", "Elasticsearch":
 		return "logging", ""
 	}
@@ -642,6 +644,11 @@ func ImportInventory(t *Topology, w *workspace.Workspace) []string {
 			}
 		case "GitRemote":
 			n.Addresses = []string{r.Str("url")}
+		case "DeployPlatform":
+			n.Addresses = []string{r.Str("url")}
+			if p := map[string]string{"portainer": "Portainer", "argocd": "Argo CD", "komodo": "Komodo"}[r.Str("platform")]; p != "" {
+				n.Tech = []string{p}
+			}
 		case "Prometheus", "Loki", "Elasticsearch", "Panel":
 			if u := r.Str("url"); u != "" {
 				n.Addresses = []string{u}

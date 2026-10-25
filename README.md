@@ -91,7 +91,7 @@ You can turn the check off, or check now, under *App settings → Updates*.
 ## Features
 
 - **Workspaces** — one per project: hosts, groups, VPN profiles and proxies, jump hosts,
-  web panels, Git repos, domains, TLS certificates, databases, Kubernetes clusters, docs and runbooks. Plain YAML +
+  web panels, Git repos, domains, TLS certificates, deployment platforms, databases, Kubernetes clusters, docs and runbooks. Plain YAML +
   Markdown, git-friendly, **never contain secrets**.
 - **Vault** — local, encrypted (Argon2id → XChaCha20-Poly1305, a separate key per
   workspace): SSH keys (generate/import), logins with TOTP, API tokens, kubeconfigs,
@@ -120,6 +120,13 @@ You can turn the check off, or check now, under *App settings → Updates*.
   CDN (proxied) switch, add / edit / delete with every change in the activity journal. The
   agent's `dns` tool reads zones and records and changes them with the record before and
   after on its approval card — see [docs/dns.md](docs/dns.md).
+- **Deployments** — add the workspace's **Portainer**, **Argo CD** or **Komodo** (self-hosted,
+  behind a VPN or a jump host, with a token from the workspace's vault) and see what it
+  deploys on a Deployments page: stacks and applications with health, sync status, services,
+  history, logs and what a deploy would change; deploy / sync, update a stack file, roll back,
+  restart, start and stop, with every action in the activity journal. The agent's `deploy`
+  tool does the same, with the target's state and the diff on its approval card — see
+  [docs/deployments.md](docs/deployments.md).
 - **TLS certificates** — describe a certificate (domains, Let's Encrypt or another ACME
   CA) and opsdeck issues it with the **dns-01** challenge through the same DNS connectors
   (wildcards included, nothing to expose), keeps the chain and key in the vault, renews it
@@ -187,7 +194,7 @@ You can turn the check off, or check now, under *App settings → Updates*.
 - **Agent** — chat with any model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…)
   that works through infra tools: `exec` (single host or groups, canary rollouts, background
   tasks), `read_file`/`edit_file` with diffs and backups, `docker`, `kubernetes`, `net_check`,
-  Git (`repo`, `repo_files`, `repo_write`, `merge_request`, `git_sync`), `database`, `dns`, `certificate`, Ansible
+  Git (`repo`, `repo_files`, `repo_write`, `merge_request`, `git_sync`), `database`, `dns`, `certificate`, `deploy` (Portainer, Argo CD, Komodo), Ansible
   (`ansible`, `ansible_run`, `ansible_vault`), panel APIs (`http_request`), Prometheus, Loki and
   Elasticsearch (`metrics_query`, `logs_query`), the web (`web_search`, `web_fetch`,
   end-of-life and CVE lookups), docs, skills, memory, and any MCP server you attach to the
@@ -361,6 +368,7 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 - [docs/vpn.md](docs/vpn.md) — VPN drivers, userspace vs system mode, credentials
 - [docs/git.md](docs/git.md) — Git repositories, working copies, merge requests
 - [docs/dns.md](docs/dns.md) — Domains: Cloudflare and ArvanCloud connectors, zones and records, the agent's dns tool
+- [docs/deployments.md](docs/deployments.md) — Deployments: Portainer, Argo CD and Komodo per workspace, the Deployments page, the agent's deploy tool
 - [docs/certificates.md](docs/certificates.md) — TLS certificates: ACME with dns-01, the vault, deployment, renewal, the agent's certificate tool
 - [docs/topology.md](docs/topology.md) — the topology map and the agent's topology tool
 - [docs/skills.md](docs/skills.md) — skills, the built-in library

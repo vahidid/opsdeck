@@ -5,6 +5,24 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Workbench
+
+- **Deployments** — a workspace's **Portainer**, **Argo CD** and **Komodo** become resources
+  of the workspace (`DeployPlatform`: URL, a token in the workspace's vault, reached through
+  its VPN or jump host like any resource; `targets` limits a shared platform to the
+  workspace's own stacks or applications). A Deployments page lists what each deploys —
+  Portainer stacks, Argo CD applications, Komodo stacks and deployments — with health, sync
+  status, services, history, logs and what a deploy would change (Argo CD's live vs Git,
+  Komodo's deployed vs latest files), and runs deploy / sync, stack file updates, rollback,
+  refresh, restart, start, stop and pull, each confirmed (the name typed on a protected
+  environment or with prune) and recorded in the activity journal.
+
+### Agent
+
+- **`deploy` tool** — reads the workspace's deployment platforms (platforms, targets, status,
+  logs, diff, file) and deploys, rolls back, restarts or updates a stack file after approval,
+  with the target's state and what changes on the card; a sync with prune is destructive.
+
 ## [0.3.0] — 2026-10-25
 
 The agent works like a coding harness — web access, subagents, hooks, background tasks,

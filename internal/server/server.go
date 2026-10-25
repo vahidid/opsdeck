@@ -27,6 +27,7 @@ import (
 	"opsdeck/internal/config"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/dbx"
+	"opsdeck/internal/deployx"
 	"opsdeck/internal/dnsx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
@@ -56,6 +57,7 @@ type Server struct {
 	db       *dbx.Manager
 	git      *gitx.Manager
 	dns      *dnsx.Manager
+	deploy   *deployx.Manager
 	acme     *acmex.Manager
 	ansible  *ansible.Manager
 	mcp      *mcpx.Manager
@@ -120,6 +122,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.git.Vault = v
 	s.dns = dnsx.New(v)
 	s.dns.Connections = s.cfg.DNSConnections
+	s.deploy = deployx.New(s.hub, v)
 	s.acme = acmex.New(v, s.dns)
 	s.acme.Record = s.acmeAudit
 	s.ansible = ansible.New(s.hub)
@@ -135,7 +138,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	s.mcp.Trusted = func(ws string, c workspace.MCPServer) bool { return cfg.MCPTrusted(mcpx.Hash(ws, c)) }
 	s.forwards = connect.NewForwards()
 	s.agents = agent.NewManager(agent.Deps{
-		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, DB: s.db, Git: s.git, DNS: s.dns, ACME: s.acme, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
+		Workspaces: s.ws, Hub: s.hub, Docker: s.docker, Kube: s.kube, DB: s.db, Git: s.git, DNS: s.dns, Deploy: s.deploy, ACME: s.acme, Ansible: s.ansible, Vault: v, MCP: s.mcp, Audit: al,
 		Router:   s.router,
 		StateDir: s.stateDir,
 		DefaultModel: func(w *workspace.Workspace) string {

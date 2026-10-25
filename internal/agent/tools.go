@@ -24,6 +24,7 @@ import (
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/dbx"
+	"opsdeck/internal/deployx"
 	"opsdeck/internal/dnsx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
@@ -44,6 +45,7 @@ type Env struct {
 	DB         *dbx.Manager
 	Git        *gitx.Manager
 	DNS        *dnsx.Manager
+	Deploy     *deployx.Manager
 	ACME       *acmex.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault
@@ -302,7 +304,7 @@ func Tools() []Tool {
 		toolScript(), toolRunScript(),
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
-		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(), toolDNS(), toolCertificate(),
+		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(), toolDNS(), toolDeploy(), toolCertificate(),
 		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(), toolTasks(),
 	}
 }
@@ -313,7 +315,7 @@ func toolInventory() Tool {
 	return Tool{
 		Def: llm.Tool{Name: "inventory", Description: "List the workspace's resources (hosts, groups, networks, panels, clusters, databases, git remotes) with addresses, environments, roles and how each is reached. Never contains secrets. Filter by kind, environment or a text query.",
 			Schema: obj(map[string]any{
-				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, Prometheus, Loki, Elasticsearch, GitRemote, Database, KubernetesCluster, AnsibleProject"),
+				"kind":        str("Optional kind filter: Host, HostGroup, WireGuard, Tailscale, NetBird, OpenVPN, OpenConnect, OpenFortiVPN, SocksProxy, Panel, Prometheus, Loki, Elasticsearch, GitRemote, Database, KubernetesCluster, AnsibleProject, DeployPlatform"),
 				"environment": str("Optional environment filter"),
 				"query":       str("Optional case-insensitive text to match in name, address, tags, roles or description"),
 			})},

@@ -90,6 +90,7 @@ function outputSummary(item: ToolItem): string {
   if (v?.kind === "alerts") return `${v.alerts.length} alerts`;
   if (v?.kind === "vulns") return `${v.vulns.length} vulnerabilities`;
   if (v?.kind === "dns") return `${v.records.length} records · ${v.zone}`;
+  if (v?.kind === "deploy") return v.targets ? `${v.targets.length} targets · ${v.platform}` : v.detail ? `${v.detail.name} · ${v.detail.status}` : v.platform;
   if (item.call?.tool === "delegate" && item.sub?.end) return `${item.sub.end.toolCalls ?? 0} calls · ${item.sub.end.state}`;
   if (item.call?.tool === "todo" && item.todo) return `${item.todo.filter((x) => x.status === "done" || x.status === "skipped").length}/${item.todo.length} done`;
   const hostParts = (r.output.match(/^=== .+ ===$/gm) ?? []).length;

@@ -4,6 +4,7 @@
 // login URL and the master password, then serves until interrupted.
 //
 //	go run ./tools/e2e -port 7799
+//	go run ./tools/e2e -demo [-postgres user:pw@host:port/db]   the screenshots' workspace (demo.go)
 package main
 
 import (
@@ -35,10 +36,24 @@ const password = "correct horse battery"
 
 func main() {
 	port := flag.Int("port", 7799, "port to serve on")
+	demo := flag.Bool("demo", false, "seed the workspace of the README screenshots instead (left unlocked)")
+	postgres := flag.String("postgres", "", "with -demo: a PostgreSQL database for the Databases page (user:password@host:port/db)")
 	flag.Parse()
-	home, err := os.MkdirTemp("", "opsdeck-e2e-")
-	if err != nil {
-		log.Fatal(err)
+	// OPSDECK_E2E_HOME: a fixed data folder (it must not exist), so paths in
+	// the screenshots read like a real install
+	home := os.Getenv("OPSDECK_E2E_HOME")
+	if home != "" {
+		if _, err := os.Stat(home); err == nil {
+			log.Fatalf("%s exists; give a new folder", home)
+		}
+		if err := os.MkdirAll(home, 0o700); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		var err error
+		if home, err = os.MkdirTemp("", "opsdeck-e2e-"); err != nil {
+			log.Fatal(err)
+		}
 	}
 	defer os.RemoveAll(home)
 	os.Setenv("OPSDECK_HOME", home)
@@ -59,6 +74,38 @@ func main() {
 	c := &client{base: "http://" + addr, http: &http.Client{Jar: jar, Timeout: 30 * time.Second}}
 	c.do("POST", "/api/auth/login", map[string]string{"token": login[strings.Index(login, "#token=")+7:]}, nil)
 	c.do("POST", "/api/vault/init", map[string]string{"password": password}, nil)
+	var llm *fakellm.Server
+	work := ""
+	if *demo {
+		llm = seedDemo(c, home, *postgres)
+	} else {
+		llm, work = seedTests(c, home)
+	}
+	var settings map[string]any
+	c.do("GET", "/api/settings", nil, &settings)
+	settings["providers"] = []map[string]any{{"id": "fake", "type": "openai", "name": "Demo", "baseUrl": llm.URL, "models": []string{"scripted"}}}
+	c.do("PUT", "/api/settings", settings, nil)
+	if !*demo {
+		c.do("POST", "/api/vault/lock", nil, nil)
+	}
+	if c.err != nil {
+		log.Fatal(c.err)
+	}
+
+	out, _ := json.Marshal(map[string]string{"url": login, "base": c.base, "password": password, "hostDir": work, "postgres": *postgres})
+	fmt.Println(string(out))
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	srv.Close()
+	llm.Close()
+}
+
+// seedTests makes the browser tests' workspace: a bastion and app-1 behind
+// it, both in the protected prod. It returns the scripted model and the
+// hosts' folder.
+func seedTests(c *client, home string) (*fakellm.Server, string) {
 	c.do("POST", "/api/workspaces", map[string]string{"name": "acme", "title": "ACME Shop", "color": "#10b981"}, nil)
 	c.do("PUT", "/api/workspaces/acme", map[string]any{"title": "ACME Shop",
 		"environments": []map[string]any{{"name": "staging"}, {"name": "prod", "protected": true}}}, nil)
@@ -96,25 +143,7 @@ func main() {
 		}},
 		{Text: "## Report\n\n- `app-1` is up.\n- Wrote `marker.txt`.\n\nE2E-DONE"},
 	})
-	var settings map[string]any
-	c.do("GET", "/api/settings", nil, &settings)
-	settings["providers"] = []map[string]any{{"id": "fake", "type": "openai", "name": "Scripted", "baseUrl": llm.URL, "models": []string{"m1"}}}
-	c.do("PUT", "/api/settings", settings, nil)
-	c.do("POST", "/api/vault/lock", nil, nil)
-	if c.err != nil {
-		log.Fatal(c.err)
-	}
-
-	out, _ := json.Marshal(map[string]string{"url": login, "base": c.base, "password": password, "hostDir": work})
-	fmt.Println(string(out))
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
-	srv.Close()
-	bastion.Close()
-	app.Close()
-	llm.Close()
+	return llm, work
 }
 
 func portOf(addr string) int {

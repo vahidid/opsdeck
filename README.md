@@ -38,7 +38,7 @@ AI. Everything runs on your computer: a desktop app for Windows, macOS and Linux
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/screenshot-agent-approval.png" alt="The agent asks for approval before changing a file on a production host, with a diff of the change"></td>
+    <td width="50%"><img src="docs/assets/screenshot-agent-approval.png" alt="The agent asks for approval before changing the .env of a Compose project on a production host, with a diff of the change"></td>
     <td width="50%"><img src="docs/assets/screenshot-agent.png" alt="The agent's report after fixing the problem"></td>
   </tr>
   <tr>
@@ -121,6 +121,10 @@ you approve it in opsdeck.
    # or for any agent
    opsdeck skill install claude-code   # or codex, gemini, cursor, dir --dir PATH
    ```
+
+<p align="center">
+  <img src="docs/assets/screenshot-agent-access.png" alt="Connecting Claude Code: the access key and the command to add opsdeck as an MCP server" width="760">
+</p>
 
 The agent's calls show up in a session of their own on the Agent page, where you approve
 them. The setup for Codex, Cursor, Gemini CLI and VS Code, the modes and the security model
@@ -277,11 +281,14 @@ are in **[docs/agents.md](docs/agents.md)**.
     <td><img src="docs/assets/screenshot-settings-agents.png" alt="Models reported by the Claude Code CLI in the settings"><br><sub><b>Local agents</b>: use Claude Code, Codex, Gemini CLI or an ACP agent and pick its models from the list it reports.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/assets/screenshot-databases.png" alt="A MongoDB query with a nested document open in the value viewer"><br><sub><b>Databases</b>: PostgreSQL, MySQL, MariaDB, MongoDB and Redis; the whole value of a cell, JSON indented, beside the results.</sub></td>
+    <td><img src="docs/assets/screenshot-databases.png" alt="A PostgreSQL query with a JSON column open in the value viewer"><br><sub><b>Databases</b>: PostgreSQL, MySQL, MariaDB, MongoDB and Redis; the whole value of a cell, JSON indented, beside the results.</sub></td>
     <td><img src="docs/assets/screenshot-databases-confirm.png" alt="Confirming an UPDATE on a production database"><br><sub><b>Changes ask first</b>: an UPDATE on a protected database is shown with its risk and runs as one transaction.</sub></td>
   </tr>
   <tr>
     <td><img src="docs/assets/screenshot-resources.png" alt="The resources of a workspace"><br><sub><b>Resources</b>: hosts, groups, VPNs, panels, databases and clusters as plain YAML.</sub></td>
+    <td><img src="docs/assets/screenshot-add-resource.png" alt="Adding a resource: products with their logos, grouped by category"><br><sub><b>Add resource</b>: pick the product you use, by its logo or by searching; opsdeck fills in the technical type.</sub></td>
+  </tr>
+  <tr>
     <td><img src="docs/assets/screenshot-activity.png" alt="The hash-chained audit journal"><br><sub><b>Activity</b>: a hash-chained journal of every action, by you or the agent.</sub></td>
   </tr>
 </table>
@@ -382,6 +389,10 @@ cd web && npm run build && cd ../e2e
 npm ci && npx playwright install chromium
 npx playwright test
 ```
+
+The README screenshots come from the demo workspace of `tools/e2e -demo` (see
+`e2e/screenshots.config.ts`): `npx playwright test -c screenshots.config.ts` there
+rewrites `docs/assets/screenshot-*.png`.
 
 ## Status and known limits
 

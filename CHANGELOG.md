@@ -5,6 +5,46 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Other agents use opsdeck
+
+- **opsdeck is an MCP server for the agent you already use.** Claude Code, Codex, Cursor,
+  Gemini CLI, VS Code or any MCP client gets a workspace's tools at
+  `http://127.0.0.1:7788/mcp/ext` (or over stdio with `opsdeck mcp`, which finds the
+  running app). *App settings › Agent access* makes a key per agent and workspace
+  (read-only, ask or auto) and shows the setup for that agent. Every call goes through
+  the same risk checks, permission rules, approvals, redaction and audit as the built-in
+  agent's, in a session of its own on the Agent page; a change waits there for your
+  approval. Keys are stored hashed and can be revoked at once. See
+  [docs/agents.md](docs/agents.md).
+- **The opsdeck skill** teaches such an agent to work through opsdeck: look first, prefer
+  the specific tools, expect approvals, leave a report. For Claude Code it comes as a
+  plugin (`/plugin marketplace add vahidid/opsdeck`, `/plugin install opsdeck@opsdeck`)
+  that also connects the MCP server; `opsdeck skill install claude-code|codex|gemini|cursor`
+  writes it for other agents.
+
+### Stability and security
+
+- **Stable file formats.** Workspace folders now say `apiVersion: opsdeck/v1`; an opsdeck
+  refuses a folder or vault from a newer version instead of misreading it, and upgrades
+  older ones on save. [docs/schema.md](docs/schema.md) documents every resource kind,
+  [docs/compatibility.md](docs/compatibility.md) what stays compatible and how anything is
+  deprecated.
+- **Signed releases.** `SHA256SUMS.txt` is signed with the opsdeck release key
+  (minisign). The updater installs nothing that is not signed by that key for that
+  version; `install.sh` checks the signature too when `minisign` is installed. With
+  certificates configured, the macOS app is notarized and the Windows `.exe` files are
+  Authenticode-signed. See [docs/releasing.md](docs/releasing.md#signatures).
+- A wrong master password now says so instead of sending you to the "open the link from
+  your terminal" screen.
+- Dialogs and drawers are announced as dialogs to screen readers.
+
+### Testing
+
+- **Browser tests** (Playwright, `e2e/`) drive the real UI against a real opsdeck with
+  SSH hosts and a scripted model, in CI: unlocking, adding a resource, search,
+  customizing, the phone layout, an agent change that waits for approval, connecting an
+  outside agent. The README screenshots are made the same way (`e2e/screenshots`).
+
 ### Interface
 
 - **New layout** — a rail of icons for the five groups (Workspace, Infrastructure, Deploy,

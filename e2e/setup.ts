@@ -8,9 +8,11 @@ export default async function setup() {
   const root = path.resolve(import.meta.dirname, "..");
   const port = process.env.OPSDECK_E2E_PORT ?? "7799";
   const bin = process.env.OPSDECK_E2E_BIN;
+  // OPSDECK_E2E_ARGS: more flags, e.g. "-demo" for the screenshots
+  const args = ["-port", port, ...(process.env.OPSDECK_E2E_ARGS ?? "").split(" ").filter(Boolean)];
   const child = bin
-    ? spawn(bin, ["-port", port], { cwd: root, stdio: ["ignore", "pipe", "inherit"] })
-    : spawn("go", ["run", "./tools/e2e", "-port", port], { cwd: root, stdio: ["ignore", "pipe", "inherit"], detached: true });
+    ? spawn(bin, args, { cwd: root, stdio: ["ignore", "pipe", "inherit"] })
+    : spawn("go", ["run", "./tools/e2e", ...args], { cwd: root, stdio: ["ignore", "pipe", "inherit"], detached: true });
 
   const line = await new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("the e2e server did not start in 3 minutes")), 180_000);

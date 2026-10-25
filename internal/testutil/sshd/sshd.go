@@ -27,6 +27,7 @@ type Server struct {
 	cfg      *ssh.ServerConfig
 	Dir      string        // working directory for commands
 	HostKey  ssh.PublicKey // the server's host key
+	forward  func(string) string
 	wg       sync.WaitGroup
 }
 
@@ -36,6 +37,9 @@ type Options struct {
 	User           string
 	Password       string
 	Dir            string
+	// Forward, when set, maps the address a direct-tcpip request asks for to
+	// the one dialed, so hosts behind a jump host can have made-up addresses.
+	Forward func(addr string) string
 }
 
 // Start listens on addr ("127.0.0.1:0" for a random port).
@@ -69,7 +73,7 @@ func Start(addr string, o Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{Addr: ln.Addr().String(), listener: ln, cfg: cfg, Dir: o.Dir, HostKey: hostKey.PublicKey()}
+	s := &Server{Addr: ln.Addr().String(), listener: ln, cfg: cfg, Dir: o.Dir, HostKey: hostKey.PublicKey(), forward: o.Forward}
 	go s.serve()
 	return s, nil
 }
@@ -127,7 +131,11 @@ func (s *Server) directTCPIP(nc ssh.NewChannel) {
 		nc.Reject(ssh.ConnectionFailed, "bad payload")
 		return
 	}
-	target, err := net.Dial("tcp", net.JoinHostPort(p.Host, fmt.Sprint(p.Port)))
+	addr := net.JoinHostPort(p.Host, fmt.Sprint(p.Port))
+	if s.forward != nil {
+		addr = s.forward(addr)
+	}
+	target, err := net.Dial("tcp", addr)
 	if err != nil {
 		nc.Reject(ssh.ConnectionFailed, err.Error())
 		return

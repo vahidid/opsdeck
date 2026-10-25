@@ -109,7 +109,7 @@ export function Containers() {
                           <button className="font-medium hover:text-accent text-left" onClick={() => openContainer(ct.id, ct.name, "overview")}>
                             {ct.name}
                           </button>
-                          <div className="flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
+                          <div className="flex items-center gap-1.5 font-mono text-[10.5px] text-faint whitespace-nowrap">
                             {ct.id.slice(0, 12)}
                             {!group && ct.project && <Badge>{ct.project}</Badge>}
                             {ct.service && <span className="text-muted">· {ct.service}</span>}

@@ -64,6 +64,7 @@ const byKind: Record<string, string> = {
   Prometheus: "activity",
   Loki: "scroll-text",
   Elasticsearch: "search",
+  Domain: "globe",
 };
 
 export function KindIcon({ kind, icon, className = "size-3.5" }: { kind: string; icon?: string; className?: string }) {

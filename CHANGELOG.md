@@ -22,6 +22,11 @@ each release's section becomes its notes on GitHub.
   login or token; writes ask like other changes. New resource kinds **Prometheus**, **Loki**
   and **Elasticsearch/OpenSearch** with `metrics_query` (PromQL, ranges drawn as a chart,
   alerts, targets) and `logs_query` (LogQL or a query string, lines coloured by level).
+- **`dns` tool** — the agent reads and changes the DNS records of the workspace's domains
+  through the connected Cloudflare or ArvanCloud account (it never sees the token): `zones`,
+  `records`, `set` (create or change one record; the approval card shows the zone-file line
+  before and after, values left out are kept) and `delete` (destructive; needs an unambiguous
+  record). Offered only when the workspace has a `Domain`; results come with a records table.
 - **Subagents** — `delegate` hands work to an `investigator` (read-only; several run in
   parallel), a `deployer` (changes with the usual approvals) or the workspace's own
   `agents/*.md`, each with its own context and optionally a cheaper model. Their steps,
@@ -53,6 +58,17 @@ each release's section becomes its notes on GitHub.
 
 ### Workbench
 
+- **Domains and DNS** — **Connectors → DNS & CDN** connects a **Cloudflare** or **ArvanCloud**
+  account with an API token (checked against the provider, stored in the vault; an API URL
+  and a proxy under *Advanced* for networks where the provider is not reachable directly).
+  A new **Domains** page per workspace: add a zone by picking it from the account (a `Domain`
+  resource that holds only the zone and, optionally, the connector), see its status, plan,
+  name servers (and whether the registrar still points elsewhere), and its records in one
+  shape whatever the provider — type, name relative to the zone, content, TTL, priority,
+  proxied through the CDN, comment — with filters, an editor with hints per type, and
+  deletion that asks (the full name must be typed on a protected environment). ArvanCloud's
+  balanced A records and lowercase types, Cloudflare's SRV/CAA data and automatic TTL are
+  handled. Every record change is in the activity journal — see [docs/dns.md](docs/dns.md).
 - **One-time VPN codes by SMS or email** — FortiGate VPNs (OpenConnect or openfortivpn)
   that send a code for every login now connect: opsdeck logs in itself and, when the gateway
   asks for the code, shows a prompt on any page (and on the VPN page) with the gateway's

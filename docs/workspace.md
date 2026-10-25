@@ -201,6 +201,13 @@ spec: { ... }         # provider-specific
     login: vault://acme/es-reader
     index: logs-*
 
+- kind: Domain                              # a DNS zone at Cloudflare or ArvanCloud (docs/dns.md)
+  name: shop
+  environment: prod
+  spec:
+    zone: example.com
+    connection: cloudflare                   # optional: the DNS connector of this computer; default: the account that has the zone
+
 - kind: GitRemote
   name: deploy
   environment: prod

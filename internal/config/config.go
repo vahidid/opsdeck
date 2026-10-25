@@ -154,6 +154,9 @@ type file struct {
 	// GitConnections are the GitHub/GitLab accounts connected on this
 	// machine (connectors); their tokens live in the vault.
 	GitConnections []GitConnection `yaml:"gitConnections,omitempty"`
+	// DNSConnections are the DNS / CDN accounts (Cloudflare, ArvanCloud)
+	// connected on this machine; their API tokens live in the vault.
+	DNSConnections []DNSConnection `yaml:"dnsConnections,omitempty"`
 }
 
 // GitConnection is a connected GitHub or GitLab account.
@@ -171,6 +174,27 @@ type GitConnection struct {
 	Login         string    `yaml:"login,omitempty" json:"login"`
 	Name          string    `yaml:"name,omitempty" json:"name"`
 	Created       time.Time `yaml:"created" json:"created"`
+}
+
+// DNSConnection is a connected DNS / CDN provider account. Workspaces
+// reference it from Domain resources (spec.connection) and manage the
+// zones' records through it.
+type DNSConnection struct {
+	ID       string `yaml:"id" json:"id"`
+	Provider string `yaml:"provider" json:"provider"` // cloudflare | arvancloud
+	// APIURL overrides the provider's API root (tests, a proxy in front
+	// of the API).
+	APIURL string `yaml:"apiUrl,omitempty" json:"apiUrl"`
+	// Proxy routes the API calls (socks5://host:port or http://host:port)
+	// for networks where the provider is not reachable directly.
+	Proxy string `yaml:"proxy,omitempty" json:"proxy"`
+	// Credential is the vault item with the token (vault://global/dns-…).
+	Credential string `yaml:"credential" json:"credential"`
+	Method     string `yaml:"method" json:"method"` // token
+	// Account is who the token belongs to, as the provider reports it.
+	Account string    `yaml:"account,omitempty" json:"account"`
+	Zones   int       `yaml:"zones,omitempty" json:"zones"` // zones seen when connecting
+	Created time.Time `yaml:"created" json:"created"`
 }
 
 // Store is safe for concurrent use.
@@ -273,6 +297,39 @@ func (s *Store) DeleteGitConnection(id string) error {
 		}
 	}
 	s.f.GitConnections = out
+	return s.save()
+}
+
+func (s *Store) DNSConnections() []DNSConnection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]DNSConnection{}, s.f.DNSConnections...)
+}
+
+// PutDNSConnection adds c or replaces the connection with its ID.
+func (s *Store) PutDNSConnection(c DNSConnection) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, x := range s.f.DNSConnections {
+		if x.ID == c.ID {
+			s.f.DNSConnections[i] = c
+			return s.save()
+		}
+	}
+	s.f.DNSConnections = append(s.f.DNSConnections, c)
+	return s.save()
+}
+
+func (s *Store) DeleteDNSConnection(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.f.DNSConnections[:0]
+	for _, x := range s.f.DNSConnections {
+		if x.ID != id {
+			out = append(out, x)
+		}
+	}
+	s.f.DNSConnections = out
 	return s.save()
 }
 

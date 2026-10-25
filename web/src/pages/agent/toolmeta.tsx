@@ -57,6 +57,7 @@ const META: Record<string, Meta> = {
   web_fetch: { icon: (c) => <Globe className={c} />, label: "web page" },
   software_lookup: { icon: (c) => <PackageSearch className={c} /> },
   http_request: { icon: (c) => <Plug className={c} /> },
+  dns: { icon: (c) => <Globe className={c} />, label: "DNS" },
   metrics_query: { icon: (c) => <ChartLine className={c} /> },
   logs_query: { icon: (c) => <ScrollText className={c} /> },
   net_check: { icon: (c) => <Activity className={c} /> },

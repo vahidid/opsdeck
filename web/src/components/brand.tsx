@@ -16,6 +16,37 @@ export function GitLabMark({ className = "size-4" }: { className?: string }) {
   );
 }
 
+// The DNS / CDN providers get plain marks in their colours (a cloud with a
+// flare for Cloudflare, a cloud over a base line for ArvanCloud), not their
+// trademarked logos.
+export function CloudflareMark({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: "#f38020" }}>
+      <path d="M17.5 18.5H7a4 4 0 0 1-.6-7.95A6 6 0 0 1 17.8 9.6" />
+      <path d="M17.5 18.5a3.5 3.5 0 1 0-.9-6.9" />
+      <path d="M3.5 21.5h17" opacity="0.55" />
+    </svg>
+  );
+}
+
+export function ArvanCloudMark({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: "#00a9a5" }}>
+      <path d="M7 17.5a4 4 0 0 1-.4-7.98A6 6 0 0 1 18 11.5a3 3 0 0 1-.5 6H7Z" />
+      <path d="M9.5 21.5h5" />
+      <path d="M12 13.5v-3" opacity="0.7" />
+    </svg>
+  );
+}
+
 export function ProviderMark({ provider, className }: { provider: string; className?: string }) {
-  return provider === "github" ? <GitHubMark className={className} /> : <GitLabMark className={className} />;
+  switch (provider) {
+    case "github":
+      return <GitHubMark className={className} />;
+    case "cloudflare":
+      return <CloudflareMark className={className} />;
+    case "arvancloud":
+      return <ArvanCloudMark className={className} />;
+  }
+  return <GitLabMark className={className} />;
 }

@@ -23,6 +23,7 @@ import (
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/connect"
 	"opsdeck/internal/dbx"
+	"opsdeck/internal/dnsx"
 	"opsdeck/internal/docker"
 	"opsdeck/internal/gitx"
 	"opsdeck/internal/kube"
@@ -41,6 +42,7 @@ type Env struct {
 	Kube       *kube.Manager
 	DB         *dbx.Manager
 	Git        *gitx.Manager
+	DNS        *dnsx.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager
@@ -298,7 +300,7 @@ func Tools() []Tool {
 		toolScript(), toolRunScript(),
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
-		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(),
+		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(), toolDNS(),
 		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(), toolTasks(),
 	}
 }

@@ -87,6 +87,7 @@ internal/workspace   workspace/resource model, YAML files, docs, skills, validat
 internal/vpn         VPN drivers: WireGuard, Tailscale (tsnet), NetBird (embed), OpenVPN, OpenConnect, openfortivpn; userspace/system modes, local SOCKS5
 internal/connect     networks (VPN profiles, SOCKS), SSH pool + jump hosts, exec/PTY/SFTP, port forwards
 internal/gitx        Git working copies (system git, isolated config, token header / in-memory ssh-agent / SOCKS via), GitLab and GitHub APIs
+internal/dnsx        DNS zones and records of the workspaces' domains through Cloudflare and ArvanCloud connectors
 internal/topology    the topology map: model, catalog of component and connection types, rendering for the agent
 internal/skills      built-in skill library (embedded)
 internal/docker      docker CLI over SSH
@@ -109,6 +110,7 @@ tools/demo           local SSH servers + scripted model for trying the UI
 | SSH (keys, passwords, jump hosts, TOFU known_hosts), terminal, SFTP, stats | done |
 | VPNs: WireGuard, Tailscale/Headscale, NetBird, OpenVPN, OpenConnect (AnyConnect, ocserv, FortiGate, GlobalProtect, Pulse, F5), openfortivpn, SOCKS5 — userspace and system modes | done |
 | Git repositories: working copies, GitLab/GitHub merge requests, docs from repositories, agent tools | done |
+| Domains: DNS zones and records at Cloudflare and ArvanCloud (connectors), the Domains page, the agent's dns tool | done |
 | Docker (CLI over SSH), Kubernetes (client-go) | done |
 | Ansible: projects from folders or repositories, Ansible Vault, runs with live logs, agent tools with the password on the approval card | done |
 | Logs streaming (journald, files, containers, pod logs) | done |

@@ -156,7 +156,7 @@ export type Resource = {
 export type KindField = {
   key: string;
   label: string;
-  type: "string" | "number" | "bool" | "text" | "secretRef" | "list" | "select" | "resourceRef" | "gitConnection";
+  type: "string" | "number" | "bool" | "text" | "secretRef" | "list" | "select" | "resourceRef" | "gitConnection" | "dnsConnection";
   required?: boolean;
   placeholder?: string;
   help?: string;
@@ -491,7 +491,8 @@ export type ToolView =
   | { kind: "logs"; query: string; from: string; to: string; lines: { ts: string; labels?: string; line: string; level?: string }[] }
   | { kind: "eol"; product: string; version: string; cycles: { cycle: string; release?: string; latest?: string; eol?: string | boolean; support?: string | boolean; lts?: boolean; match?: boolean }[] }
   | { kind: "vulns"; package: string; vulns: { id: string; aliases?: string[]; summary: string; severity?: string; fixed?: string[]; published?: string }[] }
-  | { kind: "releases"; repo: string; releases: { tag: string; name?: string; published?: string; prerelease?: boolean; url: string }[] };
+  | { kind: "releases"; repo: string; releases: { tag: string; name?: string; published?: string; prerelease?: boolean; url: string }[] }
+  | { kind: "dns"; zone: string; records: DNSRecord[] };
 
 export type AgentEvent =
   | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string })
@@ -675,6 +676,80 @@ export type RemoteRepo = {
   canPush: boolean;
   updated: string;
 };
+
+// DNS connectors: Cloudflare / ArvanCloud accounts connected on this
+// computer, and the zones and records of a workspace's domains.
+export type DNSProvider = {
+  id: "cloudflare" | "arvancloud";
+  label: string;
+  apiUrl: string;
+  tokenPage: string;
+  dashboard: string;
+  tokenHelp: string;
+  tokenPlaceholder: string;
+  proxy: string;
+  ttls?: number[];
+  comments: boolean;
+};
+export type DNSConnection = {
+  id: string;
+  provider: "cloudflare" | "arvancloud";
+  apiUrl: string;
+  proxy: string;
+  credential: string;
+  method: string;
+  account: string;
+  zones: number;
+  created: string;
+  label: string;
+  tokenPage: string;
+  dashboard: string;
+};
+export type DNSConnInput = { id?: string; provider: "cloudflare" | "arvancloud"; apiUrl?: string; proxy?: string; token: string };
+export type DNSZone = {
+  id: string;
+  name: string;
+  status: string;
+  paused?: boolean;
+  plan?: string;
+  nameServers: string[];
+  currentNameServers?: string[];
+  account?: string;
+  modified?: string;
+  url?: string;
+};
+export type DNSRecord = {
+  id: string;
+  type: string;
+  name: string;
+  fqdn: string;
+  content: string;
+  ttl: number;
+  priority?: number;
+  proxied: boolean;
+  proxiable: boolean;
+  comment?: string;
+  locked?: boolean;
+  modified?: string;
+  raw?: unknown;
+};
+export type DNSRecordInput = { type: string; name: string; content: string; ttl: number; priority: number; proxied?: boolean; comment?: string };
+export type DomainInfo = {
+  name: string;
+  zone: string;
+  environment?: string;
+  protected?: boolean;
+  description?: string;
+  connection?: string;
+  provider?: "cloudflare" | "arvancloud";
+  account?: string;
+  info?: DNSZone;
+  error?: string;
+  proxyLabel?: string;
+  ttls?: number[];
+  comments: boolean;
+};
+export const DNS_RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA", "PTR"];
 
 // Topology: the workspace's infrastructure diagram (topology.yaml).
 export type TopoBox = { x: number; y: number; w?: number; h?: number };

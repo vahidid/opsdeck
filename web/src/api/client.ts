@@ -14,6 +14,12 @@ import type {
   DNSRecord,
   DNSRecordInput,
   DomainInfo,
+  AcmeCA,
+  CertStatus,
+  CertDetail,
+  CertJob,
+  CertDeploy,
+  CertDeployResult,
   ConnInput,
   ConnOptions,
   OAuthStart,
@@ -332,6 +338,15 @@ export const api = {
   dnsRecordCreate: (ws: string, name: string, r: DNSRecordInput) => post<DNSRecord>(`${W(ws)}/domains/${e(name)}/records`, r),
   dnsRecordUpdate: (ws: string, name: string, id: string, r: DNSRecordInput) => put<DNSRecord>(`${W(ws)}/domains/${e(name)}/records/${e(id)}`, r),
   dnsRecordDelete: (ws: string, name: string, id: string) => del(`${W(ws)}/domains/${e(name)}/records/${e(id)}`),
+
+  // certificates (ACME)
+  acmeCAs: () => arr(get<AcmeCA[]>("/api/acme/cas")),
+  certificates: (ws: string) => arr(get<CertStatus[]>(`${W(ws)}/certificates`)),
+  certificate: (ws: string, name: string) => get<CertDetail>(`${W(ws)}/certificates/${e(name)}`),
+  certIssue: (ws: string, name: string) => post<CertJob>(`${W(ws)}/certificates/${e(name)}/issue`),
+  certJob: (ws: string, id: string, since = 0, wait = false) => get<CertJob>(`${W(ws)}/certificates/jobs/${e(id)}${qs({ since, wait: wait ? 1 : undefined })}`),
+  certJobs: (ws: string) => arr(get<CertJob[]>(`${W(ws)}/certificates/jobs`)),
+  certDeploy: (ws: string, name: string, d: CertDeploy) => post<CertDeployResult>(`${W(ws)}/certificates/${e(name)}/deploy`, d),
 
   // git repositories
   repos: (ws: string) => arr(get<RepoSummary[]>(`${W(ws)}/repos`)),

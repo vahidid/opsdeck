@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"opsdeck/internal/acmex"
 	"opsdeck/internal/ansible"
 	"opsdeck/internal/audit"
 	"opsdeck/internal/connect"
@@ -123,6 +124,7 @@ type Deps struct {
 	DB         *dbx.Manager
 	Git        *gitx.Manager
 	DNS        *dnsx.Manager
+	ACME       *acmex.Manager
 	Ansible    *ansible.Manager
 	Vault      *vault.Vault
 	MCP        *mcpx.Manager

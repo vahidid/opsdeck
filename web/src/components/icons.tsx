@@ -1,5 +1,6 @@
 import {
   Activity,
+  BadgeCheck,
   Boxes,
   Cloud,
   Database,
@@ -45,6 +46,7 @@ const byIcon: Record<string, (c: string) => ReactNode> = {
   activity: (c) => <Activity className={c} />,
   "scroll-text": (c) => <ScrollText className={c} />,
   search: (c) => <Search className={c} />,
+  certificate: (c) => <BadgeCheck className={c} />,
 };
 
 const byKind: Record<string, string> = {
@@ -65,6 +67,7 @@ const byKind: Record<string, string> = {
   Loki: "scroll-text",
   Elasticsearch: "search",
   Domain: "globe",
+  Certificate: "certificate",
 };
 
 export function KindIcon({ kind, icon, className = "size-3.5" }: { kind: string; icon?: string; className?: string }) {

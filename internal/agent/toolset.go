@@ -27,6 +27,7 @@ var toolNeeds = map[string][]string{
 	"metrics_query": {"Prometheus"},
 	"logs_query":    {"Loki", "Elasticsearch"},
 	"dns":           {"Domain"},
+	"certificate":   {"Certificate"},
 }
 
 // webTools need web access (App settings → Web access, per workspace).

@@ -468,6 +468,12 @@ func (h *Hub) ReadFile(ctx context.Context, w *workspace.Workspace, host *worksp
 // exclusively (no symlink following) and gets its final mode before any
 // content is written.
 func (h *Hub) WriteFile(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, path, content string) error {
+	return h.WriteFileMode(ctx, w, host, path, content, 0)
+}
+
+// WriteFileMode writes a file like WriteFile; a non-zero mode is set on the
+// file whether it existed or not (a private key: 0600).
+func (h *Hub) WriteFileMode(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, path, content string, want os.FileMode) error {
 	c, err := h.SFTP(ctx, w, host)
 	if err != nil {
 		return err
@@ -480,6 +486,9 @@ func (h *Hub) WriteFile(ctx context.Context, w *workspace.Workspace, host *works
 		if fs, ok := st.Sys().(*sftp.FileStat); ok {
 			uid, gid, haveOwner = int(fs.UID), int(fs.GID), true
 		}
+	}
+	if want != 0 {
+		mode = want
 	}
 	suffix := make([]byte, 8)
 	rand.Read(suffix)

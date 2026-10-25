@@ -25,6 +25,7 @@ import { DockerPage } from "./pages/docker";
 import { KubernetesPage } from "./pages/kubernetes";
 import { DatabasesPage } from "./pages/Databases";
 import { DomainsPage } from "./pages/Domains";
+import { CertificatesPage } from "./pages/Certificates";
 // the Ansible editor (CodeMirror, YAML) is loaded when it is opened
 const AnsiblePage = lazy(() => import("./pages/ansible").then((m) => ({ default: m.AnsiblePage })));
 import { LogsPage } from "./pages/Logs";
@@ -144,6 +145,7 @@ function workspaceRoutes(active: boolean) {
       <Route path="kubernetes" element={<KubernetesPage />} />
       <Route path="databases" element={<DatabasesPage />} />
       <Route path="domains" element={<DomainsPage />} />
+      <Route path="certificates" element={<CertificatesPage />} />
       <Route
         path="ansible"
         element={

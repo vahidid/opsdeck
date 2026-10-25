@@ -27,6 +27,9 @@ each release's section becomes its notes on GitHub.
   `records`, `set` (create or change one record; the approval card shows the zone-file line
   before and after, values left out are kept) and `delete` (destructive; needs an unambiguous
   record). Offered only when the workspace has a `Domain`; results come with a records table.
+- **`certificate` tool** — the agent lists the workspace's certificates (issued, expiry,
+  due), shows one, issues or renews it (the ACME flow with its log as the result) and deploys
+  chain and key to a host from the vault without seeing the key, then reloads with `exec`.
 - **Subagents** — `delegate` hands work to an `investigator` (read-only; several run in
   parallel), a `deployer` (changes with the usual approvals) or the workspace's own
   `agents/*.md`, each with its own context and optionally a cheaper model. Their steps,
@@ -69,6 +72,15 @@ each release's section becomes its notes on GitHub.
   deletion that asks (the full name must be typed on a protected environment). ArvanCloud's
   balanced A records and lowercase types, Cloudflare's SRV/CAA data and automatic TTL are
   handled. Every record change is in the activity journal — see [docs/dns.md](docs/dns.md).
+- **TLS certificates** — a new **Certificates** page and `Certificate` resource: domains
+  (wildcards included), the CA (Let's Encrypt, its staging, Buypass, or any ACME directory),
+  contact email, key type, when to renew. *Issue* runs the dns-01 challenge through the DNS
+  connectors (TXT records created, checked on the zone's name servers, removed afterwards)
+  with a live log, and stores the chain and key in the vault (`vault://<ws>/cert-<name>`,
+  with readable expiry and fingerprint fields). The page shows what is valid, due or expired
+  and why; *Deploy* writes the files to a host over SFTP (key 0600; nginx, Apache and HAProxy
+  layouts) and can reload the service; *Renew automatically* renews due certificates while
+  opsdeck runs unlocked. All audited — see [docs/certificates.md](docs/certificates.md).
 - **One-time VPN codes by SMS or email** — FortiGate VPNs (OpenConnect or openfortivpn)
   that send a code for every login now connect: opsdeck logs in itself and, when the gateway
   asks for the code, shows a prompt on any page (and on the VPN page) with the gateway's

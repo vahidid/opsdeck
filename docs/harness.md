@@ -64,6 +64,7 @@ Built-in tools:
 | `metrics_query` — PromQL on a workspace Prometheus (or VictoriaMetrics, Thanos, Mimir): instant or range (chart in the chat), series, labels, label values, alerts, rules, targets | read |
 | `logs_query` — LogQL on Loki or a query string on Elasticsearch/OpenSearch, newest first; Loki labels | read |
 | `dns` — the DNS zones of the workspace's domains (Domain resources at Cloudflare or ArvanCloud, through a connector of this computer): zones, records, set (create or change a record, before/after on the card), delete — see [dns.md](dns.md) | zones/records read; set change; delete destructive |
+| `certificate` — the workspace's TLS certificates (Certificate resources, ACME with dns-01 through the DNS connectors, kept in the vault): list, show (the public chain), issue (obtain or renew), deploy (chain and key to a host, the key never seen by the model) — see [certificates.md](certificates.md) | list/show read; issue change; deploy change on the host |
 | `web_search`, `web_fetch`, `software_lookup` (end-of-life dates, OSV vulnerabilities, GitHub releases) — see [Web access](#web-access) | read (a site outside the allowed list asks once) |
 | `wait_for` — until a port opens, a URL answers, a command succeeds or prints a match, or a Kubernetes rollout finishes; progress in the chat | read (a command is classified like `exec`) |
 | `ask_user` — a question with 2–6 options (and a free answer) that waits for the user | read |

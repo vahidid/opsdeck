@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import {
   Activity,
   Archive,
+  BadgeCheck,
   Bot,
   Boxes,
   Brain,
@@ -58,6 +59,7 @@ const META: Record<string, Meta> = {
   software_lookup: { icon: (c) => <PackageSearch className={c} /> },
   http_request: { icon: (c) => <Plug className={c} /> },
   dns: { icon: (c) => <Globe className={c} />, label: "DNS" },
+  certificate: { icon: (c) => <BadgeCheck className={c} />, label: "certificate" },
   metrics_query: { icon: (c) => <ChartLine className={c} /> },
   logs_query: { icon: (c) => <ScrollText className={c} /> },
   net_check: { icon: (c) => <Activity className={c} /> },

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"opsdeck/internal/minisign"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,13 @@ import (
 	"testing"
 	"time"
 )
+
+// testKey stands in for the release key in these tests.
+var testKey = func() minisign.PrivateKey {
+	k, _ := minisign.Generate()
+	ReleaseKeys = []string{k.Public().String()}
+	return k
+}()
 
 func TestNewer(t *testing.T) {
 	for _, c := range []struct {
@@ -63,6 +71,21 @@ func fakeGitHub(t *testing.T, tag string, files map[string]string, badSum string
 		}
 		files[SumsFile] = sums.String()
 		assets = append(assets, asset{SumsFile, ts.URL + "/dl/" + SumsFile, sums.Len()})
+		// signed with the test release key; badSum "nosig" leaves the signature
+		// out, "badsig" signs with a key the updater doesn't trust, "oldsig"
+		// signs for another version
+		if badSum != "nosig" {
+			k := testKey
+			if badSum == "badsig" {
+				k, _ = minisign.Generate()
+			}
+			comment := "opsdeck " + tag
+			if badSum == "oldsig" {
+				comment = "opsdeck v0.1.0"
+			}
+			files[SigFile] = string(minisign.Sign(k, []byte(files[SumsFile]), comment))
+			assets = append(assets, asset{SigFile, ts.URL + "/dl/" + SigFile, len(files[SigFile])})
+		}
 		json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "name": "opsdeck " + tag, "body": "notes", "html_url": "https://example/rel", "assets": assets})
 	})
 	mux.HandleFunc("/dl/{name}", func(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +211,28 @@ func TestChecksumMismatchKeepsBinary(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(exe); string(b) != "old" {
 		t.Fatalf("binary replaced: %q", b)
+	}
+}
+
+// A release without a valid signature from the release key is not
+// installed, however good its checksums are.
+func TestUnsignedReleaseKeepsBinary(t *testing.T) {
+	for _, c := range []struct{ how, want string }{{"nosig", "unsigned"}, {"badsig", "signed with key"}, {"oldsig", "not v0.2.0"}} {
+		ts := fakeGitHub(t, "v0.2.0", files(), c.how)
+		exe := filepath.Join(t.TempDir(), "opsdeck")
+		os.WriteFile(exe, []byte("old"), 0o755)
+		u, _, _ := newTest(ts, "0.1.0", KindCLI, "linux", exe)
+		u.Status(context.Background(), true, false)
+		if err := u.Install(); err != nil {
+			t.Fatal(err)
+		}
+		st := wait(t, u)
+		if st.State != "failed" || !strings.Contains(st.Message, c.want) {
+			t.Fatalf("%s: status: %+v", c.how, st)
+		}
+		if b, _ := os.ReadFile(exe); string(b) != "old" {
+			t.Fatalf("%s: binary replaced: %q", c.how, b)
+		}
 	}
 }
 

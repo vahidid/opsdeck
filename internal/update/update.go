@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -398,6 +399,29 @@ func (u *Updater) download(rel *Release, a *Asset, path string) error {
 	var list strings.Builder
 	if err := u.get(sums.URL, &list, 0, nil); err != nil {
 		return err
+	}
+	// the checksums only count if the release key signed them
+	var sig *Asset
+	for i := range rel.Assets {
+		if rel.Assets[i].Name == SigFile {
+			sig = &rel.Assets[i]
+		}
+	}
+	if sig == nil {
+		return errors.New("the release has no " + SigFile + "; not installing an unsigned release")
+	}
+	var sigBody strings.Builder
+	if err := u.get(sig.URL, &sigBody, 0, nil); err != nil {
+		return err
+	}
+	tc, err := VerifySums([]byte(list.String()), []byte(sigBody.String()))
+	if err != nil {
+		return fmt.Errorf("not installing: %w", err)
+	}
+	// the signed comment names the version, so an older signed release can't
+	// pass for this one
+	if !slices.Contains(strings.Fields(tc), "v"+rel.Version) {
+		return fmt.Errorf("not installing: %s was signed for %q, not v%s", SigFile, tc, rel.Version)
 	}
 	want := ""
 	for _, line := range strings.Split(list.String(), "\n") {

@@ -1,4 +1,5 @@
 import type {
+  AccessKey,
   LogLine,
   VpnDrivers,
   PendingCode,
@@ -225,6 +226,10 @@ export const api = {
 
   // settings
   settings: () => get<Settings>("/api/settings"),
+  accessKeys: () => get<{ keys: AccessKey[]; endpoint: string }>("/api/access-keys"),
+  createAccessKey: (b: { label: string; workspace: string; mode: string }) => post<{ key: AccessKey; secret: string; endpoint: string }>("/api/access-keys", b),
+  updateAccessKey: (id: string, b: { label?: string; mode?: string }) => request<AccessKey>("PATCH", `/api/access-keys/${id}`, b),
+  revokeAccessKey: (id: string) => del<{ ok: boolean }>(`/api/access-keys/${id}`),
   saveSettings: (s: Settings) => put<Settings>("/api/settings", s),
   updateStatus: (refresh = false) => get<UpdateStatus>(`/api/update${refresh ? "?refresh=1" : ""}`),
   installUpdate: () => post<UpdateStatus>("/api/update/install"),

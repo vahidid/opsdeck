@@ -19,6 +19,7 @@ import {
   Minimize2,
   MoreHorizontal,
   Pencil,
+  Plug,
   Rocket,
   ScrollText,
   ShieldAlert,
@@ -130,7 +131,7 @@ export function AgentPage() {
               title="Ctrl/⌘-click or middle-click: open in a new tab"
               className={cx("group relative flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer", s.id === sid ? "bg-panel-3" : "hover:bg-panel-2")}
             >
-              <StateDot state={s.state} />
+              {s.client ? <Plug className="size-3 shrink-0 text-agent-ink" aria-label="connected agent" /> : <StateDot state={s.state} />}
               <div className="min-w-0 flex-1">
                 <div dir="auto" className={cx("truncate text-[12.5px] text-start", s.id === sid ? "text-fg" : "text-muted group-hover:text-fg")}>
                   {s.title || "Untitled session"}
@@ -170,7 +171,7 @@ export function AgentPage() {
         </div>
       </aside>
       <section className="flex-1 min-w-0 flex flex-col">
-        {models.data && models.data.length === 0 ? (
+        {models.data && models.data.length === 0 && !sid?.startsWith("mcp-") ? (
           <NoModels />
         ) : sid ? (
           <SessionView key={sid} ws={ws} sid={sid} models={allowed} onChanged={() => void sessions.reload()} />
@@ -222,7 +223,8 @@ function NoModels() {
         </Link>
       }
     >
-      Add an Anthropic or OpenAI-compatible provider (OpenAI, OpenRouter, Ollama, LM Studio…). API keys are stored in your vault. Everything else in opsdeck works without a model.
+      Add an Anthropic or OpenAI-compatible provider (OpenAI, OpenRouter, Ollama, LM Studio…), or use Claude Code, Codex or another agent you already have: connect it under
+      App settings › Agent access. API keys are stored in your vault. Everything else in opsdeck works without a model.
     </EmptyState>
   );
 }
@@ -921,6 +923,9 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
                 : `${wait.approvals + wait.questions} item${wait.approvals + wait.questions > 1 ? "s" : ""} waiting for you — click to review`}
             </button>
           )}
+          {session?.client ? (
+            <ClientNotice session={session} running={running} onStop={stop} onMode={(m) => void updateSession({ mode: m })} />
+          ) : (
           <Composer
             onSend={send}
             running={running}
@@ -939,8 +944,37 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
               )
             }
           />
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ClientNotice replaces the composer in the session of an agent connected
+// through MCP: it does the thinking; here you watch and approve its calls.
+function ClientNotice({ session, running, onStop, onMode }: { session: SessionInfo; running: boolean; onStop: () => void; onMode: (m: SessionMode) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-agent/30 bg-agent/[0.07] px-4 py-3">
+      <span className="grid size-8 place-items-center rounded-lg bg-agent text-agent-fg shrink-0">
+        <Plug className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium">{session.client} works here through MCP</div>
+        <div className="text-[11.5px] text-muted">
+          Its tool calls show up above and wait here for your approval. To talk to it, use {session.client}. Manage its key in{" "}
+          <Link to="/settings" className="text-accent hover:underline">
+            App settings › Agent access
+          </Link>
+          .
+        </div>
+      </div>
+      <ModePicker value={session.mode} onChange={onMode} />
+      {running && (
+        <Button size="sm" variant="secondary" onClick={onStop}>
+          Stop its calls
+        </Button>
+      )}
     </div>
   );
 }

@@ -1,0 +1,31 @@
+{
+  "name": "opsdeck",
+  "version": "0.4.0",
+  "description": "Work on your servers, VPNs, containers, clusters, databases and logs through opsdeck: its MCP tools (credentials stay in opsdeck, changes wait for your approval) and a skill that tells Claude how to use them.",
+  "author": {
+    "name": "Vahid Hasani",
+    "url": "https://github.com/vahidid"
+  },
+  "homepage": "https://github.com/vahidid/opsdeck/blob/main/docs/agents.md",
+  "repository": "https://github.com/vahidid/opsdeck",
+  "license": "MIT",
+  "keywords": [
+    "infrastructure",
+    "devops",
+    "ssh",
+    "kubernetes",
+    "docker",
+    "vpn",
+    "mcp"
+  ],
+  "userConfig": {
+    "opsdeck_token": {
+      "type": "string",
+      "title": "opsdeck access key",
+      "description": "An access key (odk_\u2026) from opsdeck \u203a App settings \u203a Agent access \u203a Connect an agent",
+      "sensitive": true
+    }
+  },
+  "icon": ".claude-plugin/icon.png",
+  "privacyPolicyUrl": "https://github.com/vahidid/opsdeck/blob/main/docs/agents.md#privacy"
+}

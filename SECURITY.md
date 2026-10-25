@@ -25,6 +25,10 @@ Examples of what counts:
 - the agent running a change without the approval its mode and rules require
 - another website or local user reaching the local API (it listens on 127.0.0.1 only)
 - a workspace folder from someone else running commands when it is opened
+- an outside agent with an access key (docs/agents.md) doing more than its key's workspace
+  and mode allow, or reaching a credential
+- the updater installing a file that is not signed by the release key
 
 How the vault and the agent's safeguards are designed: [docs/vault.md](docs/vault.md),
-[docs/harness.md](docs/harness.md).
+[docs/harness.md](docs/harness.md), [docs/agents.md](docs/agents.md). How releases are
+signed: [docs/releasing.md](docs/releasing.md#signatures).

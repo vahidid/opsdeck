@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -17,6 +18,27 @@ func RelayStdio(url, version string) error {
 	if url == "" || token == "" {
 		return fmt.Errorf("usage: OPSDECK_MCP_TOKEN=<token> opsdeck mcp-stdio --url http://127.0.0.1:7788/mcp/")
 	}
+	return relay(url, token, version)
+}
+
+// ServeAccessKey is `opsdeck mcp`: the MCP server for agents outside opsdeck
+// over stdio, relayed to the running opsdeck. The access key comes from
+// OPSDECK_TOKEN (so it stays out of process listings and shell history).
+func ServeAccessKey(url, version string) error {
+	token := os.Getenv("OPSDECK_TOKEN")
+	if token == "" {
+		return fmt.Errorf("set OPSDECK_TOKEN to an access key (make one in opsdeck under App settings › Agent access)")
+	}
+	if err := relay(url, token, version); err != nil {
+		if strings.Contains(err.Error(), "connection refused") {
+			return fmt.Errorf("opsdeck is not running at %s: start the opsdeck app (or `opsdeck serve`) first", url)
+		}
+		return err
+	}
+	return nil
+}
+
+func relay(url, token, version string) error {
 	ctx := context.Background()
 	httpClient := &http.Client{Transport: bearer{token: token, base: http.DefaultTransport}}
 	client := mcp.NewClient(&mcp.Implementation{Name: "opsdeck-stdio", Version: version}, nil)

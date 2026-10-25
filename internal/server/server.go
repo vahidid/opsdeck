@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"opsdeck/internal/accesskeys"
 	"opsdeck/internal/acmex"
 	"opsdeck/internal/agent"
 	"opsdeck/internal/ansible"
@@ -69,6 +70,8 @@ type Server struct {
 	port      int
 	desktop   bool
 	updater   *update.Updater
+	keys      *accesskeys.Store // access keys of agents using the MCP server
+	version   string
 	stop      context.CancelFunc // ends background loops (certificate renewals)
 }
 
@@ -194,6 +197,10 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 		kind = update.KindDesktop
 	}
 	s.updater = update.New(opts.Version, kind, opts.Quit)
+	s.version = opts.Version
+	if s.keys, err = accesskeys.Open(filepath.Join(dirs.Config, "access-keys.json")); err != nil {
+		return nil, err
+	}
 	s.agents.SetMCPBase("http://127.0.0.1:" + strconv.Itoa(opts.Port) + "/mcp/")
 	if s.token, err = loadToken(filepath.Join(dirs.State, "server.token")); err != nil {
 		return nil, err
@@ -298,6 +305,9 @@ func (s *Server) Handler() http.Handler {
 	static := http.FileServer(http.FS(dist))
 	// MCP bridge for external agents (bearer token per running session).
 	mux.Handle("/mcp/", s.agents.MCPHandler())
+	// MCP server for agents outside opsdeck (an access key per agent).
+	mux.Handle("/mcp/ext", s.mcpExtHandler())
+	mux.Handle("/mcp/ext/", s.mcpExtHandler())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			writeErr(w, http.StatusNotFound, "not found")

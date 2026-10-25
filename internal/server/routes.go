@@ -33,6 +33,7 @@ import (
 
 func (s *Server) routes(mux *http.ServeMux) {
 	u := s.unlocked
+	s.accessKeyRoutes(mux)
 	// auth
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("GET /api/auth/check", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]bool{"ok": true}) })
@@ -888,6 +889,7 @@ func (s *Server) wsDelete(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("purgeVault") == "1" {
 		s.vault.DeleteScope(name)
 	}
+	s.keys.RevokeWorkspace(name)
 	s.record(r, name, "workspace.delete", "", map[string]any{"purgeVault": r.URL.Query().Get("purgeVault") == "1"}, nil)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

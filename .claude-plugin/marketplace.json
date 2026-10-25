@@ -1,0 +1,12 @@
+{
+  "name": "opsdeck",
+  "description": "opsdeck for Claude Code: infrastructure tools over MCP and the skill to use them",
+  "owner": { "name": "Vahid Hasani", "url": "https://github.com/vahidid" },
+  "plugins": [
+    {
+      "name": "opsdeck",
+      "source": "./plugins/opsdeck",
+      "description": "Servers, VPNs, Docker, Kubernetes, databases, logs and DNS through opsdeck, with your approval for every change"
+    }
+  ]
+}

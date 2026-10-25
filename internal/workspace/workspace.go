@@ -92,7 +92,10 @@ type Workspace struct {
 	// they need the user's trust on this machine before they run.
 	Hooks []Hook `yaml:"hooks,omitempty" json:"hooks"`
 
-	Path      string      `yaml:"-" json:"path"`
+	Path string `yaml:"-" json:"path"`
+	// Format is the folder format it was read in (see version.go); older
+	// formats are upgraded in memory and written as the current one on save.
+	Format    int         `yaml:"-" json:"format"`
 	Resources []*Resource `yaml:"-" json:"-"`
 }
 
@@ -434,7 +437,7 @@ func (m *Manager) Create(meta Meta) (*Workspace, error) {
 	os.MkdirAll(filepath.Join(dir, "reports"), 0o700)
 	os.MkdirAll(filepath.Join(dir, ".opsdeck"), 0o700)
 	w := &Workspace{
-		APIVersion: "opsdeck/v1", Kind: "Workspace", Metadata: meta, Path: dir,
+		APIVersion: APIVersion, Kind: "Workspace", Metadata: meta, Path: dir, Format: FormatVersion,
 		Environments: []Environment{{Name: "dev"}, {Name: "staging"}, {Name: "prod", Protected: true}},
 	}
 	if err := w.Save(); err != nil {
@@ -528,22 +531,25 @@ func Load(dir string) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	var w Workspace
-	if err := yaml.Unmarshal(b, &w); err != nil {
+	var wsDoc yaml.Node
+	if err := yaml.Unmarshal(b, &wsDoc); err != nil {
 		return nil, fmt.Errorf("%s/workspace.yaml: %w", dir, err)
 	}
-	if w.Metadata.Name == "" {
-		w.Metadata.Name = filepath.Base(dir)
+	var head struct {
+		APIVersion string `yaml:"apiVersion"`
 	}
-	// The name selects the vault scope and the state directory: it must be a
-	// plain slug and never "global".
-	if !nameRe.MatchString(w.Metadata.Name) || w.Metadata.Name == "global" {
-		return nil, fmt.Errorf("%s/workspace.yaml: invalid workspace name %q", dir, w.Metadata.Name)
+	if wsDoc.Kind != 0 {
+		if err := wsDoc.Decode(&head); err != nil {
+			return nil, fmt.Errorf("%s/workspace.yaml: %w", dir, err)
+		}
 	}
-	if w.Metadata.Tags == nil {
-		w.Metadata.Tags = []string{}
+	format, err := parseAPIVersion(head.APIVersion)
+	if err != nil {
+		return nil, fmt.Errorf("%s/workspace.yaml: %w", dir, err)
 	}
-	w.Path = dir
+	if format > currentFormat {
+		return nil, fmt.Errorf("%s: %w (format %d; this opsdeck reads format %d): update opsdeck to open it", dir, ErrNewerFormat, format, currentFormat)
+	}
 	files := []string{}
 	if _, err := os.Stat(filepath.Join(dir, "resources.yaml")); err == nil {
 		files = append(files, "resources.yaml")
@@ -556,14 +562,49 @@ func Load(dir string) (*Workspace, error) {
 			files = append(files, rel)
 		}
 	}
+	docs := map[string]*yaml.Node{}
 	for _, f := range files {
 		b, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			return nil, err
 		}
-		var list []*Resource
-		if err := yaml.Unmarshal(b, &list); err != nil {
+		var n yaml.Node
+		if err := yaml.Unmarshal(b, &n); err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		docs[f] = &n
+	}
+	// an older format is upgraded in memory; the files change on the next save
+	if format < currentFormat {
+		if err := migrate(format, &wsDoc, docs); err != nil {
+			return nil, fmt.Errorf("%s: %w", dir, err)
+		}
+	}
+	var w Workspace
+	if wsDoc.Kind != 0 {
+		if err := wsDoc.Decode(&w); err != nil {
+			return nil, fmt.Errorf("%s/workspace.yaml: %w", dir, err)
+		}
+	}
+	w.Format = format
+	if w.Metadata.Name == "" {
+		w.Metadata.Name = filepath.Base(dir)
+	}
+	// The name selects the vault scope and the state directory: it must be a
+	// plain slug and never "global".
+	if !nameRe.MatchString(w.Metadata.Name) || w.Metadata.Name == "global" {
+		return nil, fmt.Errorf("%s/workspace.yaml: invalid workspace name %q", dir, w.Metadata.Name)
+	}
+	if w.Metadata.Tags == nil {
+		w.Metadata.Tags = []string{}
+	}
+	w.Path = dir
+	for _, f := range files {
+		var list []*Resource
+		if n := docs[f]; n.Kind != 0 {
+			if err := n.Decode(&list); err != nil {
+				return nil, fmt.Errorf("%s: %w", f, err)
+			}
 		}
 		for _, r := range list {
 			if r == nil || r.Kind == "" || r.Name == "" {
@@ -581,12 +622,33 @@ func Load(dir string) (*Workspace, error) {
 
 // Save writes workspace.yaml.
 func (w *Workspace) Save() error {
-	w.APIVersion, w.Kind = "opsdeck/v1", "Workspace"
+	if w.Format != 0 && w.Format < currentFormat {
+		return w.upgradeFiles()
+	}
+	return w.saveMeta()
+}
+
+func (w *Workspace) saveMeta() error {
+	w.APIVersion, w.Kind, w.Format = "opsdeck/v"+strconv.Itoa(currentFormat), "Workspace", currentFormat
 	b, err := yaml.Marshal(w)
 	if err != nil {
 		return err
 	}
 	return atomicWrite(filepath.Join(w.Path, "workspace.yaml"), b)
+}
+
+// upgradeFiles writes a workspace read in an older format back as the
+// current one: every resource file first, then workspace.yaml with the new
+// apiVersion, so a folder is never left half upgraded.
+func (w *Workspace) upgradeFiles() error {
+	all := map[string]bool{}
+	for _, r := range w.Resources {
+		all[r.source] = true
+	}
+	if err := w.writeFiles(all); err != nil {
+		return err
+	}
+	return w.saveMeta()
 }
 
 // PutResource adds or replaces (by oldID, "" for new) a resource and saves.
@@ -652,6 +714,13 @@ func defaultFile(kind string) string {
 }
 
 func (w *Workspace) saveFiles(files map[string]bool) error {
+	if w.Format != 0 && w.Format < currentFormat {
+		return w.upgradeFiles()
+	}
+	return w.writeFiles(files)
+}
+
+func (w *Workspace) writeFiles(files map[string]bool) error {
 	for f := range files {
 		var list []*Resource
 		for _, r := range w.Resources {

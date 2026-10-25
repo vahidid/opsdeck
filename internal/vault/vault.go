@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const formatVersion = "1"
+const (
+	formatVersion    = "1"
+	formatVersionInt = 1
+)
+
+// ErrNewerFormat means the vault was written by a newer opsdeck.
+var ErrNewerFormat = errors.New("the vault was written by a newer version of opsdeck")
 
 // GlobalScope holds personal items shared across workspaces.
 const GlobalScope = "global"
@@ -77,6 +84,14 @@ CREATE TABLE IF NOT EXISTS item_history (
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("vault schema: %w", err)
+	}
+	// a vault written by a newer opsdeck may use a format this one cannot read
+	var fv []byte
+	if err := db.QueryRow(`SELECT v FROM meta WHERE k='format_version'`).Scan(&fv); err == nil {
+		if n, _ := strconv.Atoi(string(fv)); n > formatVersionInt {
+			db.Close()
+			return nil, fmt.Errorf("%w (vault format %d; this opsdeck reads format %s): update opsdeck", ErrNewerFormat, n, formatVersion)
+		}
 	}
 	v := &Vault{db: db, autoLock: 15 * time.Minute, stop: make(chan struct{})}
 	var id []byte

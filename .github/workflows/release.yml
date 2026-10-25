@@ -3,7 +3,12 @@
 #   desktop app  .deb/.rpm (Linux x86_64), installer and portable .exe
 #                (Windows x64), universal .dmg (macOS)
 #   CLI          opsdeck-cli-<version>-<os>-<arch>
-#   checksums    SHA256SUMS.txt (the in-app updater refuses files without one)
+#   checksums    SHA256SUMS.txt, signed with the release key as
+#                SHA256SUMS.txt.minisig (the in-app updater refuses a release
+#                without both; docs/releasing.md#signatures)
+# The secret OPSDECK_SIGNING_KEY is required to publish. With the optional
+# Apple and Windows certificate secrets, the macOS app is signed and notarized
+# and the Windows .exe files are Authenticode-signed.
 # Other pushes keep the builds as workflow artifacts.
 name: Build & release
 
@@ -134,22 +139,72 @@ jobs:
       - name: Package (Windows)
         if: matrix.name == 'Windows'
         working-directory: cmd/opsdeck-desktop
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           mkdir -p dist
           mv build/bin/opsdeck-amd64-installer.exe "dist/opsdeck-$VERSION-windows-x64-setup.exe"
           mv build/bin/opsdeck.exe "dist/opsdeck-$VERSION-windows-x64-portable.exe"
+          # Authenticode, when a code-signing certificate (.pfx, base64) is set
+          if [[ -n "$WINDOWS_CERTIFICATE" ]]; then
+            sudo apt-get install -y osslsigncode
+            echo "$WINDOWS_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/cert.pfx"
+            for f in dist/*.exe; do
+              osslsigncode sign -pkcs12 "$RUNNER_TEMP/cert.pfx" -pass "$WINDOWS_CERTIFICATE_PASSWORD" \
+                -n opsdeck -i https://github.com/${{ github.repository }} -h sha256 \
+                -ts http://timestamp.digicert.com -in "$f" -out "$f.signed"
+              mv "$f.signed" "$f"
+              osslsigncode verify -in "$f" | grep -q "Signature verification: ok"
+            done
+            rm "$RUNNER_TEMP/cert.pfx"
+          else
+            echo "::warning::WINDOWS_CERTIFICATE is not set: the .exe files are not Authenticode-signed"
+          fi
 
       - name: Package (macOS)
         if: matrix.name == 'macOS'
         working-directory: cmd/opsdeck-desktop
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          # not notarized yet: an ad-hoc signature lets it run after "Open" in
-          # the Finder's context menu (or System Settings → Privacy & Security)
-          codesign --force --deep --sign - build/bin/opsdeck.app
+          dmg="dist/opsdeck-$VERSION-macos-universal.dmg"
+          if [[ -n "$MACOS_CERTIFICATE" ]]; then
+            # a Developer ID Application certificate (.p12, base64): sign with
+            # the hardened runtime, then notarize and staple the disk image
+            kc="$RUNNER_TEMP/build.keychain"
+            security create-keychain -p ci "$kc"
+            security set-keychain-settings -lut 3600 "$kc"
+            security unlock-keychain -p ci "$kc"
+            echo "$MACOS_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            rm "$RUNNER_TEMP/cert.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc"
+            security list-keychains -d user -s "$kc"
+            identity=$(security find-identity -v -p codesigning "$kc" | grep -o '"Developer ID Application[^"]*"' | head -1 | tr -d '"')
+            [[ -n "$identity" ]] || { echo "::error::no Developer ID Application identity in MACOS_CERTIFICATE"; exit 1; }
+            codesign --force --deep --options runtime --timestamp --sign "$identity" build/bin/opsdeck.app
+          else
+            # an ad-hoc signature lets it run after "Open" in the Finder's
+            # context menu (or System Settings → Privacy & Security)
+            echo "::warning::MACOS_CERTIFICATE is not set: the app is not notarized"
+            codesign --force --deep --sign - build/bin/opsdeck.app
+          fi
           mkdir -p dist dmg
           cp -R build/bin/opsdeck.app dmg/
           ln -s /Applications dmg/Applications
-          hdiutil create -volname opsdeck -srcfolder dmg -ov -format UDZO "dist/opsdeck-$VERSION-macos-universal.dmg"
+          hdiutil create -volname opsdeck -srcfolder dmg -ov -format UDZO "$dmg"
+          if [[ -n "$MACOS_CERTIFICATE" ]]; then
+            codesign --timestamp --sign "$identity" "$dmg"
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --wait
+            xcrun stapler staple "$dmg"
+            spctl --assess --type open --context context:primary-signature -v "$dmg"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -204,9 +259,23 @@ jobs:
           pattern: opsdeck-*
           path: dist
           merge-multiple: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Sign the checksums
+        env:
+          OPSDECK_SIGNING_KEY: ${{ secrets.OPSDECK_SIGNING_KEY }}
+        run: |
+          if [[ -z "$OPSDECK_SIGNING_KEY" ]]; then
+            echo "::error::the secret OPSDECK_SIGNING_KEY is not set: opsdeck refuses to update to an unsigned release (docs/releasing.md#signatures)"
+            exit 1
+          fi
+          go run ./tools/releasekey sign dist/SHA256SUMS.txt "opsdeck v$VERSION SHA256SUMS.txt"
+          go run ./tools/releasekey verify dist/SHA256SUMS.txt
       - name: Release notes
         run: |
           # this version's section of CHANGELOG.md, then how to install
@@ -227,6 +296,13 @@ jobs:
 
           Or run the install script — see [Install](https://github.com/${{ github.repository }}#install).
           Already installed? opsdeck shows the update in its sidebar and installs it for you.
+
+          \`SHA256SUMS.txt\` is signed with the opsdeck release key. To check a download yourself:
+
+          \`\`\`
+          minisign -Vm SHA256SUMS.txt -P $(go run ./tools/releasekey pub)
+          sha256sum --check --ignore-missing SHA256SUMS.txt
+          \`\`\`
           EOF
           cat notes.md
       - uses: softprops/action-gh-release@v2

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Cpu, Globe, KeyRound, Laptop, MessageSquareText, Moon, Plus, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Sparkles, Sun, Trash2, Webhook } from "lucide-react";
+import { Bot, Cpu, Globe, KeyRound, Laptop, MessageSquareText, Moon, Plug, Plus, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Webhook } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes, WebSettings } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
+import { useAppearance } from "../context/appearance";
 import { useUpdate } from "../context/update";
 import { Badge, Button, Card, ChipInput, CopyButton, ErrorBox, FormField, IconButton, Input, Loading, PageHeader, Segmented, Select, Toggle, cx } from "../components/ui";
 import { useConfirm, useToast } from "../components/overlay";
 import { VaultItemModal } from "../components/VaultItemForm";
 import { ModelChooser } from "../components/ModelChooser";
 import { HooksEditor } from "../components/HooksEditor";
+import { AgentAccessSection } from "../components/AgentAccess";
 import { passwordStrength } from "../lib/format";
 
 const PRESETS: { label: string; type: ProviderConfig["type"]; id: string; baseUrl: string; models: string[]; needsKey: boolean }[] = [
@@ -71,6 +73,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export function AppSettingsPage() {
+  const { setCustomizeOpen } = useAppearance();
   const [s, setS] = useState<Settings | null>(null);
   const [orig, setOrig] = useState<string>("");
   const [err, setErr] = useState("");
@@ -419,6 +422,16 @@ export function AppSettingsPage() {
         <Card
           title={
             <>
+              <Plug className="size-4 text-agent-ink" /> Agent access (MCP)
+            </>
+          }
+        >
+          <AgentAccessSection />
+        </Card>
+
+        <Card
+          title={
+            <>
               <Bot className="size-4 text-muted" /> Agent harness
             </>
           }
@@ -506,14 +519,20 @@ export function AppSettingsPage() {
         </Card>
 
         <Card title="Appearance">
-          <Segmented
-            value={theme}
-            onChange={setTheme}
-            options={[
-              { id: "dark", label: <><Moon className="size-3" /> Dark</> },
-              { id: "light", label: <><Sun className="size-3" /> Light</> },
-            ]}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Segmented
+              value={theme}
+              onChange={setTheme}
+              options={[
+                { id: "dark", label: <><Moon className="size-3" /> Dark</> },
+                { id: "light", label: <><Sun className="size-3" /> Light</> },
+              ]}
+            />
+            <Button size="sm" icon={<SlidersHorizontal className="size-3.5" />} onClick={() => setCustomizeOpen(true)}>
+              Accent, density, menu…
+            </Button>
+            <span className="text-[11.5px] text-faint">Saved in this browser.</span>
+          </div>
         </Card>
       </div>
       <VaultItemModal

@@ -1,4 +1,5 @@
 import type {
+  AccessKey,
   LogLine,
   VpnDrivers,
   PendingCode,
@@ -165,7 +166,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const obj = (data && typeof data === "object" ? data : {}) as { error?: string; code?: string };
     const msg = obj.error || (typeof data === "string" && data) || `${res.status} ${res.statusText}`;
     const code = obj.code || "";
-    if (res.status === 401) emit("unauthorized");
+    // a wrong master password is a 401 too, but the login is fine
+    if (res.status === 401 && code !== "bad_password") emit("unauthorized");
     if (res.status === 423) emit(code === "vault_uninitialized" ? "uninitialized" : "locked");
     throw new ApiError(res.status, msg, code, obj as Record<string, unknown>);
   }
@@ -225,6 +227,10 @@ export const api = {
 
   // settings
   settings: () => get<Settings>("/api/settings"),
+  accessKeys: () => get<{ keys: AccessKey[]; endpoint: string }>("/api/access-keys"),
+  createAccessKey: (b: { label: string; workspace: string; mode: string }) => post<{ key: AccessKey; secret: string; endpoint: string }>("/api/access-keys", b),
+  updateAccessKey: (id: string, b: { label?: string; mode?: string }) => request<AccessKey>("PATCH", `/api/access-keys/${id}`, b),
+  revokeAccessKey: (id: string) => del<{ ok: boolean }>(`/api/access-keys/${id}`),
   saveSettings: (s: Settings) => put<Settings>("/api/settings", s),
   updateStatus: (refresh = false) => get<UpdateStatus>(`/api/update${refresh ? "?refresh=1" : ""}`),
   installUpdate: () => post<UpdateStatus>("/api/update/install"),

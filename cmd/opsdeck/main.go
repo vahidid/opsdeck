@@ -30,6 +30,9 @@ Usage:
   opsdeck run -p "…" --ws <workspace>  run the agent headless (CI, cron); opsdeck run -h for flags
   opsdeck url               print the login URL
   opsdeck paths             show where data is stored
+  opsdeck mcp               MCP server for other agents (Claude Code, Codex, Cursor…) over stdio;
+                            OPSDECK_TOKEN=<access key>, see docs/agents.md
+  opsdeck skill install     install the opsdeck skill for an agent (opsdeck skill -h)
   opsdeck mcp-stdio --url URL stdio relay to a session's MCP bridge (used by external agents)
   opsdeck version
 
@@ -42,7 +45,7 @@ func main() {
 	port := flag.Int("port", 7788, "listen port (always bound to 127.0.0.1)")
 	noOpen := flag.Bool("no-open", false, "do not open the browser")
 	devOrigin := flag.String("dev-origin", "", "extra allowed Origin for UI development, e.g. http://localhost:5173")
-	mcpURL := flag.String("url", "", "opsdeck MCP endpoint (mcp-stdio)")
+	mcpURL := flag.String("url", "", "opsdeck MCP endpoint (mcp, mcp-stdio); mcp finds the running opsdeck by itself")
 	flag.Usage = usage
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] == "socks-connect" {
@@ -59,6 +62,9 @@ func main() {
 	}
 	if cmd == "run" {
 		os.Exit(runCommand(args))
+	}
+	if cmd == "skill" {
+		os.Exit(skillCommand(args))
 	}
 	flag.CommandLine.Parse(args)
 	dirs := paths.Default()
@@ -77,6 +83,12 @@ func main() {
 		}
 		fmt.Println(srv.URL())
 		srv.Close()
+		return
+	case "mcp":
+		if err := mcpx.ServeAccessKey(mcpEndpoint(*mcpURL, *port, flagSet("port"), dirs.State), version); err != nil {
+			fmt.Fprintln(os.Stderr, "opsdeck mcp:", err)
+			os.Exit(1)
+		}
 		return
 	case "mcp-stdio":
 		if err := mcpx.RelayStdio(*mcpURL, version); err != nil {
@@ -99,6 +111,7 @@ func main() {
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 
+	defer srv.Announce()()
 	fmt.Printf("\n  opsdeck %s\n\n  Open: %s\n\n  Data: %s\n  Press Ctrl+C to stop.\n\n", version, srv.URL(), dirs.Data)
 	if !*noOpen {
 		go func() {

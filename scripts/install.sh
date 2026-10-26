@@ -10,10 +10,13 @@
 #
 # The desktop app comes as a .deb or .rpm package on Linux (x86_64) and as an
 # app in /Applications on macOS. Every download is checked against the
-# release's SHA256SUMS.txt.
+# release's SHA256SUMS.txt; with minisign installed, so is the signature of
+# that file (docs/releasing.md#signatures).
 set -eu
 
 REPO=vahidid/opsdeck
+# the release key (internal/update/releasekey.go)
+RELEASE_KEY=RWRns3uLxhaLFYGyA2gOUMh1YqtebJGtbVhNL1qWwsaoi2g6Mk6g4+XN
 mode=desktop
 want=latest
 bindir="$HOME/.local/bin"
@@ -70,6 +73,12 @@ fetch() {
   sums=$(asset '/SHA256SUMS\.txt$')
   [ -n "$sums" ] || die "the release has no SHA256SUMS.txt"
   curl -fsSL -o "$tmp/SHA256SUMS.txt" "$sums" || die "could not download SHA256SUMS.txt"
+  if has minisign; then
+    sig=$(asset '/SHA256SUMS\.txt\.minisig$')
+    [ -n "$sig" ] || die "the release is not signed"
+    curl -fsSL -o "$tmp/SHA256SUMS.txt.minisig" "$sig" || die "could not download the signature"
+    minisign -Vqm "$tmp/SHA256SUMS.txt" -P "$RELEASE_KEY" || die "the signature of SHA256SUMS.txt does not match the opsdeck release key"
+  fi
   curl -fL --progress-bar -o "$tmp/$name" "$1" >&2 || die "could not download $name"
   expected=$(grep " \*\{0,1\}$name\$" "$tmp/SHA256SUMS.txt" | cut -d' ' -f1)
   [ -n "$expected" ] || die "SHA256SUMS.txt has no entry for $name"

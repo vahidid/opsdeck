@@ -52,6 +52,9 @@ type Info struct {
 	Headless bool `json:"headless,omitempty"`
 	// ForkedFrom is the session this one was forked from.
 	ForkedFrom string `json:"forkedFrom,omitempty"`
+	// Client names the outside agent whose MCP calls this session records
+	// (an access key's label); nobody chats in it.
+	Client string `json:"client,omitempty"`
 }
 
 // Session is one conversation with the agent inside a workspace.
@@ -78,6 +81,8 @@ type Session struct {
 	// context is what the user ran with ! since their last message; it goes
 	// to the model with the next one.
 	context []string
+	// clientCalls counts the MCP calls of a client session in flight.
+	clientCalls int
 }
 
 type approval struct {

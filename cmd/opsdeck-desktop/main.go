@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -52,6 +53,27 @@ func main() {
 		case "socks-connect":
 			if err := gitx.SocksConnect(os.Args[2:], os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, "opsdeck socks-connect:", err)
+				os.Exit(1)
+			}
+			return
+		case "mcp":
+			// MCP server for agents outside opsdeck (docs/agents.md)
+			fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+			url := fs.String("url", "", "opsdeck MCP endpoint (default: the running opsdeck)")
+			fs.Parse(os.Args[2:])
+			endpoint := *url
+			if endpoint == "" {
+				endpoint = os.Getenv("OPSDECK_URL")
+			}
+			if endpoint == "" {
+				endpoint = "http://127.0.0.1:" + strconv.Itoa(defaultPort) + "/mcp/ext"
+				var info server.ServerInfo
+				if b, err := os.ReadFile(server.ServerInfoFile(paths.Default().State)); err == nil && json.Unmarshal(b, &info) == nil && info.MCP != "" {
+					endpoint = info.MCP
+				}
+			}
+			if err := mcpx.ServeAccessKey(endpoint, version); err != nil {
+				fmt.Fprintln(os.Stderr, "opsdeck mcp:", err)
 				os.Exit(1)
 			}
 			return
@@ -115,6 +137,8 @@ type app struct {
 
 	srv  *server.Server // nil when another opsdeck already serves this data
 	http *http.Server
+	// unannounce removes server.json (where `opsdeck mcp` finds the server)
+	unannounce func()
 }
 
 // startup runs the server. A second launch hands over to the running
@@ -159,6 +183,7 @@ func (a *app) serve() (string, error) {
 		return "", err
 	}
 	a.srv = srv
+	a.unannounce = srv.Announce()
 	a.http = &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := a.http.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -196,6 +221,9 @@ func (a *app) shutdown(context.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		a.http.Shutdown(ctx)
+	}
+	if a.unannounce != nil {
+		a.unannounce()
 	}
 	if a.srv != nil {
 		a.srv.Close()

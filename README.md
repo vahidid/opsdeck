@@ -20,6 +20,7 @@
   <a href="#install">Install</a> ·
   <a href="https://vahidid.github.io/opsdeck/">Website</a> ·
   <a href="#features">Features</a> ·
+  <a href="#use-it-from-claude-code-codex-cursor">Claude Code &amp; other agents</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="docs/">Docs</a> ·
   <a href="CHANGELOG.md">Changelog</a>
@@ -37,7 +38,7 @@ AI. Everything runs on your computer: a desktop app for Windows, macOS and Linux
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/screenshot-agent-approval.png" alt="The agent asks for approval before changing a file on a production host, with a diff of the change"></td>
+    <td width="50%"><img src="docs/assets/screenshot-agent-approval.png" alt="The agent asks for approval before changing the .env of a Compose project on a production host, with a diff of the change"></td>
     <td width="50%"><img src="docs/assets/screenshot-agent.png" alt="The agent's report after fixing the problem"></td>
   </tr>
   <tr>
@@ -79,7 +80,9 @@ right-click the app and choose *Open*. On **Windows**, SmartScreen asks once: ch
 
 **Updates:** opsdeck checks GitHub for new releases and shows an *Update available* box
 in the sidebar. One click downloads the update and checks it against the release's
-`SHA256SUMS.txt`, then installs it the way you installed opsdeck and restarts:
+`SHA256SUMS.txt` and that file's signature by the opsdeck release key
+([how to check it yourself](docs/releasing.md#signatures)), then installs it the way you
+installed opsdeck and restarts:
 
 - the installer on Windows
 - the app in place on macOS
@@ -87,6 +90,45 @@ in the sidebar. One click downloads the update and checks it against the release
 - the binary itself for the CLI
 
 You can turn the check off, or check now, under *App settings → Updates*.
+
+## Use it from Claude Code, Codex, Cursor…
+
+opsdeck is an **MCP server** for the agent you already use. Claude Code, Codex, Cursor,
+Gemini CLI, VS Code or any MCP client gets a workspace's tools: SSH through its VPNs and
+jump hosts, Docker, Kubernetes, databases, logs, metrics, DNS, certificates and deployments.
+opsdeck keeps the credentials and checks, redacts and logs every call. A change waits until
+you approve it in opsdeck.
+
+1. In opsdeck: **App settings › Agent access › Connect an agent**. Pick the workspace and
+   a mode (*Read-only*, *Ask* or *Auto*). opsdeck shows an access key and the exact setup
+   for your agent.
+2. Add the server to your agent, e.g. for Claude Code:
+
+   ```bash
+   claude mcp add --scope user --transport http opsdeck-acme http://127.0.0.1:7788/mcp/ext \
+     --header "Authorization: Bearer odk_…"
+   ```
+
+   Over stdio instead: `OPSDECK_TOKEN=odk_… opsdeck mcp`.
+3. Install the **skill**, which teaches the agent how to work through opsdeck (look first,
+   expect approvals, leave a report):
+
+   ```bash
+   # Claude Code: the plugin brings the skill and the MCP server, and asks for the key
+   /plugin marketplace add vahidid/opsdeck
+   /plugin install opsdeck@opsdeck
+
+   # or for any agent
+   opsdeck skill install claude-code   # or codex, gemini, cursor, dir --dir PATH
+   ```
+
+<p align="center">
+  <img src="docs/assets/screenshot-agent-access.png" alt="Connecting Claude Code: the access key and the command to add opsdeck as an MCP server" width="760">
+</p>
+
+The agent's calls show up in a session of their own on the Agent page, where you approve
+them. The setup for Codex, Cursor, Gemini CLI and VS Code, the modes and the security model
+are in **[docs/agents.md](docs/agents.md)**.
 
 ## Features
 
@@ -239,11 +281,14 @@ You can turn the check off, or check now, under *App settings → Updates*.
     <td><img src="docs/assets/screenshot-settings-agents.png" alt="Models reported by the Claude Code CLI in the settings"><br><sub><b>Local agents</b>: use Claude Code, Codex, Gemini CLI or an ACP agent and pick its models from the list it reports.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/assets/screenshot-databases.png" alt="A MongoDB query with a nested document open in the value viewer"><br><sub><b>Databases</b>: PostgreSQL, MySQL, MariaDB, MongoDB and Redis; the whole value of a cell, JSON indented, beside the results.</sub></td>
+    <td><img src="docs/assets/screenshot-databases.png" alt="A PostgreSQL query with a JSON column open in the value viewer"><br><sub><b>Databases</b>: PostgreSQL, MySQL, MariaDB, MongoDB and Redis; the whole value of a cell, JSON indented, beside the results.</sub></td>
     <td><img src="docs/assets/screenshot-databases-confirm.png" alt="Confirming an UPDATE on a production database"><br><sub><b>Changes ask first</b>: an UPDATE on a protected database is shown with its risk and runs as one transaction.</sub></td>
   </tr>
   <tr>
     <td><img src="docs/assets/screenshot-resources.png" alt="The resources of a workspace"><br><sub><b>Resources</b>: hosts, groups, VPNs, panels, databases and clusters as plain YAML.</sub></td>
+    <td><img src="docs/assets/screenshot-add-resource.png" alt="Adding a resource: products with their logos, grouped by category"><br><sub><b>Add resource</b>: pick the product you use, by its logo or by searching; opsdeck fills in the technical type.</sub></td>
+  </tr>
+  <tr>
     <td><img src="docs/assets/screenshot-activity.png" alt="The hash-chained audit journal"><br><sub><b>Activity</b>: a hash-chained journal of every action, by you or the agent.</sub></td>
   </tr>
 </table>
@@ -296,6 +341,8 @@ scripted model endpoint (OpenAI-compatible), and prints their addresses.
 ```
 opsdeck [serve] [--port 7788] [--no-open]   start the server and UI
 opsdeck run -p "prompt" --ws <workspace>    run the agent headless (needs a running opsdeck)
+opsdeck mcp                                 MCP server for other agents over stdio (OPSDECK_TOKEN=odk_…)
+opsdeck skill install <agent>               install the opsdeck skill for claude-code, codex, gemini, cursor
 opsdeck url                                 print the login link
 opsdeck paths                               show where data is stored
 ```
@@ -332,6 +379,21 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 `user:password@host:port/db`, as CI does), and the Ansible tests against an installed
 `ansible-core`; they are skipped otherwise.
 
+The browser tests in [`e2e/`](e2e) drive the built UI with Playwright against a real
+opsdeck (`tools/e2e`: a fresh data folder, local SSH hosts, a scripted model): unlocking,
+adding a resource, search, customizing, an agent change that waits for approval, and
+connecting an outside agent.
+
+```bash
+cd web && npm run build && cd ../e2e
+npm ci && npx playwright install chromium
+npx playwright test
+```
+
+The README screenshots come from the demo workspace of `tools/e2e -demo` (see
+`e2e/screenshots.config.ts`): `npx playwright test -c screenshots.config.ts` there
+rewrites `docs/assets/screenshot-*.png`.
+
 ## Status and known limits
 
 - OpenVPN, OpenConnect (AnyConnect/ocserv/FortiGate/…) and openfortivpn profiles need those
@@ -362,6 +424,9 @@ PostgreSQL, MySQL/MariaDB, MongoDB and Redis servers (`OPSDECK_TEST_POSTGRES`,
 - [docs/architecture.md](docs/architecture.md) — framework, modules, data layout
 - [docs/desktop.md](docs/desktop.md) — the desktop app: how it works, install, build
 - [docs/releasing.md](docs/releasing.md) — versions, releases and how updates install
+- [docs/agents.md](docs/agents.md) — use opsdeck from Claude Code, Codex, Cursor, Gemini CLI: access keys, MCP setup, the skill pack
+- [docs/compatibility.md](docs/compatibility.md) — what is stable between versions, file formats, deprecation
+- [docs/schema.md](docs/schema.md) — every resource kind and its fields (generated)
 - [docs/harness.md](docs/harness.md) — agent loop, tools, permissions, web access, subagents, hooks, background tasks, headless runs
 - [docs/vault.md](docs/vault.md) — vault design
 - [docs/workspace.md](docs/workspace.md) — workspace model and files

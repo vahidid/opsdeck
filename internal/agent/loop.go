@@ -35,6 +35,9 @@ func (m *Manager) Send(ws, id, text string) error {
 	if err != nil {
 		return err
 	}
+	if s.Info().Client != "" {
+		return ErrClientSession
+	}
 	w, err := m.deps.Workspaces.Get(ws)
 	if err != nil {
 		return err

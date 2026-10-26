@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "opsdeck": {
+      "type": "http",
+      "url": "http://127.0.0.1:7788/mcp/ext",
+      "headers": { "Authorization": "Bearer ${user_config.opsdeck_token}" }
+    }
+  }
+}

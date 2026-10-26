@@ -27,10 +27,12 @@ Builds that aren't from a tag are versioned `<wails.json version>-dev.<commit>`.
 The **Build & release** workflow (`.github/workflows/release.yml`) then:
 
 - builds the desktop app on Linux (.deb, .rpm), Windows (NSIS installer and portable
-  .exe, cross-compiled) and macOS (universal .dmg, ad-hoc signed);
+  .exe, cross-compiled, Authenticode-signed when a certificate is set) and macOS
+  (universal .dmg, signed and notarized when a Developer ID is set, else ad-hoc signed);
 - builds the CLI for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 and
   windows/amd64;
-- writes `SHA256SUMS.txt` over all of them;
+- writes `SHA256SUMS.txt` over all of them and signs it with the release key
+  (`SHA256SUMS.txt.minisig`, see [Signatures](#signatures));
 - publishes the GitHub release with the changelog section and an install table.
 
 A tag with a `-` (`v0.2.0-rc.1`) is published as a pre-release. The updater only
@@ -47,6 +49,7 @@ looks at the latest full release.
 | `opsdeck-<v>-1.x86_64.rpm` | Fedora, RHEL, openSUSE |
 | `opsdeck-cli-<v>-<os>-<arch>[.exe]` | the CLI (`opsdeck serve`) |
 | `SHA256SUMS.txt` | checksums of all of the above |
+| `SHA256SUMS.txt.minisig` | the release key's signature of `SHA256SUMS.txt` |
 
 The updater and the install scripts find files by these names, so keep them when you
 change the workflow.
@@ -60,8 +63,10 @@ noCheck: true` in `config.yaml`) and has *Check now*. When a newer version is ou
 sidebar shows *Update available*. The update dialog shows the release notes and installs
 the update.
 
-Every download is checked against `SHA256SUMS.txt` from the same release; a file
-without a checksum is not installed. Installation depends on how opsdeck was installed:
+Every download is checked against `SHA256SUMS.txt` from the same release, and that file
+against its signature: the updater installs nothing from a release that is not signed by
+a release key built into it, whose signature names another version, or whose file has no
+checksum or a wrong one. Installation depends on how opsdeck was installed:
 
 | Installed as | Update |
 |---|---|
@@ -78,3 +83,61 @@ build. The dialog then links to the release page.
 To try the updater without publishing, point it at a stand-in for the GitHub API with
 `OPSDECK_UPDATE_API=http://127.0.0.1:…`. It must serve `/repos/vahidid/opsdeck/releases/latest`
 and the asset URLs it lists. The tests in `internal/update` do the same.
+
+## Signatures
+
+Each release's `SHA256SUMS.txt` is signed in the [minisign](https://jedisct1.github.io/minisign/)
+format (Ed25519). The updater only installs a release whose checksums carry a valid
+signature from one of the keys in [`internal/update/keys.go`](../internal/update/keys.go),
+with the release's version in the signed comment. `scripts/install.sh` checks the signature
+too when `minisign` is installed. The current release key is
+
+```
+RWRns3uLxhaLFYGyA2gOUMh1YqtebJGtbVhNL1qWwsaoi2g6Mk6g4+XN
+```
+
+Check a download yourself:
+
+```bash
+minisign -Vm SHA256SUMS.txt -P RWRns3uLxhaLFYGyA2gOUMh1YqtebJGtbVhNL1qWwsaoi2g6Mk6g4+XN
+sha256sum --check --ignore-missing SHA256SUMS.txt
+```
+
+### The signing key
+
+The private key is the GitHub Actions secret **`OPSDECK_SIGNING_KEY`** (*Settings → Secrets
+and variables → Actions*) and is kept nowhere else but an offline backup. The release job
+refuses to publish without it. `tools/releasekey` makes and uses keys:
+
+```bash
+go run ./tools/releasekey gen                     # a new key pair
+OPSDECK_SIGNING_KEY=… go run ./tools/releasekey sign SHA256SUMS.txt "opsdeck v0.4.0 SHA256SUMS.txt"
+go run ./tools/releasekey verify SHA256SUMS.txt   # against the built-in keys
+go run ./tools/releasekey pub                     # the current public key
+```
+
+`sign` refuses a key the updater doesn't trust.
+
+**Rotating the key.** Make a new pair and add its public key to `ReleaseKeys` next to the
+old one; release that version, still signed with the old key. From the next release on,
+sign with the new key (replace the secret, and the key in `scripts/install.sh` and in this
+file). Drop the old key one release later. Installs older than the release that added the
+new key can't verify the new key's signatures and update by hand once.
+
+**If the key leaks**, remove it from `ReleaseKeys` at once, rotate as above without the
+overlap, publish a release explaining it, and treat releases signed after the leak as
+untrusted.
+
+### Platform signing
+
+These secrets are optional. Without them the build still works and warns.
+
+| Secret | For |
+|---|---|
+| `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD` | a *Developer ID Application* certificate as a base64 `.p12`: the app is signed with the hardened runtime |
+| `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | notarization with `notarytool` (an app-specific password); the disk image is stapled |
+| `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD` | a code-signing certificate as a base64 `.pfx`: the installer and the portable `.exe` are signed with `osslsigncode` and timestamped |
+
+The signature on the Windows installer covers the installer; the `opsdeck.exe` it installs
+is the unsigned build. An EV or cloud-HSM certificate that can't be exported as a `.pfx`
+needs another signing step.

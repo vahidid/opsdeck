@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
@@ -33,16 +33,20 @@ export function Modal({
   icon?: ReactNode;
 }) {
   useEscape(onClose, open);
+  const titleId = useId();
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-[8vh] backdrop-blur-[2px]" onMouseDown={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="w-full rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/40 flex flex-col max-h-[84vh]"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-2 px-4 h-12 border-b border-line shrink-0">
-          <h2 className="font-semibold text-[14px] flex items-center gap-2 [&_svg]:size-4 [&_svg]:text-muted">
+          <h2 id={titleId} className="font-semibold text-[14px] flex items-center gap-2 [&_svg]:size-4 [&_svg]:text-muted">
             {icon}
             {title}
           </h2>
@@ -76,17 +80,23 @@ export function Drawer({
   width?: number;
 }) {
   useEscape(onClose, open);
+  const titleId = useId();
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-40 flex justify-end bg-black/35" onMouseDown={onClose}>
       <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="h-full w-full border-l border-line-strong bg-panel shadow-2xl flex flex-col"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-2 px-4 h-12 border-b border-line shrink-0">
           <div className="min-w-0">
-            <h2 className="font-semibold text-[14px] truncate">{title}</h2>
+            <h2 id={titleId} className="font-semibold text-[14px] truncate">
+              {title}
+            </h2>
             {subtitle && <div className="text-[11.5px] text-muted truncate">{subtitle}</div>}
           </div>
           <IconButton title="Close" onClick={onClose}>

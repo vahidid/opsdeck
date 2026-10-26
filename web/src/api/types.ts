@@ -455,6 +455,19 @@ export type SessionInfo = {
   /** opsdeck run: nothing waits for an approval */
   headless?: boolean;
   forkedFrom?: string;
+  /** an agent outside opsdeck (access key label) whose MCP calls this session records */
+  client?: string;
+};
+
+/** a key an agent outside opsdeck uses to reach a workspace over MCP */
+export type AccessKey = {
+  id: string;
+  label: string;
+  workspace: string;
+  mode: "plan" | "ask" | "auto";
+  hint: string;
+  created: string;
+  lastUsed?: string;
 };
 
 /** set on events of a subagent: the delegate call it runs in */

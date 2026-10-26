@@ -19,5 +19,7 @@ test("connect an outside agent: the key is shown once and can be revoked", async
   await expect(page.getByText("not used yet")).toBeVisible();
   await page.getByRole("button", { name: "Revoke" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Revoke" }).click();
-  await expect(page.getByText("Claude Code in CI")).toBeHidden();
+  // the list is empty again (the "Key revoked" toast still names the key)
+  await expect(page.getByText("No agents connected yet.")).toBeVisible();
+  await expect(page.getByText("not used yet")).toBeHidden();
 });

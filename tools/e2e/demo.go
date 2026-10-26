@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base32"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -158,6 +161,19 @@ func demoAgent(srv string) *fakellm.Server {
 	})
 }
 
+// random and otpSecret make the demo's credentials, so none are in the code.
+func random(n int) string {
+	b := make([]byte, n)
+	rand.Read(b)
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func otpSecret() string {
+	b := make([]byte, 10)
+	rand.Read(b)
+	return base32.StdEncoding.EncodeToString(b)
+}
+
 // seedDemo fills the workspace for the screenshots.
 func seedDemo(c *client, home, postgres string) *fakellm.Server {
 	srv := filepath.Join(home, "srv", "shop")
@@ -244,11 +260,11 @@ func seedDemo(c *client, home, postgres string) *fakellm.Server {
 	c.do("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "Panel", "name": "grafana", "environment": "prod", "via": "host/bastion", "spec": map[string]any{"url": "http://10.20.1.40:3000"}}, nil)
 	c.do("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "GitRemote", "name": "shop", "spec": map[string]any{"url": "https://gitlab.com/acme/shop", "provider": "gitlab"}}, nil)
 	c.do("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "vpn", "name": "office-wg", "fields": []map[string]any{{"name": "config", "value": `[Interface]
-PrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=
+PrivateKey = ` + random(32) + `
 Address = 10.99.0.2/32
 
 [Peer]
-PublicKey = xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=
+PublicKey = ` + random(32) + `
 Endpoint = vpn.acme.example:51820
 AllowedIPs = 10.20.0.0/16
 `}}}, nil)
@@ -257,12 +273,12 @@ AllowedIPs = 10.20.0.0/16
 
 	// vault: logins with a one-time code, an API token
 	c.do("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "login", "name": "grafana-admin", "tags": []string{"grafana"}, "fields": []map[string]any{
-		{"name": "url", "value": "https://grafana.acme.example"}, {"name": "username", "value": "admin"}, {"name": "password", "value": "x8#Kp2!vQm9z"},
-		{"name": "totp", "value": "otpauth://totp/Grafana:admin?secret=JBSWY3DPEHPK3PXP&issuer=Grafana"}}}, nil)
+		{"name": "url", "value": "https://grafana.acme.example"}, {"name": "username", "value": "admin"}, {"name": "password", "value": random(12)},
+		{"name": "totp", "value": "otpauth://totp/Grafana:admin?secret=" + otpSecret() + "&issuer=Grafana"}}}, nil)
 	c.do("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "login", "name": "gitlab", "fields": []map[string]any{
-		{"name": "url", "value": "https://gitlab.com"}, {"name": "username", "value": "ops@acme.example"}, {"name": "password", "value": "pC4v!r9Lw2"},
-		{"name": "totp", "value": "otpauth://totp/GitLab:ops?secret=KRSXG5CTMVRXEZLU&issuer=GitLab"}}}, nil)
-	c.do("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "token", "name": "cloudflare-dns", "fields": []map[string]any{{"name": "token", "value": "cf_demo_7d1e0b5a3c9f"}}}, nil)
+		{"name": "url", "value": "https://gitlab.com"}, {"name": "username", "value": "ops@acme.example"}, {"name": "password", "value": random(12)},
+		{"name": "totp", "value": "otpauth://totp/GitLab:ops?secret=" + otpSecret() + "&issuer=GitLab"}}}, nil)
+	c.do("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "token", "name": "cloudflare-dns", "fields": []map[string]any{{"name": "token", "value": random(30)}}}, nil)
 
 	if postgres != "" {
 		// user:password@host:port/db

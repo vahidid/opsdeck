@@ -5,6 +5,13 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-26
+
+A new interface — a menu that stays short as opsdeck grows, a violet that marks the agent,
+resources picked by product, and appearance you can customize. Claude Code, Codex, Cursor
+or any MCP client can now work through opsdeck, with the same approvals and audit as
+opsdeck's own agent; releases are signed, and the file formats are versioned.
+
 ### Other agents use opsdeck
 
 - **opsdeck is an MCP server for the agent you already use.** Claude Code, Codex, Cursor,

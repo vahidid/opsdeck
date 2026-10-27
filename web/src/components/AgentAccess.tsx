@@ -14,21 +14,32 @@ const MODES = [
   { id: "auto", label: "Auto", help: "what the workspace's permission rules allow runs; the rest asks" },
 ] as const;
 
-const AGENTS = ["Claude Code", "Codex", "Cursor", "Gemini CLI", "VS Code", "Other"];
+const AGENTS = ["Claude Code", "Claude Desktop", "Codex", "Cursor", "Gemini CLI", "VS Code", "Other"];
 
 // setup returns the configuration for one agent, by its kind of config.
-function setup(agent: string, name: string, endpoint: string, secret: string): { label: string; code: string; note?: string }[] {
+// command is this opsdeck's executable, by its full path: agents started
+// from a desktop menu do not have the shell's PATH.
+function setup(agent: string, name: string, endpoint: string, secret: string, command: string): { label: string; code: string; note?: string }[] {
   const header = `Authorization: Bearer ${secret}`;
+  const shellCmd = /[\s"'$]/.test(command) ? JSON.stringify(command) : command;
   switch (agent) {
+    case "Claude Desktop":
+      return [
+        {
+          label: "claude_desktop_config.json",
+          code: JSON.stringify({ mcpServers: { [name]: { command, args: ["mcp"], env: { OPSDECK_TOKEN: secret } } } }, null, 2),
+          note: "Settings › Developer › Edit Config (macOS: ~/Library/Application Support/Claude, Windows: %APPDATA%\\Claude, Linux: ~/.config/Claude), then restart Claude Desktop. opsdeck must be running.",
+        },
+      ];
     case "Claude Code":
       return [
         { label: "HTTP", code: `claude mcp add --transport http ${name} ${endpoint} \\\n  --header "${header}"` },
-        { label: "stdio", code: `claude mcp add ${name} --env OPSDECK_TOKEN=${secret} -- opsdeck mcp`, note: "Finds the running opsdeck on any port. Needs the opsdeck CLI on PATH." },
+        { label: "stdio", code: `claude mcp add ${name} --env OPSDECK_TOKEN=${secret} -- ${shellCmd} mcp`, note: "Finds the running opsdeck on any port." },
         { label: "Skill", code: "opsdeck skill install claude-code", note: "Or, inside Claude Code: /plugin marketplace add vahidid/opsdeck, then /plugin install opsdeck@opsdeck." },
       ];
     case "Codex":
       return [
-        { label: "~/.codex/config.toml", code: `[mcp_servers.${name}]\ncommand = "opsdeck"\nargs = ["mcp"]\nenv = { OPSDECK_TOKEN = "${secret}" }` },
+        { label: "~/.codex/config.toml", code: `[mcp_servers.${name}]\ncommand = ${JSON.stringify(command)}\nargs = ["mcp"]\nenv = { OPSDECK_TOKEN = "${secret}" }` },
         { label: "Skill", code: "opsdeck skill install codex" },
       ];
     case "Cursor":
@@ -46,7 +57,7 @@ function setup(agent: string, name: string, endpoint: string, secret: string): {
     default:
       return [
         { label: "HTTP", code: `URL:    ${endpoint}\nHeader: ${header}`, note: "Streamable HTTP MCP. Any MCP client works." },
-        { label: "stdio", code: `OPSDECK_TOKEN=${secret} opsdeck mcp` },
+        { label: "stdio", code: `OPSDECK_TOKEN=${secret} ${shellCmd} mcp` },
       ];
   }
 }
@@ -59,6 +70,7 @@ export function AgentAccessSection() {
   const confirm = useConfirm();
   const [keys, setKeys] = useState<AccessKey[] | null>(null);
   const [endpoint, setEndpoint] = useState("");
+  const [command, setCommand] = useState("opsdeck");
   const [open, setOpen] = useState(false);
   const [made, setMade] = useState<{ key: AccessKey; secret: string; agent: string } | null>(null);
 
@@ -68,6 +80,7 @@ export function AgentAccessSection() {
       .then((r) => {
         setKeys(r.keys ?? []);
         setEndpoint(r.endpoint);
+        if (r.command) setCommand(r.command);
       })
       .catch(() => setKeys([]));
   useEffect(() => void load(), []);
@@ -144,7 +157,7 @@ export function AgentAccessSection() {
           void load();
         }}
       />
-      {made && <SetupModal made={made} endpoint={endpoint} onClose={() => setMade(null)} />}
+      {made && <SetupModal made={made} endpoint={endpoint} command={command} onClose={() => setMade(null)} />}
     </div>
   );
 }
@@ -228,9 +241,9 @@ function NewKeyModal({ open, onClose, onMade }: { open: boolean; onClose: () => 
   );
 }
 
-function SetupModal({ made, endpoint, onClose }: { made: { key: AccessKey; secret: string; agent: string }; endpoint: string; onClose: () => void }) {
+function SetupModal({ made, endpoint, command, onClose }: { made: { key: AccessKey; secret: string; agent: string }; endpoint: string; command: string; onClose: () => void }) {
   const name = `opsdeck-${made.key.workspace}`;
-  const steps = setup(made.agent, name, endpoint, made.secret);
+  const steps = setup(made.agent, name, endpoint, made.secret, command);
   const [tab, setTab] = useState(steps[0].label);
   const cur = steps.find((s) => s.label === tab) ?? steps[0];
   return (

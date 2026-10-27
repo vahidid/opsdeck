@@ -282,14 +282,28 @@ func (s *Server) URL() string {
 }
 
 // Close shuts everything down.
-func (s *Server) Close() {
+func (s *Server) Close() { s.Shutdown(nil) }
+
+// Shutdown shuts everything down and tells progress what it stops (the
+// desktop app shows it while it quits). VPN clients log out of their
+// gateways and remove their routes before it returns.
+func (s *Server) Shutdown(progress func(step string)) {
+	step := func(name string) {
+		if progress != nil {
+			progress(name)
+		}
+	}
 	if s.stop != nil {
 		s.stop()
 	}
+	step("Stopping agent sessions")
 	s.agents.InterruptAll()
+	step("Closing port forwards and MCP servers")
 	s.forwards.StopWorkspace("")
 	s.mcp.CloseAll()
+	step("Disconnecting VPNs and SSH connections")
 	s.hub.CloseAll()
+	step("Locking the vault")
 	s.vault.Close()
 	s.audit.Close()
 }

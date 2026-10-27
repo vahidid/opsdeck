@@ -227,7 +227,7 @@ export const api = {
 
   // settings
   settings: () => get<Settings>("/api/settings"),
-  accessKeys: () => get<{ keys: AccessKey[]; endpoint: string }>("/api/access-keys"),
+  accessKeys: () => get<{ keys: AccessKey[]; endpoint: string; command?: string }>("/api/access-keys"),
   createAccessKey: (b: { label: string; workspace: string; mode: string }) => post<{ key: AccessKey; secret: string; endpoint: string }>("/api/access-keys", b),
   updateAccessKey: (id: string, b: { label?: string; mode?: string }) => request<AccessKey>("PATCH", `/api/access-keys/${id}`, b),
   revokeAccessKey: (id: string) => del<{ ok: boolean }>(`/api/access-keys/${id}`),

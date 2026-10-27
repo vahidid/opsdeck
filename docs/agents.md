@@ -40,9 +40,20 @@ running opsdeck by itself, even when the desktop app had to use another port. Th
 app answers `mcp` too:
 
 - macOS: `/Applications/opsdeck.app/Contents/MacOS/opsdeck mcp`
-- Linux (.deb/.rpm): `opsdeck-desktop mcp`
+- Linux (.deb/.rpm): `/usr/bin/opsdeck-desktop mcp`
 - Windows: `opsdeck.exe mcp`, with the `opsdeck.exe` the installer put under Program Files
   (or the portable `.exe`)
+
+The setup opsdeck shows for a new key uses the full path of the running opsdeck, since an
+agent started from a desktop menu (Claude Desktop, an IDE) doesn't have your shell's
+`PATH`.
+
+**Claude Desktop** (Settings › Developer › Edit Config: `claude_desktop_config.json`)
+
+```json
+{ "mcpServers": { "opsdeck-acme": { "command": "/usr/bin/opsdeck-desktop", "args": ["mcp"],
+  "env": { "OPSDECK_TOKEN": "odk_…" } } } }
+```
 
 opsdeck must be running (the app open, or `opsdeck serve`) and unlocked while the agent
 works.

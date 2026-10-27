@@ -35,9 +35,13 @@ through the tunnel. Set `proxyPort` to also serve the VPN to other apps as
 every app on the machine uses the VPN, like the vendor client. It needs root:
 
 - subprocess clients (`openvpn`, `openconnect`, `openfortivpn`, `wg-quick`) run through
-  the elevation set in App settings → *Run system-mode VPNs with*: `auto` (`sudo -n` when
-  opsdeck is not root), `sudo`, `pkexec` (password dialog on desktops) or `none`. With
-  `sudo -n`, allow these binaries in sudoers, e.g.
+  the elevation set in App settings → *Run system-mode VPNs with*: `auto` (`sudo` when
+  opsdeck is not root), `sudo`, `pkexec` (polkit's password dialog) or `none`. When sudo
+  needs your password, it asks in the system's password dialog: opsdeck is its
+  `SUDO_ASKPASS` and shows `osascript`'s dialog on macOS, or zenity, kdialog or an
+  ssh-askpass on a Linux desktop (a `SUDO_ASKPASS` of your own is used instead). sudo then
+  remembers the password for a few minutes. Without a desktop (a server, SSH), allow
+  these binaries in sudoers instead, e.g.
   `you ALL=(root) NOPASSWD: /usr/sbin/openvpn, /usr/sbin/openconnect, /usr/bin/wg-quick, /usr/bin/wg`.
 - in-process system mode (NetBird) needs opsdeck itself to have `CAP_NET_ADMIN`
   (`sudo setcap cap_net_admin,cap_net_raw+ep $(which opsdeck)`).

@@ -5,6 +5,14 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Fixed
+
+- **System-mode VPNs ask for your sudo password.** opsdeck ran VPN clients with `sudo -n`,
+  so without passwordless sudo a system (TUN) VPN failed with "sudo: a password is
+  required". sudo now asks in the system's password dialog (macOS, or zenity, kdialog or
+  an ssh-askpass on Linux desktops), and a cancelled dialog or a wrong password is the
+  connection's error.
+
 ## [0.4.0] — 2026-10-26
 
 A new interface — a menu that stays short as opsdeck grows, a violet that marks the agent,

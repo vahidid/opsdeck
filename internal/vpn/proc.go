@@ -25,6 +25,7 @@ type proc struct {
 	stdin io.WriteCloser // open for answers (startProcPrompts)
 	mu    sync.Mutex
 	tail  []string // last lines, for error messages
+	sudo  string   // why sudo could not start the client ("" = it did)
 }
 
 // promptIdle is how long output waits without a newline before it counts as
@@ -41,8 +42,9 @@ func startProc(argv, elevate []string, stdin string, log *Log, onLine func(strin
 // (proc.answer), and output that then waits without a newline is a
 // question, which goes to the log and to onPrompt (not to onLine).
 func startProcPrompts(argv, elevate []string, stdin string, log *Log, onLine, onPrompt func(string)) (*proc, error) {
-	full := append(append([]string{}, elevate...), argv...)
+	full, env := elevatedCommand(argv, elevate)
 	cmd := sysproc.Command(full[0], full[1:]...)
+	cmd.Env = env
 	setProcAttrs(cmd, len(elevate) > 0)
 	p := &proc{cmd: cmd, done: newDone(), log: log}
 	if onPrompt != nil {
@@ -70,6 +72,9 @@ func startProcPrompts(argv, elevate []string, stdin string, log *Log, onLine, on
 		p.tail = append(p.tail, line)
 		if len(p.tail) > 8 {
 			p.tail = p.tail[1:]
+		}
+		if h := sudoHint(line); h != "" && p.sudo == "" {
+			p.sudo = h
 		}
 		p.mu.Unlock()
 		switch {
@@ -138,7 +143,12 @@ func startProcPrompts(argv, elevate []string, stdin string, log *Log, onLine, on
 		} else {
 			err = fmt.Errorf("%s: %v", argv[0], err)
 		}
-		if t := p.lastLines(); t != "" {
+		p.mu.Lock()
+		hint := p.sudo
+		p.mu.Unlock()
+		if hint != "" {
+			err = errors.New(hint)
+		} else if t := p.lastLines(); t != "" {
 			err = fmt.Errorf("%w: %s", err, t)
 		}
 		p.done.finish(err)
@@ -189,13 +199,21 @@ func (p *proc) stop(grace time.Duration) {
 
 // run executes a short command (e.g. wg-quick up) and returns its output.
 func run(ctx context.Context, argv, elevate []string, log *Log) (string, error) {
-	full := append(append([]string{}, elevate...), argv...)
+	full, env := elevatedCommand(argv, elevate)
 	log.Printf("$ %s", strings.Join(full, " "))
 	cmd := sysproc.CommandContext(ctx, full[0], full[1:]...)
+	cmd.Env = env
 	cmd.Stdin = nil
 	out, err := cmd.CombinedOutput()
+	hint := ""
 	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		log.add(l)
+		if h := sudoHint(l); h != "" && hint == "" {
+			hint = h
+		}
+	}
+	if err != nil && hint != "" {
+		return string(out), errors.New(hint)
 	}
 	if err != nil {
 		return string(out), fmt.Errorf("%s: %v: %s", argv[0], err, strings.TrimSpace(lastN(string(out), 600)))

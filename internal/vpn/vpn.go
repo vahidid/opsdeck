@@ -25,6 +25,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -49,7 +50,7 @@ type Config struct {
 	Items    map[string]vault.Item // resolved secretRef fields of the profile
 	StateDir string                // persistent per-profile state (node keys of Tailscale/NetBird), 0700
 	RunDir   string                // runtime files (generated configs, management passwords), removed on close
-	Elevate  []string              // command prefix for privileged subprocesses in system mode ("sudo -n")
+	Elevate  []string              // command prefix for privileged subprocesses in system mode ("sudo -A")
 	Log      *Log
 	// Browser is the configured browser for single sign-on ("" = detect).
 	Browser string
@@ -200,7 +201,8 @@ func Missing(d *Driver, r *workspace.Resource, mode string, elevate []string) st
 func Privileged() bool { return os.Geteuid() == 0 || hasNetAdmin() }
 
 // Elevation returns the command prefix for a setting: "auto" (sudo when not
-// root), "sudo", "pkexec" or "none".
+// root), "sudo", "pkexec" or "none". sudo asks for the user's password in a
+// system dialog when it needs one (askpass.go).
 func Elevation(setting string) []string {
 	switch setting {
 	case "none":
@@ -208,12 +210,19 @@ func Elevation(setting string) []string {
 	case "pkexec":
 		return []string{"pkexec"}
 	case "sudo":
-		return []string{"sudo", "-n"}
+		return sudo()
 	}
 	if os.Geteuid() == 0 {
 		return nil
 	}
-	return []string{"sudo", "-n"}
+	return sudo()
+}
+
+func sudo() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"sudo", "-n"}
+	}
+	return []string{"sudo", "-A"}
 }
 
 // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import (
 	"opsdeck/internal/paths"
 	"opsdeck/internal/server"
 	"opsdeck/internal/sysproc"
+	"opsdeck/internal/vpn"
 )
 
 var version = "0.4.0-dev"
@@ -42,6 +43,9 @@ Flags for serve:
 }
 
 func main() {
+	if vpn.AskpassMain() { // sudo asks for the password of a system-mode VPN
+		return
+	}
 	port := flag.Int("port", 7788, "listen port (always bound to 127.0.0.1)")
 	noOpen := flag.Bool("no-open", false, "do not open the browser")
 	devOrigin := flag.String("dev-origin", "", "extra allowed Origin for UI development, e.g. http://localhost:5173")

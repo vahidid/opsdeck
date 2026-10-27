@@ -81,6 +81,7 @@ export function AppSettingsPage() {
   const [tokens, setTokens] = useState<Item[]>([]);
   const [newKeyFor, setNewKeyFor] = useState<number | "web" | null>(null);
   const [installed, setInstalled] = useState<InstalledAgent[] | null>(null);
+  const [os, setOs] = useState("");
   // providers added in this visit whose models are fetched right away
   const autoLoad = useRef(new Set<string>());
   const { theme, setTheme, workspaces } = useApp();
@@ -107,6 +108,10 @@ export function AppSettingsPage() {
       .detectAgents()
       .then(setInstalled)
       .catch(() => setInstalled([]));
+    api
+      .vpnDrivers()
+      .then((d) => setOs(d.os))
+      .catch(() => {});
   }, []);
 
   if (err && !s) return <ErrorBox error={err} />;
@@ -362,12 +367,13 @@ export function AppSettingsPage() {
             />
             <FormField
               label="Run system-mode VPNs with"
-              help="System (TUN) VPNs need root. auto = sudo -n when opsdeck is not root (configure passwordless sudo for openvpn, openconnect, openfortivpn and wg-quick); pkexec shows a password dialog on desktops. Userspace VPNs never need this."
+              help="System (TUN) VPNs need root. auto = sudo when opsdeck is not root: sudo asks for your password in the system's password dialog (none with passwordless sudo for openvpn, openconnect, openfortivpn and wg-quick); pkexec shows polkit's dialog (Linux only). Userspace VPNs never need this."
             >
               <Select value={s.vpn.elevate || "auto"} onChange={(e) => setS({ ...s, vpn: { ...s.vpn, elevate: e.target.value as Settings["vpn"]["elevate"] } })}>
-                <option value="auto">auto (sudo -n when not root)</option>
-                <option value="sudo">sudo -n</option>
-                <option value="pkexec">pkexec</option>
+                <option value="auto">auto (sudo when not root)</option>
+                <option value="sudo">sudo</option>
+                {/* polkit is Linux's; elsewhere opsdeck runs sudo for pkexec */}
+                {os === "linux" || s.vpn.elevate === "pkexec" ? <option value="pkexec">pkexec{os && os !== "linux" ? " (Linux only: sudo is used)" : ""}</option> : null}
                 <option value="none">none (opsdeck runs as root)</option>
               </Select>
             </FormField>

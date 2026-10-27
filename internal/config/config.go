@@ -57,7 +57,8 @@ type Git struct {
 // VPN holds machine-level VPN settings.
 type VPN struct {
 	// Elevate runs system-mode VPN clients (openvpn, openconnect, wg-quick)
-	// with: auto (sudo -n when opsdeck is not root), sudo, pkexec or none.
+	// with: auto (sudo when opsdeck is not root), sudo, pkexec or none. sudo
+	// asks for the password in a system dialog (vpn/askpass.go).
 	Elevate string `yaml:"elevate,omitempty" json:"elevate"`
 	// Browser is the Chrome/Edge/Chromium/Brave used for SSO login windows
 	// ("" = detect).

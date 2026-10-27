@@ -359,7 +359,7 @@ func (t *wgQuick) Info() Info {
 	if time.Since(t.statsAt) > 5*time.Second {
 		t.statsAt = time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		out, err := run(ctx, []string{"wg", "show", t.iface, "dump"}, t.cfg.Elevate, NewLog())
+		out, err := run(ctx, []string{"wg", "show", t.iface, "dump"}, nonInteractive(t.cfg.Elevate), NewLog())
 		cancel()
 		if err == nil {
 			t.hs, t.rx, t.tx = time.Time{}, 0, 0

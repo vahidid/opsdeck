@@ -240,7 +240,7 @@ export function VPNPage() {
               ) : drivers.data.elevate ? (
                 <>
                   System-mode VPN clients run as root through <span className="font-mono text-fg">{drivers.data.elevate}</span>
-                  {drivers.data.elevate.startsWith("sudo") ? " (needs passwordless sudo for openvpn, openconnect and wg-quick)" : ""}.{" "}
+                  {drivers.data.elevate === "sudo -A" ? " (it asks for your password in a system dialog, unless sudo is passwordless)" : ""}.{" "}
                 </>
               ) : (
                 <>System-mode VPNs are off: opsdeck is not root and no elevation is set. </>

@@ -37,6 +37,7 @@ import (
 	"opsdeck/internal/mcpx"
 	"opsdeck/internal/paths"
 	"opsdeck/internal/server"
+	"opsdeck/internal/vpn"
 )
 
 var version = "0.4.0-dev"
@@ -46,6 +47,9 @@ var version = "0.4.0-dev"
 const defaultPort = 7788
 
 func main() {
+	if vpn.AskpassMain() { // sudo asks for the password of a system-mode VPN
+		return
+	}
 	// opsdeck runs its own executable for these (an ssh ProxyCommand, and a
 	// stdio MCP relay for external agents), so the app must answer them too.
 	if len(os.Args) > 1 {

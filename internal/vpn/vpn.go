@@ -371,6 +371,20 @@ func ifaceName(prefix, name string) string {
 	return s
 }
 
+// ifaceWithAddr returns the interface that has the address ip ("" = none).
+func ifaceWithAddr(ip string) string {
+	ifs, _ := net.Interfaces()
+	for _, ifi := range ifs {
+		addrs, _ := ifi.Addrs()
+		for _, a := range addrs {
+			if strings.HasPrefix(a.String(), ip+"/") {
+				return ifi.Name
+			}
+		}
+	}
+	return ""
+}
+
 func writePrivate(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
 }

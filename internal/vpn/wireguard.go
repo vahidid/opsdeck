@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -328,6 +329,11 @@ func startWGQuick(ctx context.Context, cfg *Config, conf string) (Tunnel, error)
 		return nil, err
 	}
 	t := &wgQuick{cfg: cfg, iface: iface, path: path, addr: parsed.Addresses[0].String(), done: newDone(), stop: make(chan struct{})}
+	if runtime.GOOS == "darwin" { // wg-quick runs the tunnel on a utunN of macOS's choosing
+		if name := ifaceWithAddr(t.addr); name != "" {
+			t.iface = name
+		}
+	}
 	go t.watch()
 	return t, nil
 }

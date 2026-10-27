@@ -111,7 +111,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/networks/{name}/log", u(s.netLog))
 	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/code", u(s.netCode))
 	mux.HandleFunc("GET /api/vpn/drivers", s.vpnDrivers)
-	mux.HandleFunc("POST /api/vpn/touch-id", u(s.vpnTouchID))
 	// polled by every page: does not count as activity for the auto-lock
 	mux.HandleFunc("GET /api/vpn/codes", s.vpnCodes)
 	mux.HandleFunc("POST /api/vpn/codes/test", u(s.vpnCodesTest))
@@ -1230,17 +1229,7 @@ func (s *Server) vpnDrivers(w http.ResponseWriter, r *http.Request) {
 		"elevate":    strings.Join(s.elevation(), " "),
 		"browser":    vpn.FindBrowser(s.cfg.Settings().VPN.Browser),
 		"os":         runtime.GOOS,
-		"touchId":    vpn.TouchIDStatus(),
 	})
-}
-
-// vpnTouchID turns on Touch ID for sudo (macOS asks for an administrator).
-func (s *Server) vpnTouchID(w http.ResponseWriter, r *http.Request) {
-	if err := vpn.EnableTouchID(r.Context()); err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, 200, vpn.TouchIDStatus())
 }
 
 func (s *Server) netDown(w http.ResponseWriter, r *http.Request) {

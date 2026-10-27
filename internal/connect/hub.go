@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -72,6 +73,21 @@ type sshConn struct {
 }
 
 func NewHub(v *vault.Vault, stateDir func(ws string) string) *Hub {
+	vpn.SudoPassword.Load = func() string { it, _ := sudoItem(v); return it.Get("password") }
+	vpn.SudoPassword.Save = func(pw string) {
+		in := vault.Item{Scope: vault.GlobalScope, Type: "login", Name: sudoItemName,
+			Notes:  "Your Mac password, which opsdeck gives sudo after your fingerprint to start system-mode VPNs.",
+			Fields: []vault.Field{{Name: "username", Value: os.Getenv("USER")}, {Name: "password", Value: pw, Secret: true}}}
+		var err error
+		if it, ok := sudoItem(v); ok {
+			_, err = v.Update(it.ID, in, nil)
+		} else {
+			_, err = v.Create(in)
+		}
+		if err != nil {
+			log.Printf("keeping the sudo password: %v", err)
+		}
+	}
 	return &Hub{vault: v, stateDir: stateDir, networks: map[string]*network{}, netLogs: map[string]*vpn.Log{},
 		sessions: map[string]*vpn.Session{}, clients: map[string]*sshConn{}, dialing: map[string]*sync.Mutex{}}
 }
@@ -541,4 +557,17 @@ func (h *Hub) CloseAll() {
 	for _, ws := range wss {
 		h.CloseWorkspace(ws)
 	}
+}
+
+const sudoItemName = "macOS sudo password"
+
+// sudoItem finds the vault item that keeps the user's password for sudo.
+func sudoItem(v *vault.Vault) (vault.Item, bool) {
+	items, _ := v.List(vault.GlobalScope)
+	for _, it := range items {
+		if it.Name == sudoItemName {
+			return it, true
+		}
+	}
+	return vault.Item{}, false
 }

@@ -35,6 +35,7 @@ func elevatedCommand(argv, elevate []string) (full, env []string) {
 	if len(elevate) < 2 || elevate[0] != "sudo" || elevate[1] != "-A" {
 		return full, nil
 	}
+	sudoLogin()
 	env = os.Environ()
 	if os.Getenv("SUDO_ASKPASS") == "" { // the user's own askpass wins
 		exe, err := os.Executable()
@@ -112,7 +113,11 @@ func askPassword(text string) (string, error) {
 	defer cancel()
 	go func(ppid int) {
 		for os.Getppid() == ppid {
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
 		}
 		cancel()
 	}(os.Getppid())

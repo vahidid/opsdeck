@@ -36,7 +36,7 @@ every app on the machine uses the VPN, like the vendor client. It needs root:
 
 - subprocess clients (`openvpn`, `openconnect`, `openfortivpn`, `wg-quick`) run through
   the elevation set in App settings → *Run system-mode VPNs with*: `auto` (`sudo` when
-  opsdeck is not root), `sudo`, `pkexec` (polkit's password dialog) or `none`. When sudo
+  opsdeck is not root), `sudo`, `pkexec` (polkit's password dialog, Linux only: on macOS sudo is used) or `none`. When sudo
   needs your password, it asks in the system's password dialog: opsdeck is its
   `SUDO_ASKPASS` and shows `osascript`'s dialog on macOS, or zenity, kdialog or an
   ssh-askpass on a Linux desktop (a `SUDO_ASKPASS` of your own is used instead). sudo then

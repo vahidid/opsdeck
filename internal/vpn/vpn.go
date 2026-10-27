@@ -202,13 +202,17 @@ func Privileged() bool { return os.Geteuid() == 0 || hasNetAdmin() }
 
 // Elevation returns the command prefix for a setting: "auto" (sudo when not
 // root), "sudo", "pkexec" or "none". sudo asks for the user's password in a
-// system dialog when it needs one (askpass.go).
+// system dialog when it needs one (askpass.go). pkexec (polkit) exists only
+// on Linux: elsewhere sudo runs the clients instead.
 func Elevation(setting string) []string {
 	switch setting {
 	case "none":
 		return nil
 	case "pkexec":
-		return []string{"pkexec"}
+		if runtime.GOOS == "linux" {
+			return []string{"pkexec"}
+		}
+		return sudo()
 	case "sudo":
 		return sudo()
 	}

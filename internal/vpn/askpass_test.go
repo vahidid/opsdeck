@@ -109,3 +109,10 @@ func TestAskpassCancelled(t *testing.T) {
 		t.Fatalf("hint %q from %q", hint, errOut)
 	}
 }
+
+func TestElevationPkexec(t *testing.T) {
+	got := strings.Join(Elevation("pkexec"), " ")
+	if want := map[bool]string{true: "pkexec", false: strings.Join(sudo(), " ")}[runtime.GOOS == "linux"]; got != want {
+		t.Fatalf("Elevation(pkexec) on %s = %q, want %q", runtime.GOOS, got, want)
+	}
+}

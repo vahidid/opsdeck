@@ -34,6 +34,7 @@ import type {
   RemoteRepo,
   RepoBranch,
   RepoCheck,
+  RepoFolder,
   RepoCommit,
   RepoFile,
   RepoStatus,
@@ -371,6 +372,7 @@ export const api = {
 
   // git repositories
   repos: (ws: string) => arr(get<RepoSummary[]>(`${W(ws)}/repos`)),
+  repoFolder: (ws: string, path: string) => post<RepoFolder>(`${W(ws)}/git/folder`, { path }),
   repoCheck: (ws: string, r: string) => post<RepoCheck>(`${R(ws, r)}/check`),
   repoClone: (ws: string, r: string, branch = "") => post<Out>(`${R(ws, r)}/clone`, { branch }),
   repoRemove: (ws: string, r: string) => del(`${R(ws, r)}/clone`),

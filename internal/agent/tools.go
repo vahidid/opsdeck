@@ -392,7 +392,11 @@ func renderInventory(env *Env, kind, envName, query string) string {
 		}
 		if r.Kind == "GitRemote" {
 			if _, err := os.Stat(filepath.Join(env.WS.RepoDir(r.Name), ".git")); err == nil {
-				attrs = append(attrs, "working-copy=repos/"+r.Name)
+				wc := "repos/" + r.Name
+				if env.WS.RepoExternal(r.Name) {
+					wc = env.WS.RepoDir(r.Name)
+				}
+				attrs = append(attrs, "working-copy="+wc)
 			} else {
 				attrs = append(attrs, "working-copy=not cloned")
 			}

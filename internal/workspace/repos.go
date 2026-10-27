@@ -8,8 +8,43 @@ import (
 	"strings"
 )
 
-// RepoDir is where the working copy of a GitRemote lives (git-ignored).
-func (w *Workspace) RepoDir(name string) string { return filepath.Join(w.Path, "repos", name) }
+// RepoDir is where the working copy of a GitRemote lives: repos/<name> in
+// the workspace (git-ignored), or the folder set in its spec.path (a
+// working copy cloned elsewhere on this computer).
+func (w *Workspace) RepoDir(name string) string {
+	if r := w.Find("GitRemote", name); r != nil {
+		if p := RepoPath(r.Str("path")); p != "" {
+			return p
+		}
+	}
+	return filepath.Join(w.Path, "repos", name)
+}
+
+// RepoExternal reports whether the working copy of a GitRemote is a folder
+// of its own outside repos/ (spec.path).
+func (w *Workspace) RepoExternal(name string) bool {
+	r := w.Find("GitRemote", name)
+	return r != nil && RepoPath(r.Str("path")) != ""
+}
+
+// RepoPath expands the spec.path of a GitRemote (absolute or ~/…) to an
+// absolute folder; "" when unset or not absolute.
+func RepoPath(p string) string {
+	p = strings.TrimSpace(p)
+	switch {
+	case p == "":
+		return ""
+	case p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`):
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		return filepath.Join(home, p[1:])
+	case filepath.IsAbs(p):
+		return filepath.Clean(p)
+	}
+	return ""
+}
 
 // RepoDocPaths are the files and folders of a documentation repository
 // that count as docs.
@@ -109,7 +144,8 @@ func (w *Workspace) repoDocPath(rel string) (string, error) {
 	if !inDocs {
 		return "", errors.New("not in the repository's documentation paths")
 	}
-	return w.contained(filepath.Join(w.RepoDir(name), filepath.FromSlash(p)))
+	dir := w.RepoDir(name)
+	return containedIn(dir, filepath.Join(dir, filepath.FromSlash(p)), "path leaves the repository")
 }
 
 // IgnoreRepos makes sure working copies are git-ignored when the workspace

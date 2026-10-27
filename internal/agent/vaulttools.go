@@ -573,7 +573,7 @@ func toolWorkspaceResource() Tool {
 				if old != nil {
 					oldID, verb = old.ID(), "Update "
 				}
-				return &Call{Risk: RiskChange, Target: "workspace/" + env.WS.Name(), Match: "apply " + r.ID(),
+				c := &Call{Risk: RiskChange, Target: "workspace/" + env.WS.Name(), Match: "apply " + r.ID(),
 					Preview: verb + r.ID() + "\n\n" + unifiedDiff(r.ID(), toYAML(old), toYAML(&r)),
 					Run: func(ctx context.Context) (string, error) {
 						if err := env.WS.PutResource(oldID, &r); err != nil {
@@ -589,7 +589,15 @@ func toolWorkspaceResource() Tool {
 							}
 						}
 						return strings.ToLower(strings.TrimSpace(verb)) + "d " + r.ID(), nil
-					}}, nil
+					}}
+				// The working copy of a repository may be any folder of this
+				// computer, and the repository tools work in it freely:
+				// pointing one at a folder is the user's call.
+				if p := strings.TrimSpace(r.Str("path")); r.Kind == "GitRemote" && p != "" && (old == nil || strings.TrimSpace(old.Str("path")) != p) {
+					c.Guarded = true
+					c.Reasons = append(c.Reasons, "sets the working copy of "+r.Name+" to the folder "+p+" on this computer")
+				}
+				return c, nil
 			}
 			return nil, fmt.Errorf("unknown action %q", in.Action)
 		},

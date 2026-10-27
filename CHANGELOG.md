@@ -5,6 +5,16 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Git
+
+- **Use a clone you already have.** A repository's working copy can be any folder on this
+  computer instead of `repos/<name>`: *Add repository* → *Working copy: Existing folder*
+  (GitHub and GitLab), *Use an existing clone* (starts from the folder and takes the URL
+  from its origin), or the `path` field. opsdeck checks the folder as you type, clones into
+  it when it is empty, talks to the repository's URL with its connector even when the
+  clone's origin is an SSH URL, and never deletes it. The agent works in it exactly as in
+  `repos/`, without asking for local-folder access.
+
 ## [0.5.0] — 2026-10-27
 
 ### Desktop app

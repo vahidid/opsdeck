@@ -662,6 +662,12 @@ func (w *Workspace) PutResource(oldID string, r *Resource) error {
 	if r.Spec == nil {
 		r.Spec = map[string]any{}
 	}
+	if p := strings.TrimSpace(r.Str("path")); r.Kind == "GitRemote" && p != "" {
+		if RepoPath(p) == "" {
+			return errors.New("path: the folder of the working copy must be an absolute path or start with ~/")
+		}
+		r.Spec["path"] = p
+	}
 	idx := -1
 	for i, x := range w.Resources {
 		if x.ID() == oldID {

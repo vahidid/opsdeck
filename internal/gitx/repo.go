@@ -61,7 +61,9 @@ func (r *Repo) Clone(ctx context.Context, branch string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(r.Dir), 0o700); err != nil {
 		return "", err
 	}
-	r.W.IgnoreRepos()
+	if !r.External() {
+		r.W.IgnoreRepos()
+	}
 	e, err := r.netEnv(ctx)
 	if err != nil {
 		return "", err
@@ -82,8 +84,12 @@ func (r *Repo) Clone(ctx context.Context, branch string) (string, error) {
 	return r.headLine(ctx), nil
 }
 
-// Remove deletes the working copy.
+// Remove deletes the working copy. A folder of its own (spec.path) is the
+// user's: opsdeck never deletes it.
 func (r *Repo) Remove() error {
+	if r.External() {
+		return fmt.Errorf("%s is a folder of its own (%s): opsdeck does not delete it; remove the repository from the workspace to unlink it", r.R.Name, r.Dir)
+	}
 	defer r.m.lock(r.key(), "remove")()
 	return os.RemoveAll(r.Dir)
 }

@@ -15,6 +15,7 @@ import (
 func (s *Server) gitRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http.HandlerFunc) {
 	p := "/api/workspaces/{ws}/repos"
 	mux.HandleFunc("GET "+p, u(s.reposList))
+	mux.HandleFunc("POST /api/workspaces/{ws}/git/folder", u(s.repoFolder))
 	mux.HandleFunc("POST "+p+"/{repo}/check", u(s.repoCheck))
 	mux.HandleFunc("POST "+p+"/{repo}/clone", u(s.repoClone))
 	mux.HandleFunc("DELETE "+p+"/{repo}/clone", u(s.repoRemove))
@@ -69,7 +70,8 @@ type RepoSummary struct {
 	Environment string       `json:"environment,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Docs        bool         `json:"docs"`
-	Auth        string       `json:"auth"` // token | deployKey | connector | none
+	Path        string       `json:"path,omitempty"` // working copy outside repos/ (spec.path)
+	Auth        string       `json:"auth"`           // token | deployKey | connector | none
 	Connection  string       `json:"connection,omitempty"`
 	Error       string       `json:"error,omitempty"`
 	Status      *gitx.Status `json:"status,omitempty"`
@@ -88,6 +90,9 @@ func (s *Server) reposList(w http.ResponseWriter, r *http.Request) {
 		}
 		sum := RepoSummary{Name: res.Name, URL: res.Str("url"), Provider: firstNonEmpty(res.Str("provider"), "auto"), Via: res.Via,
 			Environment: res.Environment, Description: res.Description, Docs: res.Bool("docs", false), Auth: "none"}
+		if ws.RepoExternal(res.Name) {
+			sum.Path = ws.RepoDir(res.Name)
+		}
 		switch {
 		case res.Str("token") != "":
 			sum.Auth = "token"
@@ -125,6 +130,25 @@ func (s *Server) reposList(w http.ResponseWriter, r *http.Request) {
 		out = append(out, sum)
 	}
 	writeJSON(w, 200, out)
+}
+
+// repoFolder inspects a folder on this computer offered as a working copy
+// (adding a repository cloned elsewhere).
+func (s *Server) repoFolder(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.workspace(w, r); !ok {
+		return
+	}
+	var in struct{ Path string }
+	if err := readJSON(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	f, err := s.git.InspectFolder(r.Context(), in.Path)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, f)
 }
 
 func firstNonEmpty(v ...string) string {
@@ -537,9 +561,10 @@ func (s *Server) mrMerge(w http.ResponseWriter, r *http.Request) {
 	s.done(w, r, ws, repo, "mr_merge", map[string]any{"id": mrID(r), "method": in.Method}, mr, err)
 }
 
-// renameWorkingCopy follows a GitRemote rename.
+// renameWorkingCopy follows a GitRemote rename (a folder of its own,
+// spec.path, stays where it is).
 func renameWorkingCopy(ws *workspace.Workspace, oldName, newName string) {
-	if oldName == newName {
+	if oldName == newName || ws.RepoExternal(newName) {
 		return
 	}
 	from, to := ws.RepoDir(oldName), ws.RepoDir(newName)

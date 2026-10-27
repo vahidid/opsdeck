@@ -285,8 +285,7 @@ export type VpnCodes = { ntfyUrl: string; ntfyTokenRef: string; command: string;
 
 export const NETWORK_KINDS = ["WireGuard", "Tailscale", "NetBird", "OpenVPN", "OpenConnect", "OpenFortiVPN", "SocksProxy"];
 export type VpnDriver = { kind: string; label: string; modes: string[]; missing: Record<string, string> };
-export type TouchId = { available: boolean; enabled: boolean };
-export type VpnDrivers = { drivers: VpnDriver[]; privileged: boolean; elevate: string; os: string; browser: string; touchId: TouchId };
+export type VpnDrivers = { drivers: VpnDriver[]; privileged: boolean; elevate: string; os: string; browser: string };
 export type LogLine = { time: string; text: string };
 
 export type CheckResult = { reachable: boolean; latencyMs: number; error: string; path: PathHop[] | string[] | null };

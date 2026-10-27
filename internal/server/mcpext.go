@@ -20,7 +20,7 @@ import (
 
 func (s *Server) accessKeyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/access-keys", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"keys": s.keys.List(), "endpoint": s.mcpEndpoint(), "modes": accesskeys.Modes})
+		writeJSON(w, 200, map[string]any{"keys": s.keys.List(), "endpoint": s.mcpEndpoint(), "command": mcpCommand(), "modes": accesskeys.Modes})
 	})
 	mux.HandleFunc("POST /api/access-keys", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Label, Workspace, Mode string }
@@ -38,7 +38,7 @@ func (s *Server) accessKeyRoutes(mux *http.ServeMux) {
 			return
 		}
 		s.record(r, in.Workspace, "access_key.create", k.Label, map[string]any{"mode": k.Mode, "id": k.ID}, nil)
-		writeJSON(w, 200, map[string]any{"key": k, "secret": secret, "endpoint": s.mcpEndpoint()})
+		writeJSON(w, 200, map[string]any{"key": k, "secret": secret, "endpoint": s.mcpEndpoint(), "command": mcpCommand()})
 	})
 	mux.HandleFunc("PATCH /api/access-keys/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Label, Mode string }
@@ -73,6 +73,25 @@ func (s *Server) accessKeyRoutes(mux *http.ServeMux) {
 
 func (s *Server) mcpEndpoint() string {
 	return "http://127.0.0.1:" + strconv.Itoa(s.port) + "/mcp/ext"
+}
+
+// mcpCommand is the program an agent starts for `mcp` over stdio: this
+// opsdeck by its full path, since an agent started from a desktop menu
+// (Claude Desktop, an IDE) has no PATH of the shell's, and the desktop app
+// is not called opsdeck everywhere (opsdeck-desktop on Linux, inside
+// opsdeck.app on macOS). A build run with `go run` gives plain opsdeck.
+func mcpCommand() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "opsdeck"
+	}
+	if p, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = p
+	}
+	if strings.HasPrefix(exe, os.TempDir()) {
+		return "opsdeck"
+	}
+	return exe
 }
 
 func accessKey(r *http.Request) string {

@@ -5,6 +5,22 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Desktop app
+
+- **Graceful quit with a shutdown screen.** Quitting (the tray, ⌘Q, closing the window
+  without a tray, an update, or the session ending) shows *Shutting down opsdeck* with each
+  step while agent sessions end, port forwards and MCP servers close, VPN clients log out
+  of their gateways and remove their routes, and the vault locks.
+- **Tray icon on Linux and Windows.** *Open opsdeck* / *Quit opsdeck*; closing the window
+  hides it there, so VPNs, forwards and the MCP server keep running. On macOS the app
+  stays in the Dock when its window is closed.
+- **Your shell's `PATH` on Linux.** Started from the desktop's menu, the app now reads
+  `PATH` from your login shell (as on macOS) and adds `~/.local/bin`, so agent CLIs such
+  as `claude` are found.
+- **Claude Desktop in Agent access**, and every stdio setup uses the full path of the
+  running opsdeck (`/usr/bin/opsdeck-desktop` on Linux), which agents started from a
+  desktop menu can find without your `PATH`.
+
 ### Fixed
 
 - **System-mode VPNs ask for your sudo password.** opsdeck ran VPN clients with `sudo -n`,

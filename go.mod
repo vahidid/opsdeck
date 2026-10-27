@@ -3,10 +3,12 @@ module opsdeck
 go 1.27.3
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/anthropics/anthropic-sdk-go v1.84.0
 	github.com/creack/pty v1.1.24
 	github.com/go-logr/logr v1.4.4
 	github.com/go-sql-driver/mysql v1.9.3
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jackc/pgx/v5 v5.10.0
@@ -96,7 +98,6 @@ require (
 	github.com/go-openapi/swag/stringutils v0.27.1 // indirect
 	github.com/go-openapi/swag/typeutils v0.27.1 // indirect
 	github.com/go-openapi/swag/yamlutils v0.27.1 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect

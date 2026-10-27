@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -116,7 +117,10 @@ func main() {
 		Menu:                     appMenu(),
 		EnableDefaultContextMenu: true, // copy and paste in fields
 		OnStartup:                a.startup,
+		OnBeforeClose:            a.beforeClose,
 		OnShutdown:               a.shutdown,
+		// macOS keeps the app in the Dock (see shutdown.go)
+		HideWindowOnClose: runtime.GOOS == "darwin",
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId:               "io.opsdeck.desktop." + idFor(a.dirs.Data),
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) { a.focus() },
@@ -143,6 +147,14 @@ type app struct {
 	http *http.Server
 	// unannounce removes server.json (where `opsdeck mcp` finds the server)
 	unannounce func()
+
+	mu           sync.Mutex
+	tray         bool     // a tray icon shows opsdeck: closing the window hides it
+	quitting     bool     // Quit was asked for (not the window's close button)
+	shuttingDown bool     // the shutdown screen shows, everything is stopping
+	closed       bool     // stopped: the app may exit
+	steps        []string // shown on the shutdown screen
+	stopOnce     sync.Once
 }
 
 // startup runs the server. A second launch hands over to the running
@@ -162,6 +174,14 @@ func (a *app) startup(ctx context.Context) {
 	a.url, a.err = a.serve()
 	if a.err != nil {
 		log.Printf("opsdeck: %v", a.err)
+		return
+	}
+	a.quitOnSignal()
+	if a.srv != nil {
+		tray := a.startTray()
+		a.mu.Lock()
+		a.tray = tray
+		a.mu.Unlock()
 	}
 }
 
@@ -180,7 +200,7 @@ func (a *app) serve() (string, error) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	srv, err := server.New(a.dirs, server.Options{Port: port, Desktop: true, Version: version,
 		// an update quits the app; its installer step starts it again
-		Quit: func() { wruntime.Quit(a.ctx) },
+		Quit: a.quit,
 	})
 	if err != nil {
 		ln.Close()
@@ -220,19 +240,9 @@ func (a *app) running(port int) (string, bool) {
 	return base + "/#token=" + tok, true
 }
 
-func (a *app) shutdown(context.Context) {
-	if a.http != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		a.http.Shutdown(ctx)
-	}
-	if a.unannounce != nil {
-		a.unannounce()
-	}
-	if a.srv != nil {
-		a.srv.Close()
-	}
-}
+// shutdown is Wails' OnShutdown: everything has normally stopped already
+// (shutdown.go).
+func (a *app) shutdown(context.Context) { a.stopServer(nil) }
 
 func (a *app) focus() {
 	if a.ctx == nil {

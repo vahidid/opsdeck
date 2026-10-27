@@ -16,8 +16,18 @@ tab:
 - Data is shared with the CLI: the vault, workspaces and settings live in the same folders
   (see the README's *Data* section), and `OPSDECK_HOME` works the same way.
 - One instance per data folder. Starting the app again brings up the open window.
-  Closing the window quits opsdeck, which disconnects VPNs and port forwards and ends
-  agent sessions.
+- **Tray.** On Linux and Windows opsdeck has a tray icon (*Open opsdeck*, *Quit opsdeck*;
+  a click shows the window). With it, closing the window only hides it: VPNs, port
+  forwards, agents and the MCP server keep running. On Linux this needs a desktop that
+  shows tray icons (KDE, Xfce, Cinnamon, GNOME with the AppIndicator extension as on
+  Ubuntu); without one, closing the window quits. On macOS opsdeck stays in the Dock
+  instead: closing the window hides the app, and its Dock icon shows it again.
+- **Quitting** (*Quit opsdeck* in the tray, ⌘Q, closing the window without a tray, an
+  update, or `SIGTERM` when the session ends) is graceful: the window shows a
+  *Shutting down* screen with each step while opsdeck ends agent sessions, closes port
+  forwards and MCP servers, disconnects VPNs (their clients log out of the gateways and
+  remove their routes) and SSH connections, and locks the vault. After 30 seconds it
+  quits anyway.
 - The log goes to `desktop.log` in the state folder (`opsdeck paths`). The previous
   run's log is kept as `desktop.log.old`.
 
@@ -36,9 +46,11 @@ A webview can't open new browser windows or save downloads, so the UI loads with
 
 Since the app has no terminal, opsdeck starts every helper program (git, ssh, ansible, VPN
 clients, agent CLIs) through `internal/sysproc`. On Windows this keeps each one from
-opening a console window. On macOS, an app started from the Finder only gets a minimal
-`PATH`, so the app reads `PATH` from your login shell at startup. That way git, kubectl
-plugins, ansible and agent CLIs from Homebrew or `~/.local/bin` are found.
+opening a console window. On macOS and Linux, an app started from the Finder, the Dock or
+the desktop's menu gets the session's `PATH`, not the one your shell profile builds, so
+the app reads `PATH` from your login shell (`$SHELL -ilc`) at startup and adds
+`~/.local/bin` and `~/bin`. That way git, kubectl plugins, ansible and agent CLIs such as
+`claude` from Homebrew, nvm or `~/.local/bin` are found.
 
 opsdeck also runs its own executable as an SSH `ProxyCommand` (`socks-connect`) and as a
 stdio MCP relay for external agents (`mcp-stdio`). The desktop binary answers both.
@@ -93,5 +105,5 @@ The main package carries the `desktop` build tag, which `wails build` sets. This
 ## Not yet
 
 - Code signing and notarization (Apple Developer ID, a Windows certificate).
-- A tray icon so VPNs and forwards stay up while the window is closed.
+- A menu bar icon on macOS (the tray library would take over the app delegate Wails uses).
 - Linux arm64 and Windows arm64 builds.

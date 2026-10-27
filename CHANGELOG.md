@@ -5,6 +5,8 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-27
+
 ### Desktop app
 
 - **Graceful quit with a shutdown screen.** Quitting (the tray, ⌘Q, closing the window
@@ -21,7 +23,20 @@ each release's section becomes its notes on GitHub.
   running opsdeck (`/usr/bin/opsdeck-desktop` on Linux), which agents started from a
   desktop menu can find without your `PATH`.
 
+### VPN
+
+- **Touch ID for system-mode VPNs on macOS, with nothing to set up.** The first time sudo
+  needs your password, opsdeck asks for it once, checks it and keeps it in the vault
+  (*macOS sudo password*); from then on it asks for your fingerprint and gives sudo the
+  password itself. Without Touch ID, or when you cancel, sudo asks in the password dialog.
+  The *Touch ID for sudo* button in App settings is gone: macOS 27 keeps apps out of
+  `/etc/pam.d`, so it could not work without Full Disk Access.
+
 ### Fixed
+
+- **OpenConnect and WireGuard system tunnels on macOS.** opsdeck named the tunnel device
+  `oc-<profile>` / `od-<profile>`, which macOS refuses ("must match 'utun%d'"); macOS now
+  picks the `utunN` device and opsdeck finds it by its address.
 
 - **System-mode VPNs ask for your sudo password.** opsdeck ran VPN clients with `sudo -n`,
   so without passwordless sudo a system (TUN) VPN failed with "sudo: a password is

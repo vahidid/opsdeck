@@ -13,7 +13,7 @@
   "info": {
     "companyName": "opsdeck",
     "productName": "opsdeck",
-    "productVersion": "0.4.0",
+    "productVersion": "0.5.0",
     "comments": "Local workbench and AI agent harness for infrastructure",
     "copyright": "© 2026 vahidid and the opsdeck contributors · MIT License"
   }

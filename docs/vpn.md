@@ -40,7 +40,10 @@ every app on the machine uses the VPN, like the vendor client. It needs root:
   needs your password, it asks in the system's password dialog: opsdeck is its
   `SUDO_ASKPASS` and shows `osascript`'s dialog on macOS, or zenity, kdialog or an
   ssh-askpass on a Linux desktop (a `SUDO_ASKPASS` of your own is used instead). sudo then
-  remembers the password for a few minutes. Without a desktop (a server, SSH), allow
+  remembers the password for a few minutes. On a Mac with Touch ID, opsdeck asks for the
+  password only once and keeps it in the vault (*macOS sudo password*, global scope); later
+  it asks for your fingerprint and gives sudo the password itself (`sudo -v`). Delete that
+  item to make opsdeck forget it. Without a desktop (a server, SSH), allow
   these binaries in sudoers instead, e.g.
   `you ALL=(root) NOPASSWD: /usr/sbin/openvpn, /usr/sbin/openconnect, /usr/bin/wg-quick, /usr/bin/wg`.
 - in-process system mode (NetBird) needs opsdeck itself to have `CAP_NET_ADMIN`

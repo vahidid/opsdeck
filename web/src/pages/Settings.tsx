@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Cpu, Globe, KeyRound, Laptop, MessageSquareText, Moon, Plug, Plus, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Webhook } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes, WebSettings } from "../api/types";
+import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, TouchId, VpnCodes, WebSettings } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
 import { useAppearance } from "../context/appearance";
@@ -82,6 +82,8 @@ export function AppSettingsPage() {
   const [newKeyFor, setNewKeyFor] = useState<number | "web" | null>(null);
   const [installed, setInstalled] = useState<InstalledAgent[] | null>(null);
   const [os, setOs] = useState("");
+  const [touchId, setTouchId] = useState<TouchId | null>(null);
+  const [touchIdBusy, setTouchIdBusy] = useState(false);
   // providers added in this visit whose models are fetched right away
   const autoLoad = useRef(new Set<string>());
   const { theme, setTheme, workspaces } = useApp();
@@ -110,7 +112,10 @@ export function AppSettingsPage() {
       .catch(() => setInstalled([]));
     api
       .vpnDrivers()
-      .then((d) => setOs(d.os))
+      .then((d) => {
+        setOs(d.os);
+        setTouchId(d.touchId);
+      })
       .catch(() => {});
   }, []);
 
@@ -377,6 +382,34 @@ export function AppSettingsPage() {
                 <option value="none">none (opsdeck runs as root)</option>
               </Select>
             </FormField>
+            {touchId?.available && (
+              <FormField
+                label="Touch ID for sudo"
+                help="Adds pam_tid to /etc/pam.d/sudo_local (macOS asks for an administrator once). sudo then takes your fingerprint for system-mode VPNs, and in Terminal; the password stays the fallback."
+              >
+                {touchId.enabled ? (
+                  <Badge tone="ok">on</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={touchIdBusy}
+                    onClick={async () => {
+                      setTouchIdBusy(true);
+                      try {
+                        setTouchId(await api.vpnTouchId());
+                        toast.success("Touch ID for sudo is on");
+                      } catch (e) {
+                        toast.error("Touch ID for sudo", errMsg(e));
+                      } finally {
+                        setTouchIdBusy(false);
+                      }
+                    }}
+                  >
+                    Turn on Touch ID for sudo
+                  </Button>
+                )}
+              </FormField>
+            )}
             <FormField
               label="Browser for VPN single sign-on"
               help="Chrome, Edge, Chromium or Brave that opsdeck opens as a login window for SAML VPNs. Empty = detect automatically."

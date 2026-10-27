@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -249,9 +250,11 @@ func runOpenConnect(ctx context.Context, cfg *Config, protocol, server, pin stri
 		t.dial = d.(proxy.ContextDialer).DialContext
 		elevate = nil // userspace needs no privileges
 	} else {
-		iface := ifaceName("oc-", r.Name)
-		argv = append(argv, "--interface="+iface)
-		t.info.Interface = iface
+		if runtime.GOOS != "darwin" { // macOS names tun devices utunN itself (waitIface finds it)
+			iface := ifaceName("oc-", r.Name)
+			argv = append(argv, "--interface="+iface)
+			t.info.Interface = iface
+		}
 		t.dial = direct
 	}
 	argv = append(argv, server)
@@ -319,22 +322,22 @@ func (t *cliTunnel) waitProxy() {
 }
 
 // waitIface marks a system tunnel up once vpnc-script has configured the
-// interface (openconnect reports the address before the script runs).
+// interface (openconnect reports the address before the script runs). An
+// interface without a name of opsdeck's (macOS: utunN) is the one that gets
+// the address.
 func (t *cliTunnel) waitIface() {
 	<-t.started
 	t.mu.Lock()
 	iface, addr := t.info.Interface, t.info.Address
 	t.mu.Unlock()
 	for i := 0; i < 100; i++ {
-		if ifi, err := net.InterfaceByName(iface); err == nil {
-			addrs, _ := ifi.Addrs()
-			for _, a := range addrs {
-				if strings.HasPrefix(a.String(), addr+"/") {
-					time.Sleep(300 * time.Millisecond) // routes follow the address
-					t.markUp()
-					return
-				}
-			}
+		if name := ifaceWithAddr(addr); name != "" && (iface == "" || name == iface) {
+			t.mu.Lock()
+			t.info.Interface = name
+			t.mu.Unlock()
+			time.Sleep(300 * time.Millisecond) // routes follow the address
+			t.markUp()
+			return
 		}
 		select {
 		case <-t.p.done.Done():
@@ -342,7 +345,11 @@ func (t *cliTunnel) waitIface() {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	t.cfg.Log.Printf("interface %s did not get %s from vpnc-script; continuing", iface, addr)
+	if iface == "" {
+		t.cfg.Log.Printf("no interface got %s from vpnc-script; continuing", addr)
+	} else {
+		t.cfg.Log.Printf("interface %s did not get %s from vpnc-script; continuing", iface, addr)
+	}
 	t.markUp()
 }
 

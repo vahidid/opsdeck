@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,6 +219,52 @@ esac
 	c.must("GET", "/api/workspaces/acme/hosts/app-1/files?path="+workdir, nil, &listing)
 	if len(listing["entries"].([]any)) == 0 {
 		t.Fatal("empty listing")
+	}
+
+	// --- file transfer: upload (multipart), download, replace keeps the mode
+	uploadFile := func(dir, name, content string) int {
+		var body bytes.Buffer
+		mw := multipart.NewWriter(&body)
+		fw, _ := mw.CreateFormFile("file", name)
+		fw.Write([]byte(content))
+		mw.Close()
+		req, _ := http.NewRequest("POST", ts.URL+"/api/workspaces/acme/hosts/app-1/files/upload?path="+url.QueryEscape(dir), &body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		res, err := c.http.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	blob := strings.Repeat("opsdeck-transfer\n", 20000)
+	if code := uploadFile(workdir, "../upload.bin", blob); code != 200 {
+		t.Fatalf("upload: %d", code)
+	}
+	if b, err := os.ReadFile(filepath.Join(workdir, "upload.bin")); err != nil || string(b) != blob {
+		t.Fatalf("uploaded content: %v (%d bytes)", err, len(b))
+	}
+	os.Chmod(filepath.Join(workdir, "upload.bin"), 0o640)
+	if code := uploadFile(workdir, "upload.bin", "v2\n"); code != 200 {
+		t.Fatalf("replace: %d", code)
+	}
+	if st, _ := os.Stat(filepath.Join(workdir, "upload.bin")); st.Mode().Perm() != 0o640 {
+		t.Fatalf("replace changed the mode: %v", st.Mode())
+	}
+	if code := uploadFile(filepath.Dir(workdir), filepath.Base(workdir), "x"); code < 400 {
+		t.Fatal("upload over a directory accepted")
+	}
+	dres, err := c.http.Get(ts.URL + "/api/workspaces/acme/hosts/app-1/files/download?path=" + url.QueryEscape(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dl, _ := io.ReadAll(dres.Body)
+	dres.Body.Close()
+	if dres.StatusCode != 200 || string(dl) != "port=80\n" || !strings.Contains(dres.Header.Get("Content-Disposition"), "app.conf") {
+		t.Fatalf("download: %d %q %q", dres.StatusCode, dl, dres.Header.Get("Content-Disposition"))
+	}
+	if code := c.do("GET", "/api/workspaces/acme/hosts/app-1/files/download?path="+url.QueryEscape(workdir), nil, nil); code < 400 {
+		t.Fatal("download of a directory accepted")
 	}
 
 	// --- docker over SSH

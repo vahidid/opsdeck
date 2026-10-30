@@ -230,8 +230,8 @@ are in **[docs/agents.md](docs/agents.md)**.
 - **Reachability** — `via: network/office-vpn` or `via: host/bastion`; opsdeck brings up
   the VPN on demand and chains SSH jump hosts
   automatically, for the UI, the terminal and the agent alike.
-- **Workbench** — SSH terminals in the browser, remote file browser/editor, quick host
-  stats, live log streaming (journald, files, containers), Docker and Kubernetes views,
+- **Workbench** — SSH terminals in the browser, remote file browser/editor with upload and
+  download (SFTP, drag and drop), quick host stats, live log streaming (journald, files, containers), Docker and Kubernetes views,
   port-forwarding for panels that are only reachable through a VPN.
 - **Agent** — chat with any model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio…)
   that works through infra tools: `exec` (single host or groups, canary rollouts, background

@@ -479,6 +479,61 @@ func (h *Hub) WriteFileMode(ctx context.Context, w *workspace.Workspace, host *w
 		return err
 	}
 	defer c.Close()
+	_, err = writeAtomic(c, path, strings.NewReader(content), want)
+	return err
+}
+
+// Upload streams r into a remote file the same way WriteFile writes one: it
+// only replaces the file once the whole upload arrived. It returns the number
+// of bytes written.
+func (h *Hub) Upload(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, path string, r io.Reader) (int64, error) {
+	c, err := h.SFTP(ctx, w, host)
+	if err != nil {
+		return 0, err
+	}
+	defer c.Close()
+	if st, err := c.Stat(path); err == nil && st.IsDir() {
+		return 0, fmt.Errorf("%s is a directory", path)
+	}
+	return writeAtomic(c, path, r, 0)
+}
+
+// Download streams a remote file to out and returns the bytes written. start
+// gets the file's size (-1 if unknown) before the first byte is written, so
+// callers can set headers.
+func (h *Hub) Download(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, path string, start func(size int64), out io.Writer) (int64, error) {
+	c, err := h.SFTP(ctx, w, host)
+	if err != nil {
+		return 0, err
+	}
+	defer c.Close()
+	f, err := c.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if st.IsDir() {
+		return 0, fmt.Errorf("%s is a directory", path)
+	}
+	size := int64(-1)
+	if st.Mode().IsRegular() {
+		size = st.Size()
+	}
+	if start != nil {
+		start(size)
+	}
+	return io.Copy(out, f)
+}
+
+// writeAtomic writes r to path through a temp file + rename, keeping the
+// original mode and owner. The temp file has a random name, is created
+// exclusively (no symlink following) and gets its final mode before any
+// content is written.
+func writeAtomic(c *sftp.Client, path string, r io.Reader, want os.FileMode) (int64, error) {
 	mode := os.FileMode(0o644)
 	uid, gid, haveOwner := 0, 0, false
 	if st, err := c.Stat(path); err == nil {
@@ -495,32 +550,36 @@ func (h *Hub) WriteFileMode(ctx context.Context, w *workspace.Workspace, host *w
 	tmp := fmt.Sprintf("%s.opsdeck-%x", path, suffix)
 	f, err := c.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	cleanup := func() { f.Close(); c.Remove(tmp) }
 	if err := f.Chmod(0o600); err != nil {
 		cleanup()
-		return err
+		return 0, err
 	}
-	if _, err := f.Write([]byte(content)); err != nil {
+	n, err := io.Copy(f, r)
+	if err != nil {
 		cleanup()
-		return err
+		return n, err
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		c.Remove(tmp)
+		return n, err
+	}
 	if haveOwner {
 		c.Chown(tmp, uid, gid) // best effort: only root can give files away
 	}
 	if err := c.Chmod(tmp, mode); err != nil {
 		c.Remove(tmp)
-		return err
+		return n, err
 	}
 	if err := c.PosixRename(tmp, path); err != nil {
 		if err2 := c.Rename(tmp, path); err2 != nil {
 			c.Remove(tmp)
-			return err
+			return n, err
 		}
 	}
-	return nil
+	return n, nil
 }
 
 // Check measures reachability of a host's SSH port through its path.

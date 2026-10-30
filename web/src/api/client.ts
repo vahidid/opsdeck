@@ -199,6 +199,23 @@ type Out = { output: string };
 
 const arr = <T>(p: Promise<T[] | null>) => p.then((v) => v ?? []);
 
+// upload posts files as one multipart request; the server streams them.
+async function upload(path: string, files: File[]) {
+  const fd = new FormData();
+  for (const f of files) fd.append("file", f, f.name);
+  const res = await fetch(path, { method: "POST", body: fd, credentials: "same-origin" });
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      msg = ((await res.json()) as { error?: string }).error || msg;
+    } catch {
+      /* keep status */
+    }
+    throw new ApiError(res.status, msg);
+  }
+  return (await res.json()) as { saved: string[] };
+}
+
 export const api = {
   // auth
   login: (token: string) => post<{ ok: boolean }>("/api/auth/login", { token }),
@@ -416,6 +433,8 @@ export const api = {
     get<FileContent>(`${H(ws, host)}/files/content${qs({ path })}`),
   writeFile: (ws: string, host: string, path: string, content: string) =>
     put(`${H(ws, host)}/files/content`, { path, content }),
+  fileDownloadUrl: (ws: string, host: string, path: string) => `${H(ws, host)}/files/download${qs({ path })}`,
+  uploadFiles: (ws: string, host: string, dir: string, files: File[]) => upload(`${H(ws, host)}/files/upload${qs({ path: dir })}`, files),
   forgetHostKey: (ws: string, host: string) => del(`${W(ws)}/known-hosts${qs({ host })}`),
   terminalUrl: (ws: string, host: string, cols: number, rows: number) => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -461,21 +480,8 @@ export const api = {
   volumeSaveFile: (ws: string, host: string, name: string, path: string, content: string) => put(`${DK(ws, host)}/volumes/${e(name)}/file`, { path, content }),
   volumeMkdir: (ws: string, host: string, name: string, path: string, dir: string) => post(`${DK(ws, host)}/volumes/${e(name)}/mkdir`, { path, name: dir }),
   volumeDelete: (ws: string, host: string, name: string, path: string) => del(`${DK(ws, host)}/volumes/${e(name)}/file${qs({ path })}`),
-  volumeUpload: async (ws: string, host: string, name: string, path: string, files: File[]) => {
-    const fd = new FormData();
-    for (const f of files) fd.append("file", f, f.name);
-    const res = await fetch(`${DK(ws, host)}/volumes/${e(name)}/upload${qs({ path })}`, { method: "POST", body: fd, credentials: "same-origin" });
-    if (!res.ok) {
-      let msg = `${res.status} ${res.statusText}`;
-      try {
-        msg = ((await res.json()) as { error?: string }).error || msg;
-      } catch {
-        /* keep status */
-      }
-      throw new ApiError(res.status, msg);
-    }
-    return (await res.json()) as { saved: string[] };
-  },
+  volumeUpload: (ws: string, host: string, name: string, path: string, files: File[]) =>
+    upload(`${DK(ws, host)}/volumes/${e(name)}/upload${qs({ path })}`, files),
   composeProjects: (ws: string, host: string) => arr(get<ComposeProject[]>(`${DK(ws, host)}/compose`)),
   composeCreate: (ws: string, host: string, b: { name: string; dir: string; content: string; start: boolean }) => post<Out>(`${DK(ws, host)}/compose`, b),
   composePs: (ws: string, host: string, project: string) => arr(get<ComposeContainer[]>(`${DK(ws, host)}/compose/${e(project)}`)),

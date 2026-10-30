@@ -5,6 +5,15 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Workbench
+
+- **File transfer in the host file browser.** Upload files to the open folder with
+  *Upload* or by dropping them on the list, and download any file from the list or the
+  editor. Transfers stream over SFTP with no size limit; an upload asks first, says which
+  files it replaces, writes each one through a temp file so a broken transfer never leaves
+  half a file, and keeps the mode and owner of a file it replaces. Uploads and downloads
+  are recorded in the audit journal.
+
 ## [0.5.0] — 2026-10-27
 
 ### Desktop app

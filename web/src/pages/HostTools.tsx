@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, File, Folder, Play, RefreshCw, Save } from "lucide-react";
+import { ArrowUp, Download, File, Folder, Play, RefreshCw, Save, Upload } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { CheckResult, DirListing, ExecResult, HostStats, PathHop } from "../api/types";
 import { Badge, Button, CodeBlock, EmptyState, ErrorBox, IconButton, Input, Loading, ProgressBar, Textarea, cx } from "../components/ui";
@@ -207,6 +207,9 @@ export function FilesModal({ ws, host, onClose }: { ws: string; host: string | n
   const [file, setFile] = useState<{ path: string; content: string; truncated: boolean } | null>(null);
   const [edit, setEdit] = useState("");
   const [saving, setSaving] = useState(false);
+  const [drag, setDrag] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const toast = useToast();
   const confirm = useConfirm();
   const dirty = !!file && edit !== file.content;
@@ -260,6 +263,32 @@ export function FilesModal({ ws, host, onClose }: { ws: string; host: string | n
     }
   }
 
+  async function upload(files: File[]) {
+    if (!host || !listing || !files.length) return;
+    const dir = listing.path;
+    const existing = new Set(listing.entries.map((en) => en.name));
+    const clash = files.filter((f) => existing.has(f.name)).map((f) => f.name);
+    const ok = await confirm({
+      title: `Upload ${files.length === 1 ? files[0].name : `${files.length} files`} to ${host}?`,
+      message: clash.length
+        ? `${clash.join(", ")} already exist${clash.length === 1 ? "s" : ""} in ${dir} and will be replaced. The upload is recorded in the audit journal.`
+        : `${files.length === 1 ? "The file is" : "The files are"} written to ${dir}. The upload is recorded in the audit journal.`,
+      confirmLabel: clash.length ? "Replace" : "Upload",
+      danger: clash.length > 0,
+    });
+    if (!ok) return;
+    setUploading(files.length === 1 ? files[0].name : `${files.length} files`);
+    try {
+      const r = await api.uploadFiles(ws, host, dir, files);
+      toast.success(`Uploaded ${r.saved.length} file${r.saved.length === 1 ? "" : "s"}`, `to ${host}:${dir}`);
+    } catch (e) {
+      toast.error("Upload failed", errMsg(e));
+    } finally {
+      setUploading(null);
+      void load(dir);
+    }
+  }
+
   async function save() {
     if (!host || !file) return;
     const ok = await confirm({
@@ -290,25 +319,70 @@ export function FilesModal({ ws, host, onClose }: { ws: string; host: string | n
         <IconButton title="Reload" onClick={() => void load(path)} className="size-8">
           <RefreshCw className={cx("size-4", loading && "animate-spin")} />
         </IconButton>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            void upload([...(e.target.files ?? [])]);
+            e.target.value = "";
+          }}
+        />
+        <Button icon={<Upload className="size-3.5" />} loading={!!uploading} disabled={!listing} onClick={() => picker.current?.click()} className="shrink-0">
+          {uploading ? `Uploading ${uploading}…` : "Upload"}
+        </Button>
       </div>
       <div className="grid grid-cols-[300px_1fr] gap-3 h-[60vh]">
-        <div className="rounded-md border border-line overflow-y-auto">
-          {err && <div className="p-3 text-err text-xs">{err}</div>}
-          {listing?.entries.map((en) => (
-            <button
-              key={en.name}
-              onClick={() => (en.dir ? void load(join(path, en.name)) : void openFile(join(path, en.name)))}
-              className={cx(
-                "w-full flex items-center gap-2 px-2.5 h-7 text-left text-xs hover:bg-panel-3",
-                file?.path === join(path, en.name) && "bg-accent/10",
-              )}
-            >
-              {en.dir ? <Folder className="size-3.5 text-info shrink-0" /> : <File className="size-3.5 text-faint shrink-0" />}
-              <span className="font-mono truncate flex-1">{en.name}</span>
-              {!en.dir && <span className="text-faint tabular-nums text-[10.5px]">{fmtBytes(en.size)}</span>}
-            </button>
-          ))}
-          {listing && listing.entries.length === 0 && <div className="p-3 text-faint text-xs">Empty directory</div>}
+        <div
+          className="relative min-h-0"
+          onDragOver={(e) => {
+            if (!listing || !e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setDrag(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrag(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDrag(false);
+            void upload([...e.dataTransfer.files]);
+          }}
+        >
+          <div className="h-full rounded-md border border-line overflow-y-auto">
+            {err && <div className="p-3 text-err text-xs">{err}</div>}
+            {listing?.entries.map((en) => {
+              const p = join(path, en.name);
+              return (
+                <div key={en.name} className={cx("group flex items-center hover:bg-panel-3", file?.path === p && "bg-accent/10")}>
+                  <button
+                    onClick={() => (en.dir ? void load(p) : void openFile(p))}
+                    className="min-w-0 flex-1 flex items-center gap-2 pl-2.5 pr-1 h-7 text-left text-xs"
+                  >
+                    {en.dir ? <Folder className="size-3.5 text-info shrink-0" /> : <File className="size-3.5 text-faint shrink-0" />}
+                    <span className="font-mono truncate flex-1">{en.name}</span>
+                    {!en.dir && <span className="text-faint tabular-nums text-[10.5px]">{fmtBytes(en.size)}</span>}
+                  </button>
+                  {!en.dir && host && (
+                    <a
+                      href={api.fileDownloadUrl(ws, host, p)}
+                      title={`Download ${en.name}`}
+                      className="mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded text-faint opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-fg hover:bg-panel-2"
+                    >
+                      <Download className="size-3.5" />
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+            {listing && listing.entries.length === 0 && <div className="p-3 text-faint text-xs">Empty directory — drop files here to upload</div>}
+          </div>
+          {drag && (
+            <div className="absolute inset-0 rounded-md border-2 border-dashed border-accent bg-accent/10 flex items-center justify-center p-3 text-center text-accent text-xs font-medium pointer-events-none">
+              Drop to upload into {listing?.path}
+            </div>
+          )}
         </div>
         <div className="flex flex-col min-h-0">
           {file ? (
@@ -317,6 +391,13 @@ export function FilesModal({ ws, host, onClose }: { ws: string; host: string | n
                 <span className="font-mono text-xs truncate flex-1">{file.path}</span>
                 {file.truncated && <Badge tone="warn">truncated — read only</Badge>}
                 {dirty && <Badge tone="warn">modified</Badge>}
+                {host && (
+                  <a href={api.fileDownloadUrl(ws, host, file.path)}>
+                    <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />}>
+                      Download
+                    </Button>
+                  </a>
+                )}
                 <Button size="sm" variant="primary" icon={<Save className="size-3.5" />} disabled={!dirty || file.truncated} loading={saving} onClick={save}>
                   Save
                 </Button>
@@ -325,7 +406,7 @@ export function FilesModal({ ws, host, onClose }: { ws: string; host: string | n
             </>
           ) : (
             <EmptyState icon={<File />} title="No file open" className="flex-1 rounded-md border border-dashed border-line">
-              Select a file to view or edit it.
+              Select a file to view, edit or download it. Drop files on the list, or use Upload, to send them to this folder.
             </EmptyState>
           )}
         </div>

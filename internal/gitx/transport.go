@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -142,6 +143,10 @@ func (m *Manager) Credentials(w *workspace.Workspace, r *workspace.Resource) []s
 }
 
 func (r *Repo) key() string { return r.W.Name() + "/" + r.R.Name }
+
+// External reports whether the working copy is a folder of its own
+// (spec.path, e.g. cloned by the user elsewhere) instead of repos/<name>.
+func (r *Repo) External() bool { return r.W.RepoExternal(r.R.Name) }
 
 // Cloned reports whether the working copy exists.
 func (r *Repo) Cloned() bool {
@@ -336,6 +341,19 @@ func (r *Repo) netEnv(ctx context.Context) (*env, error) {
 			e.cfg = append(e.cfg, [2]string{"http.proxy", "socks5h://" + user + ":" + pass + "@" + proxy})
 		} else {
 			e.vars = append(e.vars, "OPSDECK_SOCKS_AUTH="+user+":"+pass)
+		}
+	}
+
+	// A working copy cloned by the user may have its origin at another
+	// URL (often git@host: while the repository is set up over HTTPS) or no
+	// origin at all: git talks to the repository's URL either way.
+	if r.Cloned() {
+		if cur, err := r.git(ctx, "config", "--get", "remote.origin.url"); err != nil {
+			if _, err := r.git(ctx, "remote", "add", "origin", r.Remote.URL); err != nil {
+				return nil, err
+			}
+		} else if cur = strings.TrimSpace(cur); cur != r.Remote.URL && cur != "" {
+			e.cfg = append(e.cfg, [2]string{"url." + r.Remote.URL + ".insteadOf", cur})
 		}
 	}
 
@@ -655,4 +673,60 @@ func (r *Repo) Provider(ctx context.Context) (Provider, error) {
 		return newGitLab(c, base, r.Remote.Path, token), nil
 	}
 	return nil, fmt.Errorf("unknown provider %q", kind)
+}
+
+// Folder describes a folder on this computer offered as the working copy
+// of a repository (an existing clone, or where to clone).
+type Folder struct {
+	Path       string `json:"path"`             // absolute
+	Cloned     bool   `json:"cloned"`           // a Git working copy
+	Empty      bool   `json:"empty"`            // missing or empty: a clone can go there
+	Origin     string `json:"origin,omitempty"` // its origin remote
+	URL        string `json:"url,omitempty"`    // repository URL to use: origin, over HTTPS when a connector serves its host
+	Connection string `json:"connection,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+}
+
+// InspectFolder looks at path (absolute or ~/…) before it is set as the
+// working copy of a repository.
+func (m *Manager) InspectFolder(ctx context.Context, path string) (*Folder, error) {
+	abs := workspace.RepoPath(path)
+	if abs == "" {
+		return nil, errors.New("use an absolute path or one starting with ~/")
+	}
+	f := &Folder{Path: abs}
+	info, err := os.Stat(abs)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		f.Empty = true
+		return f, nil
+	case err != nil:
+		return nil, err
+	case !info.IsDir():
+		return nil, fmt.Errorf("%s is not a folder", abs)
+	}
+	if entries, err := os.ReadDir(abs); err == nil && len(entries) == 0 {
+		f.Empty = true
+		return f, nil
+	}
+	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
+		return f, nil
+	}
+	f.Cloned = true
+	git := func(args ...string) string {
+		out, _, _ := run(ctx, localEnv(), abs, nil, 1<<16, args...)
+		return strings.TrimSpace(out)
+	}
+	f.Branch = git("branch", "--show-current")
+	f.Origin = git("config", "--get", "remote.origin.url")
+	f.URL = f.Origin
+	if rem, err := ParseRemote(f.Origin); err == nil {
+		if c, _ := m.connection(&workspace.Resource{}, rem); c != nil {
+			f.Connection = c.ID
+			if rem.SSH {
+				f.URL = rem.Web() + ".git"
+			}
+		}
+	}
+	return f, nil
 }

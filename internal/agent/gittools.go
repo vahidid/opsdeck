@@ -167,7 +167,11 @@ func toolRepo() Tool {
 					if err != nil {
 						return "", err
 					}
-					return "cloned into repos/" + repo.R.Name + " — " + out, nil
+					dir := "repos/" + repo.R.Name
+					if repo.External() {
+						dir = repo.Dir
+					}
+					return "cloned into " + dir + " — " + out, nil
 				})), nil
 			case "fetch":
 				return network(read(func(ctx context.Context) (string, error) {

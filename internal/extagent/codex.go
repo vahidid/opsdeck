@@ -43,6 +43,16 @@ func runCodex(ctx context.Context, req Request, emit func(Event)) (Result, error
 	if m := req.Spec.Model; m != "" && m != "default" {
 		args = append(args, "--model", m)
 	}
+	// images are passed as files; Codex takes no PDFs
+	var pdfs []File
+	for _, f := range req.Files {
+		if strings.HasPrefix(f.MediaType, "image/") {
+			args = append(args, "--image="+f.Path)
+		} else {
+			pdfs = append(pdfs, f)
+		}
+	}
+	req.Prompt = withoutFiles(req.Prompt, pdfs, "Codex", emit)
 	args = append(args, req.Spec.Args...)
 	if req.Resume != "" {
 		args = append(args, "resume", req.Resume)

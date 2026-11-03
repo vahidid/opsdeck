@@ -1,5 +1,8 @@
 import type {
   AccessKey,
+  Attachment,
+  AgentClient,
+  KeyIssued,
   LogLine,
   VpnDrivers,
   PendingCode,
@@ -34,6 +37,7 @@ import type {
   RemoteRepo,
   RepoBranch,
   RepoCheck,
+  RepoFolder,
   RepoCommit,
   RepoFile,
   RepoStatus,
@@ -216,6 +220,26 @@ async function upload(path: string, files: File[]) {
   return (await res.json()) as { saved: string[] };
 }
 
+// attach sends one file as the request body (the name in ?name=).
+async function attach(path: string, file: File): Promise<Attachment> {
+  let res: Response;
+  try {
+    res = await fetch(`${path}?name=${encodeURIComponent(file.name || "pasted")}`, { method: "POST", body: file, credentials: "same-origin" });
+  } catch {
+    throw new ApiError(0, "Cannot reach opsdeck server.", "network");
+  }
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      msg = ((await res.json()) as { error?: string }).error || msg;
+    } catch {
+      /* keep status */
+    }
+    throw new ApiError(res.status, `${file.name}: ${msg}`);
+  }
+  return (await res.json()) as Attachment;
+}
+
 export const api = {
   // auth
   login: (token: string) => post<{ ok: boolean }>("/api/auth/login", { token }),
@@ -245,9 +269,11 @@ export const api = {
   // settings
   settings: () => get<Settings>("/api/settings"),
   accessKeys: () => get<{ keys: AccessKey[]; endpoint: string; command?: string }>("/api/access-keys"),
-  createAccessKey: (b: { label: string; workspace: string; mode: string }) => post<{ key: AccessKey; secret: string; endpoint: string }>("/api/access-keys", b),
+  createAccessKey: (b: { label: string; workspace: string; mode: string; client?: string; skill?: boolean }) => post<KeyIssued>("/api/access-keys", b),
+  rotateAccessKey: (id: string, b: { client?: string; skill?: boolean } = {}) => post<KeyIssued>(`/api/access-keys/${id}/rotate`, b),
+  agentClients: () => get<{ clients: AgentClient[] }>("/api/agent-clients"),
   updateAccessKey: (id: string, b: { label?: string; mode?: string }) => request<AccessKey>("PATCH", `/api/access-keys/${id}`, b),
-  revokeAccessKey: (id: string) => del<{ ok: boolean }>(`/api/access-keys/${id}`),
+  revokeAccessKey: (id: string, keepConfig = false) => del<{ ok: boolean; unlinkError?: string }>(`/api/access-keys/${id}${keepConfig ? "?keepConfig=1" : ""}`),
   saveSettings: (s: Settings) => put<Settings>("/api/settings", s),
   updateStatus: (refresh = false) => get<UpdateStatus>(`/api/update${refresh ? "?refresh=1" : ""}`),
   installUpdate: () => post<UpdateStatus>("/api/update/install"),
@@ -388,6 +414,7 @@ export const api = {
 
   // git repositories
   repos: (ws: string) => arr(get<RepoSummary[]>(`${W(ws)}/repos`)),
+  repoFolder: (ws: string, path: string) => post<RepoFolder>(`${W(ws)}/git/folder`, { path }),
   repoCheck: (ws: string, r: string) => post<RepoCheck>(`${R(ws, r)}/check`),
   repoClone: (ws: string, r: string, branch = "") => post<Out>(`${R(ws, r)}/clone`, { branch }),
   repoRemove: (ws: string, r: string) => del(`${R(ws, r)}/clone`),
@@ -581,7 +608,9 @@ export const api = {
   updateSession: (ws: string, id: string, b: { title?: string; model?: string; mode?: SessionMode }) =>
     put<SessionInfo>(S(ws, id), b),
   deleteSession: (ws: string, id: string) => del(S(ws, id)),
-  sendMessage: (ws: string, id: string, text: string) => post(`${S(ws, id)}/messages`, { text }),
+  sendMessage: (ws: string, id: string, text: string, attachments?: string[]) => post(`${S(ws, id)}/messages`, { text, attachments }),
+  attach: (ws: string, id: string, file: File) => attach(`${S(ws, id)}/attachments`, file),
+  attachmentUrl: (ws: string, id: string, aid: string, download?: boolean) => `${S(ws, id)}/attachments/${e(aid)}${download ? "?download=1" : ""}`,
   interrupt: (ws: string, id: string) => post(`${S(ws, id)}/interrupt`),
   approve: (ws: string, id: string, approvalId: string, decision: "approve" | "deny" | "always", note?: string, secret?: string, canary?: boolean) =>
     post(`${S(ws, id)}/approvals/${e(approvalId)}`, { decision, note, secret, canary }),

@@ -385,6 +385,8 @@ func (r *runner) waitApproval(ctx context.Context, req map[string]any, check fun
 	s.refreshState()
 	r.emit("approval_request", req, true)
 	s.save()
+	r.m.waiting.add(r.waitingFor("approval", id, req))
+	defer r.m.waiting.remove(r.w.Name(), s.Info().ID, id)
 	var a approval
 	var answered bool
 	select {

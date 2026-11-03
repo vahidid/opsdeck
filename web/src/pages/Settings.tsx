@@ -26,6 +26,7 @@ const AGENT_PRESETS: { kind: AgentKind; label: string; id: string; command: stri
   { kind: "claude-code", label: "Claude Code", id: "claude-code", command: "claude", args: [], models: ["default"], login: "Uses your own Claude Code login (subscription or API key). Run `claude` once in a terminal and sign in." },
   { kind: "codex", label: "Codex (ChatGPT)", id: "codex", command: "codex", args: [], models: ["default"], login: "Uses your ChatGPT account through the official Codex CLI. Run `codex login` once." },
   { kind: "gemini-cli", label: "Gemini CLI", id: "gemini", command: "gemini", args: [], models: ["default"], login: "Uses your Google account through Gemini CLI. Run `gemini` once and sign in." },
+  { kind: "antigravity", label: "Antigravity CLI", id: "antigravity", command: "agy", args: [], models: ["default"], login: "Uses your Google account through the Antigravity CLI. Run `agy` once and sign in." },
   { kind: "acp", label: "Other ACP agent (opencode, Qwen Code…)", id: "acp-agent", command: "", args: [], models: ["default"], login: "Any agent that speaks the Agent Client Protocol, e.g. `opencode acp`." },
 ];
 
@@ -49,6 +50,7 @@ const normSettings = (v: Settings): Settings => ({
     autoServerChanges: !!v.agent?.autoServerChanges,
     subagentModel: v.agent?.subagentModel ?? "",
     noSubagents: !!v.agent?.noSubagents,
+    noNotifications: !!v.agent?.noNotifications,
     hooks: (v.agent?.hooks ?? []).map((h) => ({ ...h, tool: h.tool ?? "", risk: h.risk ?? "", environment: h.environment ?? [], workspace: h.workspace ?? "" })),
   },
   web: {
@@ -69,6 +71,7 @@ const KIND_LABEL: Record<string, string> = {
   "claude-code": "Local agent · Claude Code",
   codex: "Local agent · Codex",
   "gemini-cli": "Local agent · Gemini CLI",
+  antigravity: "Local agent · Antigravity",
   acp: "Local agent · ACP",
 };
 
@@ -272,6 +275,7 @@ export function AppSettingsPage() {
                       <option value="claude-code">Claude Code (local)</option>
                       <option value="codex">Codex / ChatGPT (local)</option>
                       <option value="gemini-cli">Gemini CLI (local)</option>
+                      <option value="antigravity">Antigravity CLI (local)</option>
                       <option value="acp">ACP agent (local)</option>
                     </Select>
                   </FormField>
@@ -443,6 +447,18 @@ export function AppSettingsPage() {
           }
         >
           <div className="space-y-4">
+            <div>
+              <div className="text-[13px] font-medium mb-1">When an agent waits for you</div>
+              <div className="text-xs text-muted mb-2">
+                An approval or a question of any agent — opsdeck&apos;s own or one connected over MCP — shows up on every page with Approve and Deny. When no opsdeck
+                window has the focus, opsdeck also shows a desktop notification.
+              </div>
+              <Toggle
+                checked={!s.agent?.noNotifications}
+                onChange={(v) => setS({ ...s, agent: { ...s.agent!, noNotifications: !v } })}
+                label="Desktop notifications"
+              />
+            </div>
             <div>
               <div className="text-[13px] font-medium mb-1">Subagents</div>
               <div className="text-xs text-muted mb-2">

@@ -34,7 +34,12 @@ type Key struct {
 	Hint      string    `json:"hint"` // the first characters, to recognise it
 	Created   time.Time `json:"created"`
 	LastUsed  time.Time `json:"lastUsed,omitzero"`
-	Hash      string    `json:"hash,omitempty"`
+	Rotated   time.Time `json:"rotated,omitzero"`
+	// Client is the agent opsdeck wrote this key into (agentlink id) and
+	// Server the entry's name there; both empty for a key set up by hand.
+	Client string `json:"client,omitempty"`
+	Server string `json:"server,omitempty"`
+	Hash   string `json:"hash,omitempty"`
 }
 
 // Public is the key without its hash.
@@ -85,9 +90,7 @@ func (s *Store) Create(label, workspace, mode string) (Key, string, error) {
 	if !validMode(mode) {
 		return Key{}, "", errors.New("mode must be plan, ask or auto")
 	}
-	raw := make([]byte, 24)
-	rand.Read(raw)
-	secret := Prefix + hex.EncodeToString(raw)
+	secret := newSecret()
 	id := make([]byte, 5)
 	rand.Read(id)
 	k := Key{ID: hex.EncodeToString(id), Label: label, Workspace: workspace, Mode: mode, Hint: secret[:10], Created: time.Now().UTC(), Hash: hash(secret)}
@@ -99,6 +102,58 @@ func (s *Store) Create(label, workspace, mode string) (Key, string, error) {
 		return Key{}, "", err
 	}
 	return k.Public(), secret, nil
+}
+
+func newSecret() string {
+	raw := make([]byte, 24)
+	rand.Read(raw)
+	return Prefix + hex.EncodeToString(raw)
+}
+
+// Rotate gives a key a new secret and returns it; the old one is refused
+// from then on. The key keeps its id, so its session stays the same.
+func (s *Store) Rotate(id string) (Key, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.keys {
+		if s.keys[i].ID != id {
+			continue
+		}
+		old := s.keys[i]
+		secret := newSecret()
+		s.keys[i].Hash, s.keys[i].Hint, s.keys[i].Rotated = hash(secret), secret[:10], time.Now().UTC()
+		if err := s.saveLocked(); err != nil {
+			s.keys[i] = old
+			return Key{}, "", err
+		}
+		return s.keys[i].Public(), secret, nil
+	}
+	return Key{}, "", os.ErrNotExist
+}
+
+// SetClient records which agent's config holds the key ("" for none).
+func (s *Store) SetClient(id, client, server string) (Key, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.keys {
+		if s.keys[i].ID == id {
+			s.keys[i].Client, s.keys[i].Server = client, server
+			return s.keys[i].Public(), s.saveLocked()
+		}
+	}
+	return Key{}, os.ErrNotExist
+}
+
+// Get returns a key by id.
+func (s *Store) Get(id string) (Key, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range s.keys {
+		if k.ID == id {
+			return k.Public(), true
+		}
+	}
+	return Key{}, false
 }
 
 // List returns the keys (without hashes), newest first.

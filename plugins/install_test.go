@@ -1,4 +1,4 @@
-package main
+package plugins
 
 import (
 	"os"
@@ -15,18 +15,19 @@ func TestInstallSkill(t *testing.T) {
 		"claude-code": ".claude/skills/opsdeck/SKILL.md",
 		"codex":       ".codex/skills/opsdeck/SKILL.md",
 		"gemini":      ".gemini/extensions/opsdeck/GEMINI.md",
+		"antigravity": ".gemini/antigravity-cli/skills/opsdeck/SKILL.md",
 	} {
-		if _, err := installSkill(agent, "", false); err != nil {
+		if _, err := InstallSkill(agent, "", false); err != nil {
 			t.Fatalf("%s: %v", agent, err)
 		}
 		b, err := os.ReadFile(filepath.Join(home, file))
 		if err != nil || !strings.Contains(string(b), "Working with opsdeck") {
 			t.Fatalf("%s: %q %v", agent, b, err)
 		}
-		if _, err := installSkill(agent, "", false); err == nil {
+		if _, err := InstallSkill(agent, "", false); err == nil {
 			t.Fatalf("%s: a second install without --force must fail", agent)
 		}
-		if _, err := installSkill(agent, "", true); err != nil {
+		if _, err := InstallSkill(agent, "", true); err != nil {
 			t.Fatalf("%s --force: %v", agent, err)
 		}
 	}
@@ -40,7 +41,7 @@ func TestInstallSkill(t *testing.T) {
 		t.Fatal("the gemini extension keeps SKILL.md")
 	}
 	proj := t.TempDir()
-	to, err := installSkill("cursor", proj, false)
+	to, err := InstallSkill("cursor", proj, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestInstallSkill(t *testing.T) {
 	if !strings.HasPrefix(string(b), "---\ndescription: Work on real infrastructure") || !strings.Contains(string(b), "alwaysApply: false") {
 		t.Fatalf("cursor rule: %.200s", b)
 	}
-	if _, err := installSkill("nope", "", false); err == nil {
+	if _, err := InstallSkill("nope", "", false); err == nil {
 		t.Fatal("an unknown agent must fail")
 	}
 }

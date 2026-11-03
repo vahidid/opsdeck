@@ -13,7 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"opsdeck/internal/agent"
 	"opsdeck/internal/paths"
+	"opsdeck/internal/sysproc"
 )
 
 type bearerRT struct{ token string }
@@ -46,6 +48,9 @@ func textOf(r *mcp.CallToolResult) string {
 // key: reads run, a change waits for the approval in the key's session.
 func TestExternalMCP(t *testing.T) {
 	t.Setenv("OPSDECK_HOME", t.TempDir())
+	notified := make(chan string, 4)
+	desktopNotify = func(title, body string) error { notified <- title + "\n" + body; return nil }
+	defer func() { desktopNotify = sysproc.Notify }()
 	srv, err := New(paths.Default(), Options{Port: 0})
 	if err != nil {
 		t.Fatal(err)
@@ -151,6 +156,20 @@ func TestExternalMCP(t *testing.T) {
 		t.Fatal("the change ran before it was approved")
 	default:
 	}
+	// it is listed for the whole app, and the desktop is told (no window has the focus)
+	var waiting struct{ Items []map[string]any }
+	c.must("GET", "/api/waiting", nil, &waiting)
+	if len(waiting.Items) != 1 || waiting.Items[0]["id"] != aid || waiting.Items[0]["session"] != sid || waiting.Items[0]["tool"] != "write_doc" || waiting.Items[0]["client"] != "Claude Code" {
+		t.Fatalf("waiting: %v", waiting.Items)
+	}
+	select {
+	case n := <-notified:
+		if !strings.Contains(n, "Claude Code waits for your approval") || !strings.Contains(n, "write_doc") {
+			t.Fatalf("notification %q", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no desktop notification")
+	}
 	c.must("POST", "/api/workspaces/acme/sessions/"+sid+"/approvals/"+aid, map[string]any{"decision": "approve"}, nil)
 	select {
 	case o := <-done:
@@ -159,6 +178,10 @@ func TestExternalMCP(t *testing.T) {
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("the approved call did not return")
+	}
+	c.must("GET", "/api/waiting", nil, &waiting)
+	if len(waiting.Items) != 0 {
+		t.Fatalf("still waiting: %v", waiting.Items)
 	}
 	ws, _ := srv.ws.Get("acme")
 	if b, err := os.ReadFile(filepath.Join(ws.Path, "docs", "from-claude.md")); err != nil || !strings.Contains(string(b), "outside agent") {
@@ -182,5 +205,88 @@ func TestExternalMCP(t *testing.T) {
 	c.must("DELETE", "/api/access-keys/"+made.Key.ID, nil, nil)
 	if _, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "inventory", Arguments: map[string]any{}}); err == nil {
 		t.Fatal("a revoked key still works")
+	}
+}
+
+// Connecting an agent in one click writes the key into its config;
+// rotating rewrites it, revoking takes it out again.
+func TestConnectAgentConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("OPSDECK_HOME", t.TempDir())
+	srv, err := New(paths.Default(), Options{Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	jar, _ := cookiejar.New(nil)
+	c := &client{t: t, base: ts.URL, http: &http.Client{Jar: jar, Timeout: 60 * time.Second}}
+	c.must("POST", "/api/auth/login", map[string]string{"token": srv.token}, nil)
+	c.must("POST", "/api/vault/init", map[string]string{"password": "correct horse battery"}, nil)
+	c.must("POST", "/api/workspaces", map[string]string{"name": "acme", "title": "ACME"}, nil)
+
+	type made struct {
+		Key       struct{ ID, Client, Server string }
+		Secret    string
+		Link      map[string]any
+		LinkError string
+	}
+	var m made
+	c.must("POST", "/api/access-keys", map[string]any{"label": "Cursor", "workspace": "acme", "mode": "ask", "client": "cursor"}, &m)
+	if m.LinkError != "" || m.Key.Client != "cursor" || m.Key.Server != "opsdeck-acme" {
+		t.Fatalf("%+v", m)
+	}
+	cfg := filepath.Join(home, ".cursor", "mcp.json")
+	if b, _ := os.ReadFile(cfg); !strings.Contains(string(b), m.Secret) {
+		t.Fatalf("config %s", b)
+	}
+	var listed struct{ Keys []map[string]any }
+	c.must("GET", "/api/access-keys", nil, &listed)
+	if listed.Keys[0]["linked"] != true {
+		t.Fatalf("%v", listed.Keys)
+	}
+
+	var r made
+	c.must("POST", "/api/access-keys/"+m.Key.ID+"/rotate", map[string]any{}, &r)
+	if r.Secret == m.Secret || r.Key.ID != m.Key.ID {
+		t.Fatalf("%+v", r)
+	}
+	if b, _ := os.ReadFile(cfg); !strings.Contains(string(b), r.Secret) || strings.Contains(string(b), m.Secret) {
+		t.Fatalf("config after rotate %s", b)
+	}
+
+	// connecting the same agent to the same workspace again replaces the key
+	var m2 made
+	c.must("POST", "/api/access-keys", map[string]any{"label": "Cursor 2", "workspace": "acme", "mode": "auto", "client": "cursor"}, &m2)
+	c.must("GET", "/api/access-keys", nil, &listed)
+	if len(listed.Keys) != 1 || listed.Keys[0]["id"] != m2.Key.ID {
+		t.Fatalf("old key kept: %v", listed.Keys)
+	}
+
+	c.must("DELETE", "/api/access-keys/"+m2.Key.ID, nil, nil)
+	if b, _ := os.ReadFile(cfg); strings.Contains(string(b), "opsdeck-acme") {
+		t.Fatalf("config after revoke %s", b)
+	}
+}
+
+func TestPresenceAndText(t *testing.T) {
+	var p presence
+	if p.watched() {
+		t.Fatal("watched before any report")
+	}
+	p.set(true)
+	if !p.watched() {
+		t.Fatal("focused window not watched")
+	}
+	p.at = time.Now().Add(-2 * time.Minute)
+	if p.watched() {
+		t.Fatal("a stale report counts")
+	}
+	title, body := waitingText(agent.Waiting{Kind: "approval", Tool: "exec", Target: "host/db-1", Environment: "prod", Risk: "destructive", Workspace: "acme", SessionTitle: "Clean up"})
+	if title != "The agent waits for your approval ⚠ destructive" || !strings.HasPrefix(body, "exec on host/db-1 (prod)") || !strings.HasSuffix(body, "acme · Clean up") {
+		t.Fatalf("%q %q", title, body)
 	}
 }

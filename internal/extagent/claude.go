@@ -28,6 +28,30 @@ func runClaude(ctx context.Context, req Request, emit func(Event)) (Result, erro
 	}
 	defer os.Remove(cfgPath)
 
+	// With attachments the message goes in as stream-json: text, image and
+	// document blocks.
+	var input []byte
+	if len(req.Files) > 0 {
+		content := []map[string]any{{"type": "text", "text": firstNonEmptyStr(req.Prompt, "(see the attached files)")}}
+		for _, f := range req.Files {
+			data, err := fileData(f)
+			if err != nil {
+				return Result{}, err
+			}
+			typ := "image"
+			if f.MediaType == "application/pdf" {
+				typ = "document"
+			}
+			block := map[string]any{"type": typ, "source": map[string]string{"type": "base64", "media_type": f.MediaType, "data": data}}
+			if typ == "document" {
+				block["title"] = f.Name
+			}
+			content = append(content, block)
+		}
+		input, _ = json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": content}})
+		input = append(input, '\n')
+	}
+
 	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
 		"--tools", "", "--strict-mcp-config", "--mcp-config", cfgPath,
 		"--allowedTools", "mcp__opsdeck__*", "--permission-mode", "dontAsk",
@@ -35,6 +59,9 @@ func runClaude(ctx context.Context, req Request, emit func(Event)) (Result, erro
 		"--append-system-prompt", req.System}
 	if m := req.Spec.Model; m != "" && m != "default" {
 		args = append(args, "--model", m)
+	}
+	if input != nil {
+		args = append(args, "--input-format", "stream-json")
 	}
 	if req.Resume != "" {
 		args = append(args, "--resume", req.Resume)
@@ -56,7 +83,11 @@ func runClaude(ctx context.Context, req Request, emit func(Event)) (Result, erro
 	if err != nil {
 		return Result{}, err
 	}
-	p.stdin.Write([]byte(req.Prompt))
+	if input != nil {
+		p.stdin.Write(input)
+	} else {
+		p.stdin.Write([]byte(req.Prompt))
+	}
 	p.stdin.Close()
 
 	var res Result

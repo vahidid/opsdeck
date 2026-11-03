@@ -155,6 +155,22 @@ func (a *anthropicProvider) messages(in []Message) []anthropic.BetaMessageParam 
 					}
 				}
 				blocks = append(blocks, anthropic.NewBetaToolUseBlock(b.ID, input, b.Name))
+			case "image":
+				if b.Data == "" {
+					blocks = append(blocks, anthropic.NewBetaTextBlock(b.placeholder()))
+					continue
+				}
+				blocks = append(blocks, anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{Data: b.Data, MediaType: anthropic.BetaBase64ImageSourceMediaType(b.MediaType)}))
+			case "document":
+				if b.Data == "" || b.MediaType != "application/pdf" {
+					blocks = append(blocks, anthropic.NewBetaTextBlock(b.placeholder()))
+					continue
+				}
+				doc := anthropic.NewBetaDocumentBlock(anthropic.BetaBase64PDFSourceParam{Data: b.Data})
+				if b.Name != "" {
+					doc.OfDocument.Title = anthropic.String(b.Name)
+				}
+				blocks = append(blocks, doc)
 			case "tool_result":
 				content := b.Content
 				if content == "" {

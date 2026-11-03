@@ -20,6 +20,8 @@ because the target is infrastructure.
 | Hooks | commands before / after a tool call and at the end of a turn: block or review calls, audit logs, chat notifications ([hooks](#hooks)) |
 | Memory | per-workspace notes the agent learns ("app-1 uses podman, not docker") |
 | Headless | `opsdeck run -p "..." --ws acme` for CI/cron, text or JSON output ([headless runs](#headless-runs)) |
+| Attachments | files and images with a message: paste, drop or pick; images and PDFs go to the model as such, text files as text ([attachments](#attachments)) |
+| Notifications | an approval or question of any agent shows on every page with Approve / Deny, and as a desktop notification when opsdeck is in the background ([waiting for you](#waiting-for-you)) |
 | Background tasks | long commands and log tails that keep running after the turn and wake the session when they finish or print a matching line ([background tasks](#background-tasks)) |
 | Web access | `web_search`, `web_fetch`, `software_lookup` — docs, release notes, CVEs, end-of-life dates, with SSRF guard, consent per site and taint ([web access](#web-access)) |
 | Checklist and questions | `todo` keeps a live checklist above the chat; `ask_user` asks a multiple-choice question and waits |
@@ -231,6 +233,41 @@ agent"). A long output that was cut for the model can be opened in full.
 - **Composer** — `/` lists the slash commands (built-in and the workspace's, with their
   argument hints); `!` switches to shell mode. The session menu (⋯) forks, compacts and
   exports the session.
+- **Attachments** — files and images go with a message: the paperclip, a paste (a
+  screenshot from the clipboard) or a drop on the message box. Up to 10 per message, 20 MB
+  each (images 5 MB). See [Attachments](#attachments).
+
+### Attachments
+
+A file is stored next to the session (`<session>.files/`, mode 0600), not in its transcript,
+and shown under the message (images as thumbnails, other files to download).
+
+| File | What the model gets |
+|---|---|
+| Image (PNG, JPEG, GIF, WebP) | the image itself, read from disk for each request |
+| PDF | the document (Anthropic models; others get a note that it cannot be shown) |
+| Text (logs, configs, code: any UTF-8 file) | its text, through the redactor, up to 200 KB |
+| Anything else | a note with its name, type and size |
+
+With a local agent CLI as the model: Claude Code takes images and PDFs (stream-json input),
+Codex images (`--image`), Gemini CLI and other ACP agents images when they announce it;
+text files go with the prompt for all of them. A fork keeps the attachments of the copied
+messages.
+
+### Waiting for you
+
+When an agent waits for an approval or an answer — in any session of any workspace, the
+built-in agent's or an [outside agent's](agents.md) — a card shows it on every page but that
+session's own: the tool and target, the environment, the reason, what changes (the diff),
+with **Approve**, **Always in session** and **Deny**; a question can be answered with one of
+its options or a typed answer. A password the action needs is typed into the card; a canary
+choice opens the session. The window title counts what waits (`(2) opsdeck`). **Later** hides
+a card until you open the list again.
+
+When no opsdeck window has the focus, opsdeck also shows a **desktop notification**
+(`notify-send` on Linux, Notification Center on macOS, a toast on Windows). The UI tells the
+server when it gains or loses the focus; App settings › Agent harness › *Desktop
+notifications* turns them off.
 
 ## Tool calls, outputs and the tool set
 
@@ -494,6 +531,7 @@ opsdeck session ──► agent CLI (own loop, own login)
 |---|---|---|---|
 | Claude Code | `claude -p --output-format stream-json`, MCP via `--mcp-config` (http) | `--tools ""`, `--strict-mcp-config`, `--allowedTools mcp__opsdeck__*`, `--permission-mode dontAsk`, no settings/hooks/CLAUDE.md | `--session-id` / `--resume` |
 | Codex (ChatGPT) | `codex exec --json`, MCP via `-c mcp_servers.opsdeck.*` (bearer from env) | `--disable shell_tool,unified_exec,…`, no web search, `--ignore-user-config`, read-only sandbox + `approval_policy=never` (blocks `apply_patch`) | `codex exec resume <thread>` |
+| Antigravity CLI | `agy -p --output-format json` in an empty scratch folder; the opsdeck server in the folder's `.agents/mcp_config.json` (removed after the turn) | `--sandbox` (terminal sandbox), workspace settings that allow only `mcp(opsdeck/*)`, no access outside the folder; agy has no switch for its file tools, but the folder is empty | `--conversation <id>` |
 | Gemini CLI | `gemini --acp` | private settings (`GEMINI_CLI_SYSTEM_SETTINGS_PATH`): `tools.core` = opsdeck tools only, built-ins excluded, opsdeck server trusted | ACP `session/load` |
 | Any ACP agent | its ACP command (e.g. `opencode acp`, `qwen --acp`, `copilot --acp`) | client offers no fs/terminal; permission requests granted only for opsdeck tools | ACP `session/load` |
 
@@ -501,7 +539,7 @@ opsdeck session ──► agent CLI (own loop, own login)
 prompt: Claude Code through the stream-json control protocol (`initialize` lists its
 models), Codex through `codex app-server` (`model/list`), Gemini CLI and other ACP agents
 from a new ACP session's model choices (the `model` config option, or the older `models`
-field). A chosen model goes on the command line (`--model`) for Claude Code, Codex and
+field), the Antigravity CLI with `agy models`. A chosen model goes on the command line (`--model`) for Claude Code, Codex and
 Gemini CLI; other ACP agents are switched with `session/set_config_option` (or
 `session/set_model`) before the prompt. `default` leaves the agent's own choice.
 

@@ -62,3 +62,28 @@ func TestRevokeWorkspace(t *testing.T) {
 		t.Fatalf("%+v", l)
 	}
 }
+
+func TestRotate(t *testing.T) {
+	s, _ := Open(filepath.Join(t.TempDir(), "keys.json"))
+	k, old, err := s.Create("Claude Code", "acme", "ask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	k2, secret, err := s.Rotate(k.ID)
+	if err != nil || secret == old || k2.ID != k.ID || k2.Rotated.IsZero() {
+		t.Fatalf("%v %v", k2, err)
+	}
+	if _, ok := s.Lookup(old); ok {
+		t.Fatal("old secret still works")
+	}
+	if got, ok := s.Lookup(secret); !ok || got.ID != k.ID {
+		t.Fatal("new secret refused")
+	}
+	if _, err := s.SetClient(k.ID, "cursor", "opsdeck-acme"); err != nil {
+		t.Fatal(err)
+	}
+	s2, _ := Open(s.path)
+	if g, _ := s2.Get(k.ID); g.Client != "cursor" || g.Server != "opsdeck-acme" || g.Hash != "" {
+		t.Fatalf("%+v", g)
+	}
+}

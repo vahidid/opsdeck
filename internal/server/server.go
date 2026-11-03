@@ -47,6 +47,7 @@ var distFS embed.FS
 
 // Server wires every service together.
 type Server struct {
+	presence presence
 	dirs     paths.Dirs
 	cfg      *config.Store
 	vault    *vault.Vault
@@ -201,6 +202,7 @@ func New(dirs paths.Dirs, opts Options) (*Server, error) {
 	if s.keys, err = accesskeys.Open(filepath.Join(dirs.Config, "access-keys.json")); err != nil {
 		return nil, err
 	}
+	s.agents.OnWaiting(s.notifyWaiting)
 	s.agents.SetMCPBase("http://127.0.0.1:" + strconv.Itoa(opts.Port) + "/mcp/")
 	if s.token, err = loadToken(filepath.Join(dirs.State, "server.token")); err != nil {
 		return nil, err

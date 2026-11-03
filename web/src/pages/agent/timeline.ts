@@ -1,4 +1,4 @@
-import type { AgentEvent, RecallItem, TodoItem } from "../../api/types";
+import type { AgentEvent, Attachment, RecallItem, TodoItem } from "../../api/types";
 
 export type Ev<T extends AgentEvent["type"]> = Extract<AgentEvent, { type: T }>;
 
@@ -19,7 +19,7 @@ export type ToolItem = {
 };
 
 export type Timeline =
-  | { kind: "user"; id: string; text: string; command?: string; forkable: boolean }
+  | { kind: "user"; id: string; text: string; command?: string; forkable: boolean; attachments?: Attachment[] }
   | { kind: "notification"; id: string; text: string }
   | { kind: "shell"; id: string; ev: Ev<"shell"> }
   | { kind: "recall"; id: string; items: RecallItem[]; preloaded?: string }
@@ -83,7 +83,7 @@ export function buildTimeline(events: AgentEvent[], deltas: Record<string, strin
     const parent = e.parent;
     switch (e.type) {
       case "user":
-        root.push({ kind: "user", id: e.id, text: e.text, command: e.command, forkable: typeof e.msgIndex === "number" });
+        root.push({ kind: "user", id: e.id, text: e.text, command: e.command, forkable: typeof e.msgIndex === "number", attachments: e.attachments });
         break;
       case "notification":
         root.push({ kind: "notification", id: e.id, text: e.text });

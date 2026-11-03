@@ -171,6 +171,7 @@ Git repository. Accepts `via`.
 | `connection` | connector id |  | Connector: The GitHub or GitLab account (Connectors) used for this repository. Empty: the connector whose server matches the URL, if any |
 | `url` | string | required | URL (e.g. `https://gitlab.example.com/group/project`) |
 | `branch` | string |  | Branch (e.g. `default branch`) |
+| `path` | string |  | Working copy folder: An existing clone elsewhere on this computer (absolute path or ~/…), or an empty folder to clone into. Empty: repos/<name> in the workspace. opsdeck never deletes this folder (e.g. `~/projects/deploy`) |
 | `docs` | bool |  | Use as documentation: The agent and the Docs page read this repository's Markdown files |
 | `docsPaths` | list | with `docs` | Documentation paths: Files or folders with Markdown documentation (default: README.md and docs/) (e.g. `README.md, docs/`) |
 | `protectedBranches` | list |  | Protected branches: Pushing here always needs approval, like the default branch and branches protected on the server (e.g. `main, release/*`) |

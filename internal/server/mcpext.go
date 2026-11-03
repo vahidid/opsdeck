@@ -11,6 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"opsdeck/internal/accesskeys"
+	"opsdeck/internal/agentlink"
+	"opsdeck/plugins"
 )
 
 // The MCP server for agents outside opsdeck (Claude Code, Codex, Cursor,
@@ -20,10 +22,18 @@ import (
 
 func (s *Server) accessKeyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/access-keys", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"keys": s.keys.List(), "endpoint": s.mcpEndpoint(), "command": mcpCommand(), "modes": accesskeys.Modes})
+		writeJSON(w, 200, map[string]any{"keys": s.keyViews(), "endpoint": s.mcpEndpoint(), "command": mcpCommand(), "modes": accesskeys.Modes})
 	})
+	// The agents opsdeck can connect by itself, and whether each is here.
+	mux.HandleFunc("GET /api/agent-clients", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"clients": agentlink.Clients()})
+	})
+	// Make a key; with a client, write it into that agent's config too.
 	mux.HandleFunc("POST /api/access-keys", func(w http.ResponseWriter, r *http.Request) {
-		var in struct{ Label, Workspace, Mode string }
+		var in struct {
+			Label, Workspace, Mode, Client string
+			Skill                          bool
+		}
 		if err := readJSON(r, &in); err != nil {
 			fail(w, err)
 			return
@@ -32,13 +42,29 @@ func (s *Server) accessKeyRoutes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
+		if in.Client != "" && !agentlink.Known(in.Client) {
+			writeErr(w, 400, "unknown agent "+in.Client)
+			return
+		}
 		k, secret, err := s.keys.Create(in.Label, in.Workspace, in.Mode)
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		s.record(r, in.Workspace, "access_key.create", k.Label, map[string]any{"mode": k.Mode, "id": k.ID}, nil)
-		writeJSON(w, 200, map[string]any{"key": k, "secret": secret, "endpoint": s.mcpEndpoint(), "command": mcpCommand()})
+		s.record(r, in.Workspace, "access_key.create", k.Label, map[string]any{"mode": k.Mode, "id": k.ID, "client": in.Client}, nil)
+		out := map[string]any{"key": k, "secret": secret, "endpoint": s.mcpEndpoint(), "command": mcpCommand()}
+		if in.Client != "" {
+			link, err := s.linkKey(r, k, secret, in.Client, in.Skill)
+			if err != nil {
+				// the key stays: the user can still set it up by hand
+				out["linkError"] = err.Error()
+			} else {
+				out["link"] = link
+				k, _ = s.keys.Get(k.ID)
+				out["key"] = k
+			}
+		}
+		writeJSON(w, 200, out)
 	})
 	mux.HandleFunc("PATCH /api/access-keys/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Label, Mode string }
@@ -54,21 +80,109 @@ func (s *Server) accessKeyRoutes(mux *http.ServeMux) {
 		s.record(r, k.Workspace, "access_key.update", k.Label, map[string]any{"mode": k.Mode, "id": k.ID}, nil)
 		writeJSON(w, 200, k)
 	})
-	mux.HandleFunc("DELETE /api/access-keys/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		var k accesskeys.Key
-		for _, x := range s.keys.List() {
-			if x.ID == id {
-				k = x
+	// A new secret for a key. When opsdeck wrote the key into an agent's
+	// config (or the request names one), the config gets the new key too;
+	// the secret is returned once either way.
+	mux.HandleFunc("POST /api/access-keys/{id}/rotate", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Client string
+			Skill  bool
+		}
+		readJSON(r, &in)
+		old, ok := s.keys.Get(r.PathValue("id"))
+		if !ok {
+			writeErr(w, 404, "no such access key")
+			return
+		}
+		client := firstNonEmpty(in.Client, old.Client)
+		if client != "" && !agentlink.Known(client) {
+			writeErr(w, 400, "unknown agent "+client)
+			return
+		}
+		k, secret, err := s.keys.Rotate(old.ID)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		s.record(r, k.Workspace, "access_key.rotate", k.Label, map[string]any{"id": k.ID, "client": client}, nil)
+		out := map[string]any{"key": k, "secret": secret, "endpoint": s.mcpEndpoint(), "command": mcpCommand()}
+		if client != "" {
+			if link, err := s.linkKey(r, k, secret, client, in.Skill); err != nil {
+				out["linkError"] = err.Error()
+			} else {
+				out["link"] = link
+				k, _ = s.keys.Get(k.ID)
+				out["key"] = k
 			}
 		}
+		writeJSON(w, 200, out)
+	})
+	mux.HandleFunc("DELETE /api/access-keys/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		k, _ := s.keys.Get(id)
 		if err := s.keys.Revoke(id); err != nil {
 			fail(w, err)
 			return
 		}
-		s.record(r, k.Workspace, "access_key.revoke", k.Label, map[string]any{"id": id}, nil)
-		writeJSON(w, 200, map[string]bool{"ok": true})
+		detail := map[string]any{"id": id}
+		// also take it out of the agent's config, unless asked to keep it
+		if k.Client != "" && r.URL.Query().Get("keepConfig") == "" {
+			if err := agentlink.Uninstall(r.Context(), k.Client, k.Server); err != nil {
+				detail["unlinkError"] = err.Error()
+			} else {
+				detail["unlinked"] = k.Client
+			}
+		}
+		s.record(r, k.Workspace, "access_key.revoke", k.Label, detail, nil)
+		writeJSON(w, 200, map[string]any{"ok": true, "unlinkError": detail["unlinkError"]})
 	})
+}
+
+// keyView is a key as the UI lists it: is it still in its agent's config?
+type keyView struct {
+	accesskeys.Key
+	Linked bool `json:"linked"`
+}
+
+func (s *Server) keyViews() []keyView {
+	var out []keyView
+	for _, k := range s.keys.List() {
+		out = append(out, keyView{Key: k, Linked: k.Client != "" && agentlink.Installed(k.Client, k.Server)})
+	}
+	return out
+}
+
+// linkKey writes a key into an agent's config (and the skill, when asked).
+// Another key of this workspace in the same agent is revoked: its entry
+// is the one just replaced.
+func (s *Server) linkKey(r *http.Request, k accesskeys.Key, secret, client string, skill bool) (map[string]any, error) {
+	name := agentlink.ServerName(k.Workspace)
+	path, err := agentlink.Install(r.Context(), client, agentlink.Target{Name: name, Endpoint: s.mcpEndpoint(), Secret: secret, Command: mcpCommand()})
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range s.keys.List() {
+		if o.ID != k.ID && o.Client == client && o.Server == name {
+			s.keys.Revoke(o.ID)
+			s.record(r, o.Workspace, "access_key.revoke", o.Label, map[string]any{"id": o.ID, "replacedBy": k.ID}, nil)
+		}
+	}
+	s.keys.SetClient(k.ID, client, name)
+	out := map[string]any{"client": client, "config": path, "server": name}
+	for _, c := range agentlink.Clients() {
+		if c.ID == client {
+			out["note"] = c.Note
+			if skill && c.Skill != "" {
+				if where, err := plugins.InstallSkill(c.Skill, "", true); err != nil {
+					out["skillError"] = err.Error()
+				} else {
+					out["skill"] = where
+				}
+			}
+		}
+	}
+	s.record(r, k.Workspace, "access_key.link", k.Label, map[string]any{"id": k.ID, "client": client, "config": path}, nil)
+	return out, nil
 }
 
 func (s *Server) mcpEndpoint() string {

@@ -33,7 +33,7 @@ export type ItemInput = {
   policy?: ItemPolicy;
 };
 
-export type AgentKind = "claude-code" | "codex" | "gemini-cli" | "acp";
+export type AgentKind = "claude-code" | "codex" | "gemini-cli" | "antigravity" | "acp";
 export type ProviderConfig = {
   id: string;
   type: "anthropic" | "openai" | AgentKind;
@@ -48,7 +48,7 @@ export type ProviderConfig = {
   env?: Record<string, string>;
 };
 export type InstalledAgent = { kind: AgentKind; name: string; command: string; args: string[] | null; path: string; version: string; login: string; models: string[] };
-export const AGENT_KINDS: AgentKind[] = ["claude-code", "codex", "gemini-cli", "acp"];
+export const AGENT_KINDS: AgentKind[] = ["claude-code", "codex", "gemini-cli", "antigravity", "acp"];
 export const isAgentKind = (t: string): t is AgentKind => (AGENT_KINDS as string[]).includes(t);
 export type LocalAccess = { disabled: boolean; allowedDirs: string[]; autoReadCommands: boolean };
 export type Settings = {
@@ -73,7 +73,7 @@ export type HookDef = {
   timeoutSec?: number;
   disabled?: boolean;
 };
-export type AgentSettings = { autoServerChanges: boolean; subagentModel?: string; noSubagents?: boolean; hooks?: HookDef[] };
+export type AgentSettings = { autoServerChanges: boolean; subagentModel?: string; noSubagents?: boolean; noNotifications?: boolean; hooks?: HookDef[] };
 export type WebSettings = {
   access: "" | "off" | "search" | "fetch";
   search: "" | "duckduckgo" | "searxng" | "brave" | "tavily";
@@ -468,7 +468,58 @@ export type AccessKey = {
   hint: string;
   created: string;
   lastUsed?: string;
+  rotated?: string;
+  /** the agent opsdeck wrote this key into (AgentClient id), and the entry's name there */
+  client?: string;
+  server?: string;
+  /** the agent's config still has the entry */
+  linked?: boolean;
 };
+
+/** a file the user attached to a message */
+export type Attachment = { id: string; name: string; mime: string; size: number; kind: "image" | "pdf" | "text" | "file" };
+
+/** something an agent waits for the user to decide (an approval card or a question), in any session */
+export type Waiting = {
+  kind: "approval" | "question";
+  id: string;
+  workspace: string;
+  session: string;
+  sessionTitle: string;
+  client?: string;
+  created: string;
+  tool?: string;
+  target?: string;
+  environment?: string;
+  risk?: string;
+  reason?: string;
+  preview?: string;
+  input?: unknown;
+  hosts?: string[];
+  grantLabel?: string;
+  secret?: boolean;
+  stage?: string;
+  title?: string;
+  question?: string;
+  options?: QuestionOption[];
+  multiple?: boolean;
+};
+
+/** an agent opsdeck can connect by writing its MCP config */
+export type AgentClient = {
+  id: string;
+  name: string;
+  detected: boolean;
+  config: string;
+  skill?: string;
+  note?: string;
+  hint?: string;
+};
+
+/** the result of writing a key into an agent's config */
+export type AgentLink = { client: string; config: string; server: string; note?: string; skill?: string; skillError?: string };
+
+export type KeyIssued = { key: AccessKey; secret: string; endpoint: string; command?: string; link?: AgentLink; linkError?: string };
 
 /** set on events of a subagent: the delegate call it runs in */
 type EventBase = { id: string; ts: string; parent?: string };
@@ -509,7 +560,7 @@ export type ToolView =
   | { kind: "deploy"; platform: string; targets?: DeployTarget[]; detail?: DeployDetail };
 
 export type AgentEvent =
-  | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string })
+  | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string; attachments?: Attachment[] })
   | (EventBase & { type: "notification"; text: string })
   | (EventBase & { type: "shell"; command: string; target: string; label: string; output: string; exitCode: number; durationMs: number })
   | (EventBase & { type: "recall"; items: RecallItem[]; preloaded?: string })
@@ -625,6 +676,7 @@ export type RepoSummary = {
   environment?: string;
   description?: string;
   docs: boolean;
+  path?: string;
   auth: "token" | "deployKey" | "connector" | "none";
   connection?: string;
   error?: string;
@@ -633,6 +685,7 @@ export type RepoSummary = {
 };
 export type RepoBranch = { name: string; remote?: boolean; current?: boolean; commit: string; upstream?: string; track?: string; subject: string; date: string };
 export type RepoFile = { path: string; ref?: string; text: string; size: number; binary?: boolean; truncated?: boolean };
+export type RepoFolder = { path: string; cloned: boolean; empty: boolean; origin?: string; url?: string; connection?: string; branch?: string };
 export type RepoCheck = { ok: boolean; defaultBranch: string; error?: string; provider?: string; canPush?: boolean; webUrl?: string; apiError?: string };
 export type MergeRequest = {
   id: number;

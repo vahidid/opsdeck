@@ -36,6 +36,7 @@ import (
 func (s *Server) routes(mux *http.ServeMux) {
 	u := s.unlocked
 	s.accessKeyRoutes(mux)
+	s.waitingRoutes(mux, u)
 	// auth
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("GET /api/auth/check", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]bool{"ok": true}) })
@@ -163,6 +164,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks/{tid}", u(s.sessTask))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/tasks/{tid}/stop", u(s.sessTaskStop))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/outputs/{oid}", u(s.sessOutput))
+	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/attachments", u(s.sessAttach))
+	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/attachments/{aid}", u(s.sessAttachment))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/fork", u(s.sessFork))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/export", u(s.sessExport))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/shell", u(s.sessShell))
@@ -596,7 +599,7 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[p.ID] = true
 		if p.Type != "anthropic" && p.Type != "openai" && !extagent.IsKind(p.Type) {
-			fail(w, fmt.Errorf("provider %s: type must be anthropic, openai, claude-code, codex, gemini-cli or acp", p.ID))
+			fail(w, fmt.Errorf("provider %s: type must be anthropic, openai, claude-code, codex, gemini-cli, antigravity or acp", p.ID))
 			return
 		}
 		if p.Type == extagent.ACP && p.Command == "" {
@@ -1676,12 +1679,15 @@ func (s *Server) sessMessage(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.workspace(w, r); !ok {
 		return
 	}
-	var in struct{ Text string }
+	var in struct {
+		Text        string
+		Attachments []string
+	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
 		return
 	}
-	if err := s.agents.Send(r.PathValue("ws"), r.PathValue("id"), in.Text); err != nil {
+	if err := s.agents.SendWith(r.PathValue("ws"), r.PathValue("id"), in.Text, in.Attachments); err != nil {
 		fail(w, err)
 		return
 	}

@@ -1,7 +1,7 @@
 # Use opsdeck from other agents
 
-opsdeck is an MCP server too. Claude Code, Codex, Cursor, Gemini CLI, VS Code or any other
-MCP client can use a workspace's tools: run commands on its hosts over SSH (through its
+opsdeck is an MCP server too. Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI,
+Antigravity, VS Code, Windsurf or any other MCP client can use a workspace's tools: run commands on its hosts over SSH (through its
 VPNs and jump hosts), read logs and metrics, work with Docker, Kubernetes, databases, DNS,
 certificates and deployments.
 
@@ -14,10 +14,39 @@ opsdeck.
 There is also a **skill pack** that teaches the agent how to work through opsdeck: look
 before it changes anything, prefer the specific tools, expect approvals, and leave a report.
 
-## 1. Make an access key
+## 1. Connect in one click
 
-In opsdeck open **App settings › Agent access (MCP) › Connect an agent**. Pick the agent,
-the workspace and a mode:
+In opsdeck open **App settings › Agent access (MCP) › Connect an agent**. opsdeck shows the
+agents it can set up and which of them it found on this computer. Pick one, the workspace
+and a mode, and click **Connect**: opsdeck makes an access key and writes the server
+(`opsdeck-<workspace>`) with that key into the agent's own configuration, and, if you leave
+it on, installs the [skill](#3-install-the-skill) too. Then start a new session of the agent
+(or restart Claude Desktop) and the tools are there.
+
+| Agent | What opsdeck changes |
+|---|---|
+| Claude Code | runs `claude mcp add --scope user --transport http …` (so `~/.claude.json` stays Claude Code's own) |
+| Claude Desktop | `claude_desktop_config.json` (stdio: `opsdeck mcp` with `OPSDECK_TOKEN`) |
+| Codex | `~/.codex/config.toml`, table `[mcp_servers.opsdeck-<workspace>]` (stdio) |
+| Cursor | `~/.cursor/mcp.json` |
+| Gemini CLI | `~/.gemini/settings.json` (`httpUrl`, a long timeout for approvals) |
+| Antigravity CLI (`agy`) | `~/.gemini/config/mcp_config.json` (`serverUrl`) |
+| Antigravity (the IDE) | `~/.gemini/antigravity/mcp_config.json` (`serverUrl`) |
+| VS Code | the user `mcp.json` (`servers`, type `http`) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` (`serverUrl`) |
+
+opsdeck changes only its own entry and keeps everything else in the file; before its first
+change it keeps a copy as `<file>.opsdeck-backup`. The file is written with mode `0600`,
+since it holds the key. A file opsdeck cannot parse (JSON with comments) is left alone:
+then opsdeck shows the key and the setup to paste. Connecting the same agent to the same
+workspace again replaces the old key.
+
+For an agent that is not in the list pick **Other / by hand**: opsdeck shows the key and the
+setup for HTTP and stdio ([step 2](#2-connect-the-agent)).
+
+### Modes
+
+| Mode | What happens |
 
 | Mode | What happens |
 |---|---|
@@ -27,13 +56,26 @@ the workspace and a mode:
 
 Changes on a **protected** environment always ask, whatever the mode.
 
-opsdeck shows the key (`odk_…`) once, with the setup for the agent you picked. It keeps
-only a hash of it. A key reaches one workspace; make one per workspace and agent. You can
-change a key's mode or revoke it at any time; a revoked key is refused at once.
+### Rotate, repair, disconnect
+
+opsdeck keeps only a hash of a key (`odk_…`), so a key is shown once: when it is made, behind
+**Show**. You rarely need it, since opsdeck has written it into the agent already. Each key
+in the list can be
+
+- **rotated** (↻): it gets a new secret and the old one is refused at once. For an agent
+  opsdeck connected, the new key goes straight into the agent's config; for a key set up by
+  hand, opsdeck shows the new one to paste. The key keeps its session and history.
+- **repaired**, when its entry is gone from the agent's config (the list says *missing from
+  …*): a new key is written back.
+- **disconnected** (or revoked): the key is refused from then on and, for an agent opsdeck
+  connected, its entry is removed from the agent's config.
+
+A key reaches one workspace; make one per workspace and agent. Its mode can change at any
+time.
 
 ## 2. Connect the agent
 
-opsdeck serves MCP over streamable HTTP at `http://127.0.0.1:7788/mcp/ext`, with the key as
+This is what *Connect* does for you; to set an agent up by hand: opsdeck serves MCP over streamable HTTP at `http://127.0.0.1:7788/mcp/ext`, with the key as
 `Authorization: Bearer odk_…`. For agents that only start stdio servers, `opsdeck mcp`
 relays the same server over stdio. It reads the key from `OPSDECK_TOKEN` and finds the
 running opsdeck by itself, even when the desktop app had to use another port. The desktop
@@ -82,6 +124,18 @@ env = { OPSDECK_TOKEN = "odk_…" }
 { "mcpServers": { "opsdeck-acme": { "url": "http://127.0.0.1:7788/mcp/ext", "headers": { "Authorization": "Bearer odk_…" } } } }
 ```
 
+**Antigravity CLI** (`agy`; options before the name)
+
+```bash
+agy mcp add --type http --header "Authorization: Bearer odk_…" opsdeck-acme http://127.0.0.1:7788/mcp/ext
+```
+
+or `~/.gemini/config/mcp_config.json` (Antigravity IDE: `~/.gemini/antigravity/mcp_config.json`):
+
+```json
+{ "mcpServers": { "opsdeck-acme": { "serverUrl": "http://127.0.0.1:7788/mcp/ext", "headers": { "Authorization": "Bearer odk_…" } } } }
+```
+
 **Gemini CLI** (`~/.gemini/settings.json`)
 
 ```json
@@ -117,6 +171,7 @@ another port, add the server yourself as in step 2 and install just the skill.
 | `opsdeck skill install claude-code` | `~/.claude/skills/opsdeck/` |
 | `opsdeck skill install codex` | `~/.codex/skills/opsdeck/` |
 | `opsdeck skill install gemini` | `~/.gemini/extensions/opsdeck/` (an extension with `GEMINI.md`) |
+| `opsdeck skill install antigravity` | `~/.gemini/antigravity-cli/skills/opsdeck/` |
 | `opsdeck skill install cursor` | `./.cursor/rules/opsdeck.mdc` in the current project |
 | `opsdeck skill install dir --dir PATH` | `SKILL.md` and `references/` in `PATH` |
 
@@ -137,6 +192,12 @@ its own window.
 The session's mode follows the key; changing the mode in the session changes it until the
 key is used again with its own mode.
 
+**You are told when a call waits.** You are usually in the agent's window, not in opsdeck,
+when it asks for a change. So opsdeck shows the approval on whatever page of opsdeck is
+open (with Approve and Deny, see [harness.md](harness.md#waiting-for-you)), and when no
+opsdeck window has the focus it shows a desktop notification: *Claude Code waits for your
+approval — write_doc on docs/runbook.md*.
+
 ## What the agent gets
 
 The tools of the workspace, as opsdeck's own agent has them. A workspace only offers the
@@ -156,8 +217,10 @@ make sense inside opsdeck: `delegate` (subagents need opsdeck's model), `ask_use
   you). The agent keeps its key in its own config file; treat that file like a password.
 - The agent never gets a secret. Credentials are used by opsdeck; outputs go through the
   same redaction as the built-in agent's.
-- Making, changing and revoking keys is recorded in the activity journal, and so is every
-  call.
+- Making, changing, rotating and revoking keys, and writing them into an agent's config,
+  is recorded in the activity journal, and so is every call.
+- One-click connect writes the key only into the agent's own config file (mode `0600`) or
+  hands it to `claude mcp add`; it is never stored in opsdeck.
 - Removing a workspace revokes its keys.
 
 ## Privacy
@@ -170,7 +233,8 @@ agent's own privacy terms apply to what it sends to its model.
 
 | Message | What to do |
 |---|---|
-| *invalid or revoked opsdeck access key* | make a new key in App settings › Agent access |
+| *invalid or revoked opsdeck access key* | rotate the key (↻) in App settings › Agent access, or connect the agent again |
+| the key shows *missing from …* | the agent's config lost the entry: click **Repair** |
 | *opsdeck is not running at …* | open the opsdeck app or run `opsdeck serve` |
 | *opsdeck is locked* | unlock opsdeck; the vault locks itself after idle time (App settings › Security) |
 | *the workspace of this access key no longer exists* | the workspace was removed; make a key for another one |

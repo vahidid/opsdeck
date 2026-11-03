@@ -1,6 +1,7 @@
 package extagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,14 +22,23 @@ import (
 // sandbox is on, so its own file and shell tools have nothing to work on.
 // The JSON envelope (`--output-format json`) carries the conversation id,
 // the answer and the usage.
+//
+// agy's -p takes the prompt as its value; an empty one (-p=) with
+// --input-format stream-json reads the message from stdin instead, so a long
+// first message (it carries opsdeck's instructions) is not limited by the
+// command line. Headless agy denies every tool that would ask, MCP tools
+// too: the opsdeck server is allowed in agy's own settings (agyAllowOpsdeck).
 func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result, error) {
 	cleanup, err := writeAntigravityWorkspace(req)
 	if err != nil {
 		return Result{}, err
 	}
 	defer cleanup()
+	if err := agyAllowOpsdeck(); err != nil {
+		emit(Event{Kind: "notice", Text: "Could not allow opsdeck's tools in the Antigravity CLI settings (" + err.Error() + "): add \"" + agyRule + "\" to permissions.allow in " + agySettingsPath() + ", or agy refuses every opsdeck tool"})
+	}
 
-	args := []string{"-p", "--output-format", "json", "--disable-slash-commands", "--sandbox",
+	args := []string{"-p=", "--input-format", "stream-json", "--output-format", "json", "--disable-slash-commands", "--sandbox",
 		// opsdeck's calls may wait minutes for a human approval
 		"--print-timeout", "60m"}
 	if m := req.Spec.Model; m != "" && m != "default" {
@@ -45,11 +55,18 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 	if req.FirstTurn && req.System != "" {
 		prompt = "<instructions>\n" + req.System + "\n</instructions>\n\n" + prompt
 	}
-	p, err := start(ctx, req.Spec.Command, args, childEnv(req.Spec.Env), req.WorkDir)
+	// one stream-json user message ("event" is what agy reads; "type" as
+	// in other stream-json dialects)
+	var line bytes.Buffer
+	enc := json.NewEncoder(&line)
+	enc.SetEscapeHTML(false)
+	enc.Encode(map[string]any{"event": "user", "type": "user", "message": map[string]string{"role": "user", "content": prompt}})
+	env := append(childEnv(req.Spec.Env), "AGY_CLI_DISABLE_AUTO_UPDATE=true")
+	p, err := start(ctx, req.Spec.Command, args, env, req.WorkDir)
 	if err != nil {
 		return Result{}, err
 	}
-	p.stdin.Write([]byte(prompt))
+	p.stdin.Write(line.Bytes())
 	p.stdin.Close()
 
 	var out strings.Builder
@@ -64,8 +81,11 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 	}
 	if failure != "" {
 		low := strings.ToLower(failure)
-		if strings.Contains(low, "sign in") || strings.Contains(low, "login") || strings.Contains(low, "auth") {
+		switch {
+		case strings.Contains(low, "sign in") || strings.Contains(low, "login") || strings.Contains(low, "auth"):
 			failure += " — sign in by running `agy` once"
+		case strings.Contains(low, "permission") || strings.Contains(low, "denied"):
+			failure += " — check that " + agySettingsPath() + " allows \"" + agyRule + "\""
 		}
 		return res, fmt.Errorf("Antigravity: %s", failure)
 	}
@@ -187,6 +207,55 @@ func writeAntigravityWorkspace(req Request) (func(), error) {
 			os.Remove(filepath.Join(dir, name))
 		}
 	}, nil
+}
+
+// agyRule allows the tools of the MCP server named opsdeck — the one in the
+// scratch folder's .agents/mcp_config.json — and nothing else.
+const agyRule = "mcp(opsdeck/*)"
+
+func agySettingsPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".gemini", "antigravity-cli", "settings.json")
+}
+
+// agyAllowOpsdeck adds agyRule to permissions.allow in agy's settings,
+// keeping everything else; nothing changes when it is there already.
+func agyAllowOpsdeck() error {
+	path := agySettingsPath()
+	doc := map[string]any{}
+	b, err := os.ReadFile(path)
+	switch {
+	case err == nil && len(strings.TrimSpace(string(b))) > 0:
+		if err := json.Unmarshal(b, &doc); err != nil || doc == nil {
+			return fmt.Errorf("%s is not plain JSON", path)
+		}
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return err
+	}
+	perms, _ := doc["permissions"].(map[string]any)
+	if perms == nil {
+		if doc["permissions"] != nil {
+			return errors.New("permissions is not an object")
+		}
+		perms = map[string]any{}
+	}
+	allow, _ := perms["allow"].([]any)
+	for _, r := range allow {
+		if r == agyRule {
+			return nil
+		}
+	}
+	perms["allow"] = append(allow, agyRule)
+	doc["permissions"] = perms
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".opsdeck.tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 var agyModelRe = regexp.MustCompile(`^[*>\-\s]*([a-z0-9][a-z0-9._:/-]*[a-z0-9])\b(.*)$`)

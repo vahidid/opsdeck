@@ -5,6 +5,14 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Antigravity CLI as the model** failed at once ("-p took --output-format as its
+  prompt"): agy's `-p` takes the prompt as its value. opsdeck now passes an empty `-p=` and
+  sends the message on stdin (`--input-format stream-json`), so a long first message is not
+  limited by the command line, and allows opsdeck's tools (`mcp(opsdeck/*)`) in agy's
+  settings, since headless agy refuses every tool that would ask.
+
 ### Agent
 
 - **Connect an agent in one click.** *App settings › Agent access › Connect an agent* shows

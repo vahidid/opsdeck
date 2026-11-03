@@ -63,6 +63,8 @@ func listModels(ctx context.Context, spec Spec) ([]Model, error) {
 		return listClaudeModels(ctx, spec, dir)
 	case Codex:
 		return listCodexModels(ctx, spec, dir)
+	case Antigravity:
+		return listAntigravityModels(ctx, spec, dir)
 	case GeminiCLI, ACP:
 		return listACPModels(ctx, spec, dir)
 	}

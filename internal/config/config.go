@@ -12,7 +12,7 @@ import (
 
 // Provider is a model provider. Type "anthropic" uses the Messages API;
 // "openai" is any OpenAI-compatible Chat Completions API; "claude-code",
-// "codex", "gemini-cli" and "acp" run a locally installed agent CLI with the
+// "codex", "gemini-cli", "antigravity" and "acp" run a locally installed agent CLI with the
 // user's own login (see internal/extagent).
 type Provider struct {
 	ID        string   `yaml:"id" json:"id"`
@@ -23,7 +23,7 @@ type Provider struct {
 	Models    []string `yaml:"models" json:"models"`
 	// Display names of models, as the provider or agent CLI listed them.
 	ModelNames map[string]string `yaml:"modelNames,omitempty" json:"modelNames,omitempty"`
-	// External agents (claude-code, codex, gemini-cli, acp): the local CLI to run.
+	// External agents (claude-code, codex, gemini-cli, antigravity, acp): the local CLI to run.
 	Command string            `yaml:"command,omitempty" json:"command"`
 	Args    []string          `yaml:"args,omitempty" json:"args"`
 	Env     map[string]string `yaml:"env,omitempty" json:"env"`
@@ -104,6 +104,10 @@ type Agent struct {
 	SubagentModel string `yaml:"subagentModel,omitempty" json:"subagentModel"`
 	// NoSubagents hides the delegate tool.
 	NoSubagents bool `yaml:"noSubagents,omitempty" json:"noSubagents"`
+	// NoNotifications stops the desktop notifications opsdeck shows when an
+	// agent waits for an approval or an answer and no opsdeck window has
+	// the focus.
+	NoNotifications bool `yaml:"noNotifications,omitempty" json:"noNotifications"`
 	// Hooks run commands on this computer around the agent's tool calls.
 	Hooks []Hook `yaml:"hooks,omitempty" json:"hooks"`
 }

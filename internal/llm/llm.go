@@ -14,14 +14,14 @@ import (
 
 // Block is one piece of message content.
 type Block struct {
-	Type string `json:"type"` // text | thinking | redacted_thinking | tool_use | tool_result
+	Type string `json:"type"` // text | thinking | redacted_thinking | tool_use | tool_result | image | document
 
 	Text      string `json:"text,omitempty"`      // text, thinking
 	Signature string `json:"signature,omitempty"` // thinking
-	Data      string `json:"data,omitempty"`      // redacted_thinking
+	Data      string `json:"data,omitempty"`      // redacted_thinking; image, document: base64 (filled in for a request, not stored)
 
 	ID    string          `json:"id,omitempty"`    // tool_use
-	Name  string          `json:"name,omitempty"`  // tool_use
+	Name  string          `json:"name,omitempty"`  // tool_use; image, document: the file name
 	Input json.RawMessage `json:"input,omitempty"` // tool_use
 
 	ToolUseID string `json:"toolUseId,omitempty"` // tool_result
@@ -30,6 +30,18 @@ type Block struct {
 
 	// Provider that produced a thinking block; other providers drop it.
 	Provider string `json:"provider,omitempty"`
+
+	// image, document: a file the user attached. Source names where its
+	// bytes are kept (an attachment id); they are read into Data just
+	// before a request, so transcripts stay small.
+	MediaType string `json:"mediaType,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+// placeholder is the text a provider sends for an attachment whose bytes
+// it does not have (or cannot send).
+func (b Block) placeholder() string {
+	return "[attached " + b.Type + ": " + b.Name + " — not available to the model here]"
 }
 
 // Message is a conversation turn. Role is "user" or "assistant".

@@ -33,7 +33,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentEvent, HarnessInfo, ModelInfo, RecallItem, SessionInfo, SessionMode, SessionState } from "../api/types";
+import type { AgentEvent, Attachment, HarnessInfo, ModelInfo, RecallItem, SessionInfo, SessionMode, SessionState } from "../api/types";
 import { useWs } from "../context/app";
 import { useOpenInTab, useTabTitle, useTabs } from "../context/tabs";
 import { useTerminals } from "../context/terminals";
@@ -42,7 +42,7 @@ import { MenuItem, Modal, Popover, useConfirm, useToast } from "../components/ov
 import { Markdown } from "../components/Markdown";
 import { textDir } from "../lib/rtl";
 import { useAsync, useLocalStorage } from "../hooks";
-import { fmtTokens, timeAgo } from "../lib/format";
+import { fmtBytes, fmtTokens, timeAgo } from "../lib/format";
 import { BUILTIN_COMMANDS, Composer, parseShell } from "./agent/composer";
 import type { SlashCommand } from "./agent/composer";
 import { NotificationMsg, ShellMsg, TasksButton, TodoPanel, UserCommand, useTasks } from "./agent/panels";
@@ -432,7 +432,7 @@ function NewSessionView({ ws, models, defaultModel, onCreated }: { ws: string; m
     if (!model && defaultModel) setModel(defaultModel);
   }, [defaultModel, model]);
 
-  async function start(text: string) {
+  async function start(text: string, files: File[]) {
     const m = parseModeCommand(text);
     if (m) {
       setMode(m);
@@ -440,7 +440,14 @@ function NewSessionView({ ws, models, defaultModel, onCreated }: { ws: string; m
     }
     try {
       const s = await api.createSession(ws, { model: model || undefined, mode });
-      await api.sendMessage(ws, s.id, text);
+      try {
+        const ids = await uploadAll(ws, s.id, files);
+        await api.sendMessage(ws, s.id, text, ids);
+      } catch (e) {
+        // the empty session is of no use
+        void api.deleteSession(ws, s.id).catch(() => {});
+        throw e;
+      }
       onCreated(s);
       return true;
     } catch (e) {
@@ -752,7 +759,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     return null;
   }
 
-  async function send(text: string) {
+  async function send(text: string, files: File[] = []) {
     const sh = parseShell(text);
     if (sh) {
       if (!sh.command) return false;
@@ -771,7 +778,8 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     }
     try {
       stickRef.current = true;
-      await api.sendMessage(ws, sid, text);
+      const ids = await uploadAll(ws, sid, files);
+      await api.sendMessage(ws, sid, text, ids);
       setSession((s) => (s ? { ...s, state: "running" } : s));
       return true;
     } catch (e) {
@@ -877,7 +885,16 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
           {blocks.map((t, bi) => {
             switch (t.kind) {
               case "user":
-                return <UserMsg key={t.id} text={t.text} command={t.command} onFork={t.forkable && !running ? () => void fork(t.id) : undefined} />;
+                return (
+                  <UserMsg
+                    key={t.id}
+                    text={t.text}
+                    command={t.command}
+                    attachments={t.attachments}
+                    fileUrl={(aid, dl) => api.attachmentUrl(ws, sid, aid, dl)}
+                    onFork={t.forkable && !running ? () => void fork(t.id) : undefined}
+                  />
+                );
               case "notification":
                 return <NotificationMsg key={t.id} text={t.text} />;
               case "shell":
@@ -1023,7 +1040,62 @@ function Recall({ items, preloaded }: { items: RecallItem[]; preloaded?: string 
   );
 }
 
-function UserMsg({ text, command, onFork }: { text: string; command?: string; onFork?: () => void }) {
+// uploadAll stores the files of a message and returns their ids.
+async function uploadAll(ws: string, sid: string, files: File[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const f of files) ids.push((await api.attach(ws, sid, f)).id);
+  return ids;
+}
+
+function Attachments({ list, url }: { list: Attachment[]; url: (aid: string, download?: boolean) => string }) {
+  const [zoom, setZoom] = useState<Attachment | null>(null);
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2 first:mt-0" dir="ltr">
+      {list.map((a) =>
+        a.kind === "image" ? (
+          <button key={a.id} type="button" onClick={() => setZoom(a)} title={`${a.name} · ${fmtBytes(a.size)}`} className="rounded-md overflow-hidden border border-line hover:border-line-strong">
+            <img src={url(a.id)} alt={a.name} className="h-20 max-w-[200px] object-cover" loading="lazy" />
+          </button>
+        ) : (
+          <a
+            key={a.id}
+            href={url(a.id, true)}
+            download={a.name}
+            title={`${a.name} · ${fmtBytes(a.size)}`}
+            className="flex items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] hover:border-line-strong max-w-[240px]"
+          >
+            <FileText className="size-4 text-muted shrink-0" />
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{a.name}</span>
+              <span className="block text-[10.5px] text-faint">
+                {a.kind === "pdf" ? "PDF" : a.kind === "text" ? "text" : a.mime} · {fmtBytes(a.size)}
+              </span>
+            </span>
+          </a>
+        ),
+      )}
+      {zoom && (
+        <Modal open onClose={() => setZoom(null)} title={zoom.name} width={960}>
+          <img src={url(zoom.id)} alt={zoom.name} className="max-w-full mx-auto" />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function UserMsg({
+  text,
+  command,
+  attachments,
+  fileUrl,
+  onFork,
+}: {
+  text: string;
+  command?: string;
+  attachments?: Attachment[];
+  fileUrl: (aid: string, download?: boolean) => string;
+  onFork?: () => void;
+}) {
   return (
     <div className="group flex gap-3">
       <span className="size-6 rounded-md bg-panel-3 grid place-items-center shrink-0 mt-0.5">
@@ -1034,6 +1106,7 @@ function UserMsg({ text, command, onFork }: { text: string; command?: string; on
         className="relative flex-1 min-w-0 rounded-lg bg-panel-2 border border-line px-3.5 py-2.5 whitespace-pre-wrap break-words text-[13.5px] text-start leading-relaxed"
       >
         {command ? <UserCommand text={text} command={command} /> : text}
+        {attachments && attachments.length > 0 && <Attachments list={attachments} url={fileUrl} />}
         {onFork && (
           <button
             onClick={onFork}

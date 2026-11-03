@@ -30,7 +30,7 @@ const externalNote = `
 You are running inside opsdeck. Your ONLY tools are those of the MCP server named "opsdeck" (they may appear as mcp__opsdeck__<name>). You have no local shell or file access: reach servers, clusters and files exclusively through these tools. A tool call may wait while the user approves it; a denied call returns an error explaining why.`
 
 // runExternal runs one turn with a locally installed agent CLI.
-func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Workspace, text string, p config.Provider, model string) {
+func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Workspace, text string, files []llm.Block, p config.Provider, model string) {
 	env := m.sessionEnv(s, w)
 	s.mu.Lock()
 	mode := s.info.Mode
@@ -39,7 +39,22 @@ func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Work
 		resume = id
 	}
 	s.mu.Unlock()
-	text += m.recallFor(s, env, text)
+	if strings.TrimSpace(text) != "" {
+		text += m.recallFor(s, env, text)
+	}
+	// attached text files go with the prompt; images and PDFs to agents
+	// that take them
+	var images []extagent.File
+	for _, b := range files {
+		switch b.Type {
+		case "text":
+			text += "\n\n" + b.Text
+		case "image", "document":
+			if _, path, err := s.Attachment(b.Source); err == nil {
+				images = append(images, extagent.File{Name: b.Name, MediaType: b.MediaType, Path: path})
+			}
+		}
+	}
 
 	m.deps.MCP.Ensure(ctx, w)
 	tok := m.openBridge(s)
@@ -62,6 +77,7 @@ func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Work
 		ToolNames:  names,
 		Spec:       extagent.Spec{Kind: p.Type, Command: p.Command, Args: p.Args, Env: p.Env, Model: model},
 		Prompt:     text,
+		Files:      images,
 		System:     m.redactor.Redact(buildSystemPrompt(env, mode)) + externalNote,
 		FirstTurn:  resume == "",
 		Resume:     resume,

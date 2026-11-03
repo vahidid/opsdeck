@@ -1,7 +1,14 @@
 package server
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"os"
+
+	"opsdeck/internal/agent"
 )
 
 // Background tasks and full outputs of agent sessions.
@@ -135,4 +142,57 @@ func (s *Server) wsHarness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, s.agents.Harness(ws))
+}
+
+// sessAttach stores a file the user attaches to their next message (the
+// request body; the name in ?name=).
+func (s *Server) sessAttach(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.workspace(w, r); !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, agent.MaxAttachment+1)
+	a, err := s.agents.AddAttachment(r.PathValue("ws"), r.PathValue("id"), r.URL.Query().Get("name"), r.Body)
+	if err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("files can be up to %d MB", agent.MaxAttachment>>20))
+			return
+		}
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, a)
+}
+
+// sessAttachment serves an attached file: images inline (for the chat),
+// anything else as a download, text as plain text.
+func (s *Server) sessAttachment(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.session(w, r)
+	if !ok {
+		return
+	}
+	a, path, err := sess.Attachment(r.PathValue("aid"))
+	if err != nil {
+		writeErr(w, 404, err.Error())
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		writeErr(w, 404, "the file is gone")
+		return
+	}
+	defer f.Close()
+	ctype := a.Mime
+	if a.Kind == "text" {
+		ctype = "text/plain; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	disp := "attachment"
+	if a.Kind == "image" && r.URL.Query().Get("download") == "" {
+		disp = "inline"
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": a.Name}))
+	io.Copy(w, f)
 }

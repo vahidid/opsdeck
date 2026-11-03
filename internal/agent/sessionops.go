@@ -98,12 +98,15 @@ func (m *Manager) Fork(w *workspace.Workspace, id, atEvent string) (*Session, st
 		pending: map[string]*pendingApproval{}, questions: map[string]*pendingQuestion{}, nextID: maxEventID(events),
 	}
 	s.path = filepath.Join(m.dir(w.Name()), s.info.ID+".json")
-	// earlier full outputs stay readable with read_output
-	if entries, err := os.ReadDir(srcOutputs); err == nil {
-		os.MkdirAll(s.outputDir(), 0o700)
-		for _, e := range entries {
-			if b, err := os.ReadFile(filepath.Join(srcOutputs, e.Name())); err == nil {
-				os.WriteFile(filepath.Join(s.outputDir(), e.Name()), b, 0o600)
+	// earlier full outputs stay readable with read_output, attached files
+	// go to the model as before
+	for from, to := range map[string]string{srcOutputs: s.outputDir(), src.filesDir(): s.filesDir()} {
+		if entries, err := os.ReadDir(from); err == nil {
+			os.MkdirAll(to, 0o700)
+			for _, e := range entries {
+				if b, err := os.ReadFile(filepath.Join(from, e.Name())); err == nil {
+					os.WriteFile(filepath.Join(to, e.Name()), b, 0o600)
+				}
 			}
 		}
 	}

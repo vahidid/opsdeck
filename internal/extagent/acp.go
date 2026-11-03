@@ -301,8 +301,23 @@ func runACP(ctx context.Context, req Request, emit func(Event)) (Result, error) 
 	var pr struct {
 		StopReason string `json:"stopReason"`
 	}
-	err = conn.call(ctx, "session/prompt", map[string]any{"sessionId": sessionID,
-		"prompt": []map[string]string{{"type": "text", "text": prompt}}}, &pr)
+	// images go as image blocks to agents that take them
+	var other []File
+	var images []map[string]string
+	for _, f := range req.Files {
+		if strings.HasPrefix(f.MediaType, "image/") && initRes.AgentCapabilities.PromptCapabilities.Image {
+			data, err := fileData(f)
+			if err != nil {
+				return fail(err)
+			}
+			images = append(images, map[string]string{"type": "image", "mimeType": f.MediaType, "data": data})
+			continue
+		}
+		other = append(other, f)
+	}
+	prompt = withoutFiles(prompt, other, "This agent", emit)
+	blocks := append([]map[string]string{{"type": "text", "text": prompt}}, images...)
+	err = conn.call(ctx, "session/prompt", map[string]any{"sessionId": sessionID, "prompt": blocks}, &pr)
 	flush()
 	if err != nil {
 		return fail(err)
@@ -320,7 +335,10 @@ func runACP(ctx context.Context, req Request, emit func(Event)) (Result, error) 
 
 type acpInit struct {
 	AgentCapabilities struct {
-		LoadSession     bool `json:"loadSession"`
+		LoadSession        bool `json:"loadSession"`
+		PromptCapabilities struct {
+			Image bool `json:"image"`
+		} `json:"promptCapabilities"`
 		MCPCapabilities struct {
 			HTTP bool `json:"http"`
 		} `json:"mcpCapabilities"`

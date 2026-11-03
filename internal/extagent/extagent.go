@@ -1,5 +1,5 @@
 // Package extagent drives locally installed AI agent CLIs (Claude Code,
-// OpenAI Codex, Gemini CLI, any Agent Client Protocol agent) as the "model"
+// OpenAI Codex, Gemini CLI, Antigravity CLI, any Agent Client Protocol agent) as the "model"
 // of an opsdeck session. The external agent runs its own loop with the user's
 // own login (subscription or API key), but its built-in tools are disabled:
 // the only tools it gets are opsdeck's, through the session's MCP bridge, so
@@ -9,6 +9,7 @@ package extagent
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -22,16 +23,17 @@ import (
 
 // Kinds of external agents.
 const (
-	ClaudeCode = "claude-code"
-	Codex      = "codex"
-	GeminiCLI  = "gemini-cli"
-	ACP        = "acp"
+	ClaudeCode  = "claude-code"
+	Codex       = "codex"
+	GeminiCLI   = "gemini-cli"
+	Antigravity = "antigravity"
+	ACP         = "acp"
 )
 
 // IsKind reports whether a provider type is an external agent.
 func IsKind(t string) bool {
 	switch t {
-	case ClaudeCode, Codex, GeminiCLI, ACP:
+	case ClaudeCode, Codex, GeminiCLI, Antigravity, ACP:
 		return true
 	}
 	return false
@@ -46,6 +48,8 @@ func DefaultCommand(kind string) string {
 		return "codex"
 	case GeminiCLI:
 		return "gemini"
+	case Antigravity:
+		return "agy"
 	}
 	return ""
 }
@@ -63,6 +67,7 @@ type Spec struct {
 type Request struct {
 	Spec       Spec
 	Prompt     string
+	Files      []File // images and PDFs; text files are part of Prompt
 	System     string // opsdeck instructions and workspace context
 	FirstTurn  bool   // agents without a system prompt option get System prepended
 	Resume     string // external session/thread id from the previous turn
@@ -71,6 +76,13 @@ type Request struct {
 	OpsdeckBin string   // opsdeck executable, for the stdio relay
 	ToolNames  []string // opsdeck tool names offered through the bridge
 	WorkDir    string   // empty scratch directory for the agent process
+}
+
+// File is an image or PDF the user attached to the message.
+type File struct {
+	Name      string
+	MediaType string
+	Path      string
 }
 
 // Event is streamed to the session timeline.
@@ -103,10 +115,35 @@ func Run(ctx context.Context, req Request, emit func(Event)) (Result, error) {
 		return runClaude(ctx, req, emit)
 	case Codex:
 		return runCodex(ctx, req, emit)
+	case Antigravity:
+		return runAntigravity(ctx, req, emit)
 	case GeminiCLI, ACP:
 		return runACP(ctx, req, emit)
 	}
 	return Result{}, fmt.Errorf("unknown agent kind %q", req.Spec.Kind)
+}
+
+// withoutFiles tells the agent and the user about attached files the agent
+// cannot take, and returns the prompt with a note about them.
+func withoutFiles(prompt string, files []File, agent string, emit func(Event)) string {
+	if len(files) == 0 {
+		return prompt
+	}
+	var names []string
+	for _, f := range files {
+		names = append(names, f.Name)
+	}
+	emit(Event{Kind: "notice", Text: agent + " cannot take these attachments here: " + strings.Join(names, ", ") + ". Use an API model or Claude Code for images and PDFs."})
+	return prompt + "\n\n[The user attached " + strings.Join(names, ", ") + ", which cannot be shown to you.]"
+}
+
+// fileData reads an attachment as base64.
+func fileData(f File) (string, error) {
+	b, err := os.ReadFile(f.Path)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }
 
 // childEnv is the agent's environment: ours minus variables that would make

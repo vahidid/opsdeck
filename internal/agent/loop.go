@@ -26,10 +26,13 @@ const (
 var ErrBusy = errors.New("the session is already working; wait or interrupt it")
 
 // Send adds a user message and runs the agent in the background.
-func (m *Manager) Send(ws, id, text string) error {
+func (m *Manager) Send(ws, id, text string) error { return m.SendWith(ws, id, text, nil) }
+
+// SendWith sends a message with files the user attached (AddAttachment).
+func (m *Manager) SendWith(ws, id, text string, attachments []string) error {
 	text = strings.TrimSpace(text)
-	if text == "" {
-		return errors.New("empty message")
+	if text == "" && len(attachments) == 0 {
+		return errNoMessage
 	}
 	s, err := m.Get(ws, id)
 	if err != nil {
@@ -49,6 +52,11 @@ func (m *Manager) Send(ws, id, text string) error {
 	if prompt, name, ok := expandCommand(w, text); ok {
 		in.Text, in.Command = prompt, name
 	}
+	if len(attachments) > 0 {
+		if in.Blocks, in.Files, err = m.attachmentBlocks(s, attachments); err != nil {
+			return err
+		}
+	}
 	return m.start(s, w, in)
 }
 
@@ -58,6 +66,10 @@ type turnInput struct {
 	Display      string // shown in the chat (the command as typed)
 	Command      string // the workspace command it came from
 	Notification bool   // from opsdeck (a background task), not the user
+	// Blocks are the attached files as content for the model; Files
+	// describe them for the chat.
+	Blocks []llm.Block
+	Files  []Attachment
 }
 
 // start runs a turn in the background: for a message of the user, or for a
@@ -168,12 +180,20 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		content = strings.Join(s.context, "\n\n") + "\n\n" + text
 		s.context = nil
 	}
-	s.messages = append(s.messages, llm.Message{Role: "user", Content: []llm.Block{{Type: "text", Text: content}}})
+	userBlocks := []llm.Block{}
+	if content != "" {
+		userBlocks = append(userBlocks, llm.Block{Type: "text", Text: content})
+	}
+	userBlocks = append(userBlocks, in.Blocks...)
+	s.messages = append(s.messages, llm.Message{Role: "user", Content: userBlocks})
 	if !notification {
 		s.taint = "" // a new message from the user: they are back in the loop
 	}
 	if first && !notification {
 		title := strings.Join(strings.Fields(display), " ")
+		if title == "" && len(in.Files) > 0 {
+			title = in.Files[0].Name
+		}
 		if r := []rune(title); len(r) > 70 {
 			title = string(r[:70]) + "…"
 		}
@@ -186,6 +206,9 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		s.emit("notification", map[string]any{"text": text}, true)
 	} else {
 		ev := map[string]any{"text": display, "msgIndex": msgIndex}
+		if len(in.Files) > 0 {
+			ev["attachments"] = in.Files
+		}
 		if in.Command != "" {
 			ev["command"], ev["prompt"] = in.Command, text
 		}
@@ -200,7 +223,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 
 	router := m.deps.Router()
 	if p, model, ok := router.Lookup(modelID); ok && extagent.IsKind(p.Type) {
-		m.runExternal(ctx, s, w, content, p, model)
+		m.runExternal(ctx, s, w, content, in.Blocks, p, model)
 		return
 	}
 	provider, model, err := router.Resolve(modelID)
@@ -210,7 +233,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 	}
 	env := m.sessionEnv(s, w)
 	env.Model = modelID
-	if !notification {
+	if !notification && text != "" {
 		m.recallFor(s, env, text)
 	}
 	m.deps.MCP.Ensure(ctx, w)
@@ -234,7 +257,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		r.tools, env.Tools = toolMap, toolNames(toolMap)
 
 		msgID := uuid.NewString()[:8]
-		req := llm.Request{Model: model, System: m.redactor.Redact(buildSystemPrompt(env, mode)), Messages: history, Tools: tools}
+		req := llm.Request{Model: model, System: m.redactor.Redact(buildSystemPrompt(env, mode)), Messages: s.withAttachmentData(history), Tools: tools}
 		resp, err := provider.Chat(ctx, req, func(delta string) {
 			s.emit("assistant_delta", map[string]any{"messageId": msgID, "text": delta}, false)
 		})
@@ -360,6 +383,9 @@ func estimateTokens(msgs []llm.Message) int {
 	for _, m := range msgs {
 		for _, b := range m.Content {
 			n += len(b.Text) + len(b.Content) + len(b.Input) + len(b.Signature)/4
+			if b.Type == "image" || b.Type == "document" {
+				n += 6000 // ~1500 tokens
+			}
 		}
 	}
 	return n / 4

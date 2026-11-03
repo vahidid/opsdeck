@@ -32,8 +32,10 @@ func newOpenAI(p config.Provider, apiKey string) *openaiProvider {
 }
 
 type oaMessage struct {
-	Role       string       `json:"role"`
-	Content    *string      `json:"content"`
+	Role string `json:"role"`
+	// Content is a string, or for a user message with images a list of
+	// parts ({"type":"text"} and {"type":"image_url"}).
+	Content    any          `json:"content"`
 	ToolCalls  []oaToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string       `json:"tool_call_id,omitempty"`
 }
@@ -75,6 +77,7 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 			continue
 		}
 		var text strings.Builder
+		var images []map[string]any
 		for _, b := range m.Content {
 			switch b.Type {
 			case "tool_result":
@@ -85,9 +88,25 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 				msgs = append(msgs, oaMessage{Role: "tool", ToolCallID: b.ToolUseID, Content: strPtr(content)})
 			case "text":
 				text.WriteString(b.Text)
+			case "image":
+				if b.Data == "" {
+					text.WriteString("\n" + b.placeholder())
+					continue
+				}
+				images = append(images, map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:" + b.MediaType + ";base64," + b.Data}})
+			case "document":
+				// no common way to send a PDF to OpenAI-compatible servers
+				text.WriteString("\n" + b.placeholder())
 			}
 		}
-		if text.Len() > 0 {
+		switch {
+		case len(images) > 0:
+			parts := []map[string]any{}
+			if text.Len() > 0 {
+				parts = append(parts, map[string]any{"type": "text", "text": text.String()})
+			}
+			msgs = append(msgs, oaMessage{Role: "user", Content: append(parts, images...)})
+		case text.Len() > 0:
 			msgs = append(msgs, oaMessage{Role: "user", Content: strPtr(text.String())})
 		}
 	}

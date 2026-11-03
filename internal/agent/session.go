@@ -164,6 +164,7 @@ type Manager struct {
 	bridges  bridges
 	pages    pageCache // web pages read recently
 	bg       bgRegistry
+	waiting  waitingRegistry
 }
 
 func NewManager(d Deps) *Manager {
@@ -278,6 +279,7 @@ func (m *Manager) Delete(ws, id string) error {
 	delete(m.sessions, ws+"/"+id)
 	m.mu.Unlock()
 	os.RemoveAll(s.outputDir())
+	os.RemoveAll(s.filesDir())
 	return os.Remove(s.path)
 }
 

@@ -402,8 +402,11 @@ func (r *runner) ask(ctx context.Context, callID string, q Question) (Answer, er
 	s.questions[id] = pq
 	s.mu.Unlock()
 	s.refreshState()
-	r.emit("question", map[string]any{"questionId": id, "callId": callID, "question": q.Text, "options": q.Options, "multiple": q.Multiple, "allowText": q.AllowText}, true)
+	qev := map[string]any{"questionId": id, "callId": callID, "question": q.Text, "options": q.Options, "multiple": q.Multiple, "allowText": q.AllowText}
+	r.emit("question", qev, true)
 	s.save()
+	r.m.waiting.add(r.waitingFor("question", id, qev))
+	defer r.m.waiting.remove(r.w.Name(), s.Info().ID, id)
 	var a Answer
 	var answered bool
 	select {

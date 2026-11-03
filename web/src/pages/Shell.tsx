@@ -30,6 +30,7 @@ import { useMediaQuery } from "../hooks";
 import { Button, FormField, Input, Kbd, Tabs, Textarea, cx } from "../components/ui";
 import { TabStrip } from "../components/TabStrip";
 import { CustomizeDrawer } from "../components/Customize";
+import { WaitingCenter } from "../components/WaitingCenter";
 import { MenuItem, Modal, Popover, useToast } from "../components/overlay";
 import { WORKSPACE_COLORS, slugify } from "../lib/format";
 import { Logo } from "./Boot";
@@ -101,6 +102,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {children}
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} ws={ws} />
+      <WaitingCenter />
       <CustomizeDrawer />
     </div>
   );

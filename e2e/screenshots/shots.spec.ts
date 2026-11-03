@@ -108,9 +108,10 @@ test("agent access", async ({ page }) => {
   await open(page, "/settings");
   await page.getByRole("button", { name: "Connect an agent" }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /Other \/ by hand/ }).click();
   await dialog.getByRole("textbox", { name: /^Label/ }).fill("Claude Code on my laptop");
   await dialog.getByRole("button", { name: "Make the key" }).click();
-  await expect(page.getByText("This is the only time the key is shown")).toBeVisible();
+  await expect(page.getByText(/this is the only time it is shown/)).toBeVisible();
   await shot(page, "agent-access");
 });
 

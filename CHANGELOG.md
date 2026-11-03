@@ -5,6 +5,35 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Agent
+
+- **Connect an agent in one click.** *App settings › Agent access › Connect an agent* shows
+  the agents opsdeck can set up — Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI,
+  Antigravity CLI, Antigravity, VS Code, Windsurf — and which are on this computer. *Connect*
+  makes the key and writes the server into the agent's own config (Claude Code through
+  `claude mcp add`), keeping everything else in the file and a backup of it, and installs
+  the opsdeck skill. Copying a key and a snippet is still there for any other client.
+- **Rotate, repair and disconnect keys.** A key gets a new secret with one click; for an
+  agent opsdeck connected, the new key goes straight into its config. A key whose entry
+  went missing from the agent's config shows it and can be repaired; disconnecting revokes
+  the key and removes the entry. The key itself is shown once, behind *Show*, since opsdeck
+  keeps only its hash.
+- **Antigravity.** The Antigravity CLI (`agy`) can be the agent's model, like Claude Code,
+  with your Google sign-in: it runs in print mode in an empty folder with the terminal
+  sandbox on and opsdeck's tools as its only MCP server, keeps its conversation between
+  turns, and lists its models with `agy models`. `opsdeck skill install antigravity` installs
+  the skill for it.
+- **Attachments.** Files and images go with a message: the paperclip, a paste (screenshots)
+  or a drop on the message box. Images go to the model as images (API models, Claude Code,
+  Codex, ACP agents that take them), PDFs to Anthropic models and Claude Code, text files as
+  text through the redactor. Files are kept next to the session, not in its transcript, and
+  shown under the message.
+- **Approvals reach you anywhere.** When an agent waits for an approval or an answer — in
+  any session or workspace, the built-in agent or one connected over MCP — a card shows it on
+  every other page with Approve, Always in session and Deny (or the question's options), and
+  the window title counts what waits. When no opsdeck window has the focus, opsdeck also
+  shows a desktop notification (App settings › Agent harness › *Desktop notifications*).
+
 ### Workbench
 
 - **File transfer in the host file browser.** Upload files to the open folder with

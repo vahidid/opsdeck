@@ -99,10 +99,13 @@ jump hosts, Docker, Kubernetes, databases, logs, metrics, DNS, certificates and 
 opsdeck keeps the credentials and checks, redacts and logs every call. A change waits until
 you approve it in opsdeck.
 
-1. In opsdeck: **App settings › Agent access › Connect an agent**. Pick the workspace and
-   a mode (*Read-only*, *Ask* or *Auto*). opsdeck shows an access key and the exact setup
-   for your agent.
-2. Add the server to your agent, e.g. for Claude Code:
+1. In opsdeck: **App settings › Agent access › Connect an agent**. Pick your agent (Claude
+   Code, Claude Desktop, Codex, Cursor, Gemini CLI, Antigravity, VS Code, Windsurf), the
+   workspace and a mode (*Read-only*, *Ask* or *Auto*), and click **Connect**: opsdeck
+   writes the server and its key into the agent's config and installs the skill. Keys can be
+   rotated or disconnected there later; when the agent waits for your approval, opsdeck
+   tells you wherever you are.
+2. Or add the server by hand (*Other / by hand*), e.g. for Claude Code:
 
    ```bash
    claude mcp add --scope user --transport http opsdeck-acme http://127.0.0.1:7788/mcp/ext \
@@ -243,11 +246,13 @@ are in **[docs/agents.md](docs/agents.md)**.
   workspace.
 - **Harness** — like a coding harness: subagents that investigate in parallel, hooks around
   tool calls, slash commands and `!` shell, a live checklist, questions with options, forked
-  and exported sessions, and headless runs (`opsdeck run`) for cron and CI — see
+  and exported sessions, files and screenshots attached to a message, approvals that reach
+  you on any page and as desktop notifications, and headless runs (`opsdeck run`) for cron
+  and CI — see
   [docs/harness.md](docs/harness.md).
 - **Local agents** — besides model APIs, the agent can be a CLI you already use with
-  your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** (Google
-  account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
+  your own login: **Claude Code**, **Codex** (ChatGPT account), **Gemini CLI** and the
+  **Antigravity CLI** (Google account) or any **ACP** agent (opencode, Qwen Code, GitHub Copilot CLI…). Their
   built-in tools are switched off; they work only through opsdeck's tools (served to
   them over MCP), so approvals, redaction and audit still apply. Settings asks each CLI
   which models your login can use and you pick them from the list.

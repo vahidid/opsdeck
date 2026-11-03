@@ -70,9 +70,10 @@ type Settings = { autoLockMinutes: number; defaultModel: string;
   localAccess: { disabled: boolean;        // agent access to this computer (default on)
                  allowedDirs: string[];    // readable without asking; "~/..." is expanded
                  autoReadCommands: boolean };  // run read-only local_exec commands without asking
-  agent: { autoServerChanges: boolean } }   // false (default): changes on servers ask in every mode
+  agent: { autoServerChanges: boolean;      // false (default): changes on servers ask in every mode
+           noNotifications?: boolean } }   // no desktop notifications when an agent waits
 ```
-Local agent providers use `type: "claude-code" | "codex" | "gemini-cli" | "acp"` with
+Local agent providers use `type: "claude-code" | "codex" | "gemini-cli" | "antigravity" | "acp"` with
 `command`, `args`, `env` (no base URL or key). Their sessions reach opsdeck's tools through
 the MCP bridge at `/mcp/` (streamable HTTP, `Authorization: Bearer <per-turn token>`).
 
@@ -450,7 +451,9 @@ on the rest, deny stops).
 | GET | `/api/workspaces/{ws}/sessions/{id}` | → `{session: SessionInfo, events: [Event]}` |
 | PUT | `/api/workspaces/{ws}/sessions/{id}` | `{title?, model?, mode?}` |
 | DELETE | `/api/workspaces/{ws}/sessions/{id}` | |
-| POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text}` → 202 |
+| POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text, attachments?: [id]}` → 202 (text may be empty when files are attached) |
+| POST | `/api/workspaces/{ws}/sessions/{id}/attachments?name=` | the file as the body (≤ 20 MB; images ≤ 5 MB) → `{id, name, mime, size, kind: "image"\|"pdf"\|"text"\|"file"}` |
+| GET | `/api/workspaces/{ws}/sessions/{id}/attachments/{attachmentId}` | the file: images inline, others as a download (`?download=1` for images too) |
 | POST | `/api/workspaces/{ws}/sessions/{id}/interrupt` | |
 | POST | `/api/workspaces/{ws}/sessions/{id}/approvals/{approvalId}` | `{decision: "approve"\|"deny"\|"always", note?, secret?, canary?}` — `secret` answers a card that asks for a password (`approval_request.secret`); a missing or wrong one is 422 `bad_secret` and the card stays open |
 | GET | `/api/workspaces/{ws}/sessions/{id}/stream` | SSE: every new `Event` as `data: <json>` |
@@ -465,6 +468,26 @@ on the rest, deny stops).
 | POST | `/api/workspaces/{ws}/sessions/{id}/compact` | summarize the conversation now |
 | GET | `/api/workspaces/{ws}/harness` | → `{commands, subagents, web, search, local, models}` for the chat |
 | POST | `/api/workspaces/{ws}/hooks/trust` | trust the workspace's hooks on this machine → `Workspace` |
+
+What agents wait for, across workspaces and sessions, and agent access keys:
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/waiting` | → `{items: [Waiting]}`: open approval cards and questions, oldest first |
+| GET | `/api/waiting/stream` | SSE: the whole list on connect and whenever it changes |
+| POST | `/api/presence` | `{focused}`: whether an opsdeck window has the focus (desktop notifications only without it) |
+| GET | `/api/access-keys` | → `{keys: [AccessKey & {linked}], endpoint, command, modes}` |
+| GET | `/api/agent-clients` | → `{clients: [{id, name, detected, config, skill?, note?, hint?}]}` agents opsdeck can connect |
+| POST | `/api/access-keys` | `{label, workspace, mode, client?, skill?}` → `{key, secret, endpoint, command, link?, linkError?}` — with `client`, the key is written into that agent's config |
+| PATCH | `/api/access-keys/{id}` | `{label?, mode?}` |
+| POST | `/api/access-keys/{id}/rotate` | `{client?, skill?}` → like POST: a new secret, written into the agent's config when opsdeck connected it (or into `client`) |
+| DELETE | `/api/access-keys/{id}` | revokes; removes the entry from the agent's config unless `?keepConfig=1` |
+
+```ts
+type Waiting = { kind: "approval"|"question"; id; workspace; session; sessionTitle; client?; created;
+                 tool?; target?; environment?; risk?; reason?; preview?; input?; hosts?; grantLabel?; secret?; stage?; title?;  // approval
+                 question?; options?: {label, description?}[]; multiple? }                                                      // question
+```
 
 `POST /sessions` also takes `headless: true` (used by `opsdeck run`): what would ask is denied.
 A message starting with `/<command>` of the workspace is sent as that command's prompt.

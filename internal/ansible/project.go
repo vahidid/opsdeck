@@ -121,8 +121,12 @@ func (p *Project) Name() string { return p.R.Name }
 func (p *Project) Key() string { return p.W.Name() + "/" + p.R.Name }
 
 // External reports whether the project's folder is outside the workspace
-// folder (a folder elsewhere on this computer).
+// folder (a folder elsewhere on this computer). A project in a Git
+// repository counts as the repository's, wherever its working copy is.
 func (p *Project) External() bool {
+	if p.Source == "repo" {
+		return false
+	}
 	ws, err1 := filepath.EvalSymlinks(p.W.Path)
 	root, err2 := filepath.EvalSymlinks(p.Root)
 	if err1 != nil {

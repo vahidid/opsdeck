@@ -144,9 +144,10 @@ as `git.*`.
 
 | Method | Path | |
 |---|---|---|
-| GET | `/api/workspaces/{ws}/repos` | → `[{name, url, web, provider, via, environment, description, docs, auth: "token"\|"deployKey"\|"none", error, status?, last?}]` |
+| GET | `/api/workspaces/{ws}/repos` | → `[{name, url, web, provider, via, environment, description, docs, path?, auth: "token"\|"deployKey"\|"none", error, status?, last?}]` (`path`: a working copy outside `repos/`) |
+| POST | `/api/workspaces/{ws}/git/folder` | `{path}` (absolute or `~/…`) → `{path, cloned, empty, origin, url, connection, branch}`: a folder offered as a working copy (`url`: its origin, over HTTPS when a connector serves the host) |
 | POST | `/{repo}/check` | → `{ok, defaultBranch, error, provider, canPush, webUrl, apiError}` (Git and API checked separately) |
-| POST / DELETE | `/{repo}/clone` | `{branch?}` clone into `repos/<name>` / remove the working copy |
+| POST / DELETE | `/{repo}/clone` | `{branch?}` clone into `repos/<name>` (or the empty folder in `spec.path`) / remove the working copy (refused for a folder of its own) |
 | POST | `/{repo}/fetch`, `/{repo}/pull` | pull: `{rebase?}` (fast-forward only otherwise) → `{output}` |
 | GET | `/{repo}/status` | → `{cloned, branch, head, upstream, ahead, behind, default, changes: [{path, orig, status, staged}], busy}` |
 | GET | `/{repo}/branches` | → `[{name, remote, current, commit, upstream, track, subject, date}]` |

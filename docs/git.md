@@ -59,15 +59,49 @@ Every other field is optional and folded under *Advanced* in the form:
 | `caCert` | private CA, when not set on the connector |
 | `via` | `network/<vpn>` or `host/<jump>` |
 
+### A clone you already have
+
+A repository you already cloned somewhere else on this computer (say `~/projects/deploy`)
+can stay where it is: opsdeck works in that folder in place instead of `repos/<name>`.
+
+- **Add repository**, pick the GitHub or GitLab repository, and under *Working copy*
+  choose *Existing folder* and type its path (absolute or `~/…`). opsdeck checks the folder
+  as you type: a Git working copy (its branch and origin are shown, with a warning when
+  the origin is another repository), or an empty or missing folder, which it then clones
+  into.
+- **Use an existing clone** (also offered without a connected account) starts from the
+  folder: the repository URL comes from its `origin` (turned into HTTPS when a connector
+  serves that server, so the connector's token works for a clone made over SSH), and the
+  name from the folder.
+- *Add by URL* has the same field: *Working copy folder* (`path`).
+
+```yaml
+- kind: GitRemote
+  name: deploy
+  spec:
+    url: https://gitlab.example.com/ops/deploy.git
+    path: ~/projects/deploy
+```
+
+Git talks to the repository's URL with its connector or token whatever the clone's
+`origin` says (a clone made with `git@host:` keeps its origin; opsdeck rewrites it for its
+own commands only), and a clone without an origin gets one. opsdeck never deletes this
+folder: *remove the working copy* is refused, and removing the repository from the
+workspace only unlinks it. Renaming the resource does not move it. The agent's `repo`,
+`repo_files` and `repo_write` tools work in it exactly as in `repos/` (same approvals; no
+local-folder consent). Only pointing a repository at a folder through the agent's
+resource tool always asks, Auto mode included.
+
 *Add by URL instead* adds any Git URL (also servers other than GitHub/GitLab: pull and
 push work, merge requests do not). *Test connection* checks Git access (`ls-remote`) and
 the API separately.
 
 ## Working copies
 
-The working copy of `deploy` is `repos/deploy/` in the workspace folder. `repos/` is added
-to the workspace's `.gitignore`. The folder is created on clone and is left in place when
-the resource is removed; renaming the resource renames it.
+The working copy of `deploy` is `repos/deploy/` in the workspace folder, unless `path`
+points at a folder of its own (above). `repos/` is added to the workspace's `.gitignore`.
+The folder is created on clone and is left in place when the resource is removed; renaming
+the resource renames it.
 
 opsdeck runs the system `git` (it must be installed) with an isolated configuration:
 

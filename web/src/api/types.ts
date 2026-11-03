@@ -625,6 +625,7 @@ export type RepoSummary = {
   environment?: string;
   description?: string;
   docs: boolean;
+  path?: string;
   auth: "token" | "deployKey" | "connector" | "none";
   connection?: string;
   error?: string;
@@ -633,6 +634,7 @@ export type RepoSummary = {
 };
 export type RepoBranch = { name: string; remote?: boolean; current?: boolean; commit: string; upstream?: string; track?: string; subject: string; date: string };
 export type RepoFile = { path: string; ref?: string; text: string; size: number; binary?: boolean; truncated?: boolean };
+export type RepoFolder = { path: string; cloned: boolean; empty: boolean; origin?: string; url?: string; connection?: string; branch?: string };
 export type RepoCheck = { ok: boolean; defaultBranch: string; error?: string; provider?: string; canPush?: boolean; webUrl?: string; apiError?: string };
 export type MergeRequest = {
   id: number;

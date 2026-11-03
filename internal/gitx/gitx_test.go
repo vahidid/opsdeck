@@ -544,3 +544,120 @@ func TestGitHubAPI(t *testing.T) {
 		t.Fatalf("bad token: %v", err)
 	}
 }
+
+// TestExistingClone: a working copy the user cloned elsewhere (origin at
+// another URL than the repository's) is used in place: docs, edit, commit,
+// push over the repository's URL with its token; it is never deleted. An
+// empty folder of its own is cloned into.
+func TestExistingClone(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	gs := gitserver.New(t)
+	ts := httptest.NewServer(gs.Handler(t))
+	defer ts.Close()
+	url := ts.URL + "/acme/deploy.git"
+	tok := f.item("token", "gitlab-deploy", map[string]string{"token": token})
+
+	// The user's own clone, straight from the bare repository.
+	mine := filepath.Join(t.TempDir(), "projects", "deploy")
+	os.MkdirAll(filepath.Dir(mine), 0o755)
+	sh(t, filepath.Dir(mine), "clone", "-q", gs.Bare, mine)
+	// cloned over SSH, which opsdeck has no key for
+	const sshOrigin = "git@gitlab.invalid:acme/deploy.git"
+	sh(t, mine, "remote", "set-url", "origin", sshOrigin)
+
+	if _, err := f.m.InspectFolder(ctx, "relative/path"); err == nil {
+		t.Fatal("relative path accepted")
+	}
+	fo, err := f.m.InspectFolder(ctx, mine)
+	if err != nil || !fo.Cloned || fo.Empty || fo.Branch != "main" || fo.Origin != sshOrigin || fo.Path != mine {
+		t.Fatalf("inspect %+v %v", fo, err)
+	}
+	if fo, err := f.m.InspectFolder(ctx, filepath.Join(mine, "nothing-here")); err != nil || !fo.Empty || fo.Cloned {
+		t.Fatalf("inspect missing %+v %v", fo, err)
+	}
+	if fo, err := f.m.InspectFolder(ctx, filepath.Join(mine, "k8s")); err != nil || fo.Empty || fo.Cloned {
+		t.Fatalf("inspect plain folder %+v %v", fo, err)
+	}
+
+	if err := f.w.PutResource("", &workspace.Resource{Kind: "GitRemote", Name: "bad", Spec: map[string]any{"url": url, "path": "projects/deploy"}}); err == nil {
+		t.Fatal("relative path saved")
+	}
+	f.put(&workspace.Resource{Kind: "GitRemote", Name: "deploy", Spec: map[string]any{"url": url, "token": tok, "docs": true, "path": mine}})
+	if f.w.RepoDir("deploy") != mine || !f.w.RepoExternal("deploy") {
+		t.Fatalf("repo dir %s", f.w.RepoDir("deploy"))
+	}
+	repo, err := f.m.Open(f.w, "deploy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repo.Cloned() || repo.Dir != mine {
+		t.Fatalf("cloned %v dir %s", repo.Cloned(), repo.Dir)
+	}
+	if _, err := repo.Clone(ctx, ""); err == nil {
+		t.Fatal("cloned over the existing working copy")
+	}
+	if s, err := f.w.ReadDoc("repo/deploy/docs/runbook.md"); err != nil || !strings.Contains(s, "rollout undo") {
+		t.Fatalf("read doc: %q %v", s, err)
+	}
+
+	gitserver.Commit(t, gs.Bare, "main", "k8s/extra.yaml", "x: 1\n")
+	if out, err := repo.Pull(ctx, false); err != nil || !strings.Contains(out, "updated") {
+		t.Fatalf("pull: %q %v", out, err)
+	}
+	if err := repo.Write("k8s/app.yaml", "image: shop:1.1\nreplicas: 2\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Commit(ctx, CommitOptions{Message: "Bump shop", Name: "Bob", Email: "bob@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Push(ctx, PushOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if log := sh(t, gs.Bare, "log", "-1", "--format=%s", "main"); strings.TrimSpace(log) != "Bump shop" {
+		t.Fatalf("pushed: %q", log)
+	}
+	// The user's own setup of the clone is left as it was.
+	if o := strings.TrimSpace(sh(t, mine, "config", "--get", "remote.origin.url")); o != sshOrigin {
+		t.Fatalf("origin changed to %s", o)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.w.Path, ".gitignore")); strings.Contains(string(b), "deploy") {
+		t.Fatalf(".gitignore: %s", b)
+	}
+
+	if err := repo.Remove(); err == nil {
+		t.Fatal("removed the user's folder")
+	}
+	if _, err := os.Stat(filepath.Join(mine, "k8s", "app.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	// An empty folder of its own: the clone goes there.
+	there := filepath.Join(t.TempDir(), "clones", "deploy")
+	f.put(&workspace.Resource{Kind: "GitRemote", Name: "deploy2", Spec: map[string]any{"url": url, "token": tok, "path": there}})
+	repo2, _ := f.m.Open(f.w, "deploy2")
+	if repo2.Cloned() {
+		t.Fatal("cloned before cloning")
+	}
+	if _, err := repo2.Clone(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(there, "k8s", "extra.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(f.w.RepoDir("deploy2")); err != nil || f.w.RepoDir("deploy2") != there {
+		t.Fatalf("repo dir %s", f.w.RepoDir("deploy2"))
+	}
+
+	// A working copy without an origin gets the repository's.
+	bare := t.TempDir()
+	sh(t, bare, "init", "-q", "-b", "main")
+	f.put(&workspace.Resource{Kind: "GitRemote", Name: "deploy3", Spec: map[string]any{"url": url, "token": tok, "path": bare}})
+	repo3, _ := f.m.Open(f.w, "deploy3")
+	if _, err := repo3.Fetch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if o := strings.TrimSpace(sh(t, bare, "config", "--get", "remote.origin.url")); o != url {
+		t.Fatalf("origin %s", o)
+	}
+}

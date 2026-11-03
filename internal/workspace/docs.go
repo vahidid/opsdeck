@@ -44,7 +44,12 @@ func (w *Workspace) docPath(rel string) (string, error) {
 
 // contained refuses paths that leave the workspace, including through symlinks.
 func (w *Workspace) contained(abs string) (string, error) {
-	root, err := filepath.EvalSymlinks(w.Path)
+	return containedIn(w.Path, abs, "path leaves the workspace")
+}
+
+// containedIn refuses paths that leave dir, including through symlinks.
+func containedIn(dir, abs, msg string) (string, error) {
+	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return "", err
 	}
@@ -52,7 +57,7 @@ func (w *Workspace) contained(abs string) (string, error) {
 	for {
 		if resolved, err := filepath.EvalSymlinks(check); err == nil {
 			if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
-				return "", errors.New("path leaves the workspace")
+				return "", errors.New(msg)
 			}
 			break
 		}

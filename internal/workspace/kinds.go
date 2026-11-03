@@ -122,6 +122,8 @@ var Kinds = []KindSchema{
 			Help: "The GitHub or GitLab account (Connectors) used for this repository. Empty: the connector whose server matches the URL, if any"},
 		{Key: "url", Label: "URL", Type: "string", Required: true, Placeholder: "https://gitlab.example.com/group/project"},
 		{Key: "branch", Label: "Branch", Type: "string", Placeholder: "default branch"},
+		{Key: "path", Label: "Working copy folder", Type: "string", Placeholder: "~/projects/deploy",
+			Help: "An existing clone elsewhere on this computer (absolute path or ~/…), or an empty folder to clone into. Empty: repos/<name> in the workspace. opsdeck never deletes this folder"},
 		{Key: "docs", Label: "Use as documentation", Type: "bool", Help: "The agent and the Docs page read this repository's Markdown files"},
 		{Key: "docsPaths", Label: "Documentation paths", Type: "list", Placeholder: "README.md, docs/", ShowIf: "docs",
 			Help: "Files or folders with Markdown documentation (default: README.md and docs/)"},

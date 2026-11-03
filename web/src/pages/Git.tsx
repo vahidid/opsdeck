@@ -30,7 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { MergeRequest, RemoteRepo, RepoBranch, RepoChange, RepoStatus, RepoSummary, Resource } from "../api/types";
+import type { MergeRequest, RemoteRepo, RepoBranch, RepoChange, RepoFolder, RepoStatus, RepoSummary, Resource } from "../api/types";
 import { NETWORK_KINDS } from "../api/types";
 import { useApp, useWs } from "../context/app";
 import { useTabTitle } from "../context/tabs";
@@ -73,6 +73,7 @@ function RepoList() {
   const repos = useAsync(() => api.repos(ws), [ws, resources.length]);
   useInterval(() => void repos.reload(), 15000);
   const [adding, setAdding] = useState(false);
+  const [existing, setExisting] = useState(false);
   const [edit, setEdit] = useState<{ resource: Resource | null; preset?: Preset } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const schema = kindMap["GitRemote"];
@@ -111,7 +112,9 @@ function RepoList() {
   async function remove(r: Resource) {
     const ok = await confirm({
       title: `Remove ${r.name}?`,
-      message: "The repository is removed from the workspace. Its working copy in repos/ and the vault items stay.",
+      message: r.spec.path
+        ? `The repository is removed from the workspace. Its working copy in ${String(r.spec.path)} and the vault items stay.`
+        : "The repository is removed from the workspace. Its working copy in repos/ and the vault items stay.",
       confirmLabel: "Remove",
       danger: true,
     });
@@ -142,7 +145,7 @@ function RepoList() {
       <PageHeader
         icon={<GitBranch />}
         title="Repositories"
-        subtitle="Deployment repositories on GitLab or GitHub. Their working copies live in this workspace; you and the agent read, change, push and open merge requests."
+        subtitle="Deployment repositories on GitLab or GitHub. Their working copies live in this workspace or in a folder you cloned them to; you and the agent read, change, push and open merge requests."
         actions={newMenu}
       />
       <div className="px-5 pb-8 space-y-3 max-w-5xl">
@@ -198,6 +201,11 @@ function RepoList() {
                       r.url
                     )}
                   </div>
+                  {r.path && (
+                    <div className="text-[11.5px] text-faint font-mono truncate inline-flex items-center gap-1 max-w-full" title="Working copy: an existing folder on this computer">
+                      <Folder className="size-3 shrink-0" /> <span className="truncate">{r.path}</span>
+                    </div>
+                  )}
                 </div>
                 {st?.cloned ? (
                   <>
@@ -252,12 +260,26 @@ function RepoList() {
       {adding && (
         <AddRepoModal
           onClose={() => setAdding(false)}
+          onExisting={() => {
+            setAdding(false);
+            setExisting(true);
+          }}
           onManual={() => {
             setAdding(false);
             setEdit({ resource: null, preset: GIT_PRESETS[GIT_PRESETS.length - 1] });
           }}
           onAdded={async () => {
             setAdding(false);
+            await reloadResources();
+            await repos.reload();
+          }}
+        />
+      )}
+      {existing && (
+        <ExistingRepoModal
+          onClose={() => setExisting(false)}
+          onAdded={async () => {
+            setExisting(false);
             await reloadResources();
             await repos.reload();
           }}
@@ -483,7 +505,15 @@ function RepoView({ name }: { name: string }) {
             </Button>
           }
         >
-          The working copy goes to <span className="font-mono">repos/{name}</span> in the workspace folder (ignored by the workspace's own Git).
+          {res?.spec.path ? (
+            <>
+              The working copy goes to <span className="font-mono">{String(res.spec.path)}</span> (a folder of its own on this computer).
+            </>
+          ) : (
+            <>
+              The working copy goes to <span className="font-mono">repos/{name}</span> in the workspace folder (ignored by the workspace's own Git).
+            </>
+          )}
         </EmptyState>
       </div>
     );
@@ -951,7 +981,6 @@ function ChangesTab({
   const paths = st.changes.map((c) => c.path).join("\n");
   useEffect(() => {
     setSelected(new Set(st.changes.map((c) => c.path)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paths]);
   const diff = useAsync(() => api.repoDiff(ws, repo, focus), [ws, repo, focus, rev, paths]);
 
@@ -1343,7 +1372,6 @@ function NewMRModal({ ws, repo, source, target, onClose, onCreated }: { ws: stri
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!title && log.data?.[0]) setTitle(log.data[0].subject);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.data]);
   return (
     <Modal
@@ -1404,7 +1432,7 @@ function NewMRModal({ ws, repo, source, target, onClose, onCreated }: { ws: stri
 // ---------------------------------------------------------------------------
 // Adding a repository: pick it from a connected account.
 
-function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onAdded: () => void; onManual: () => void }) {
+function AddRepoModal({ onClose, onAdded, onManual, onExisting }: { onClose: () => void; onAdded: () => void; onManual: () => void; onExisting: () => void }) {
   const { name: ws, workspace, resources } = useWs();
   const toast = useToast();
   const conns = useAsync(() => api.gitConnections(), []);
@@ -1418,6 +1446,9 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
   const [env, setEnv] = useState("");
   const [docs, setDocs] = useState(false);
   const [clone, setClone] = useState(true);
+  const [where, setWhere] = useState<"workspace" | "folder">("workspace");
+  const [path, setPath] = useState("");
+  const [folder, setFolder] = useState<RepoFolder | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!connId && conns.data?.length) setConnId(conns.data[0].id);
@@ -1447,8 +1478,11 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
     try {
       const spec: Record<string, unknown> = { connection: conn.id, url: pick.httpUrl };
       if (docs) spec.docs = true;
+      const inFolder = where === "folder";
+      if (inFolder) spec.path = path.trim();
+      const doClone = inFolder ? !!folder?.empty : clone;
       await api.createResource(ws, { kind: "GitRemote", name, environment: env || undefined, via: via || undefined, description: pick.description || undefined, spec } as Resource);
-      if (clone) {
+      if (doClone) {
         try {
           await api.repoClone(ws, name);
         } catch (e) {
@@ -1457,7 +1491,8 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
           return;
         }
       }
-      toast.success(`Added ${name}`, clone ? `cloned into repos/${name}` : pick.fullName);
+      const dir = inFolder ? folder?.path ?? path.trim() : `repos/${name}`;
+      toast.success(`Added ${name}`, doClone ? `cloned into ${dir}` : inFolder ? `working copy ${dir}` : pick.fullName);
       onAdded();
     } catch (e) {
       toast.error("Could not add the repository", errMsg(e));
@@ -1487,9 +1522,12 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
           <Button variant="primary" icon={<Plug className="size-4" />} onClick={() => setConnecting(true)}>
             Connect an account
           </Button>
-          <div>
+          <div className="flex justify-center gap-4">
             <button className="text-xs text-muted hover:text-fg underline" onClick={onManual}>
               or add one by URL
+            </button>
+            <button className="text-xs text-muted hover:text-fg underline" onClick={onExisting}>
+              use an existing clone on this computer
             </button>
           </div>
         </div>
@@ -1518,14 +1556,24 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
       width={680}
       footer={
         <>
-          <button className="me-auto text-xs text-muted hover:text-fg underline" onClick={onManual}>
-            Add by URL instead
-          </button>
+          <div className="me-auto flex items-center gap-3">
+            <button className="text-xs text-muted hover:text-fg underline" onClick={onManual}>
+              Add by URL instead
+            </button>
+            <button className="text-xs text-muted hover:text-fg underline" onClick={onExisting}>
+              Use an existing clone
+            </button>
+          </div>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={!pick || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name)} loading={busy} onClick={() => void add()}>
-            {clone ? "Add and clone" : "Add"}
+          <Button
+            variant="primary"
+            disabled={!pick || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name) || (where === "folder" && !folder?.cloned && !folder?.empty)}
+            loading={busy}
+            onClick={() => void add()}
+          >
+            {(where === "folder" ? folder?.empty : clone) ? "Add and clone" : "Add"}
           </Button>
         </>
       }
@@ -1600,7 +1648,7 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
         {pick && (
           <div className="rounded-md border border-line bg-panel-2 p-3 space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Name in this workspace" help={<span className="font-mono">repos/{name}</span>}>
+              <FormField label="Name in this workspace" help={where === "workspace" ? <span className="font-mono">repos/{name}</span> : undefined}>
                 <Input mono value={name} onChange={(e) => setName(e.target.value)} />
               </FormField>
               <FormField label="Environment" help="Protected environments make every push ask.">
@@ -1615,10 +1663,217 @@ function AddRepoModal({ onClose, onAdded, onManual }: { onClose: () => void; onA
                 </Select>
               </FormField>
             </div>
+            <FormField label="Working copy">
+              <Segmented
+                options={[
+                  { id: "workspace", label: "Clone into the workspace" },
+                  { id: "folder", label: "Existing folder", title: "A clone you already have elsewhere on this computer" },
+                ]}
+                value={where}
+                onChange={setWhere}
+              />
+            </FormField>
+            {where === "folder" && <FolderField ws={ws} path={path} onPath={setPath} folder={folder} onFolder={setFolder} expect={[pick.httpUrl, pick.sshUrl, pick.webUrl]} />}
             <div className="flex items-center gap-5">
               <Toggle checked={docs} onChange={setDocs} label={<span className="text-xs">Use as documentation</span>} />
-              <Toggle checked={clone} onChange={setClone} label={<span className="text-xs">Clone now</span>} />
+              {where === "workspace" && <Toggle checked={clone} onChange={setClone} label={<span className="text-xs">Clone now</span>} />}
             </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A working copy the user already has elsewhere on this computer.
+
+// repoKey reduces a Git URL to host/path, so https and SSH URLs of the same
+// repository compare equal.
+function repoKey(u?: string): string {
+  let s = (u ?? "").trim().toLowerCase().replace(/\/+$/, "").replace(/\.git$/, "");
+  const scp = s.match(/^[^/@]+@([^:/]+):(.+)$/);
+  if (scp) return `${scp[1]}/${scp[2]}`;
+  s = s.replace(/^[a-z+]+:\/\//, "").replace(/^[^@/]+@/, "");
+  return s.replace(/^([^/:]+):\d+\//, "$1/");
+}
+
+function FolderField({
+  ws,
+  path,
+  onPath,
+  folder,
+  onFolder,
+  expect,
+}: {
+  ws: string;
+  path: string;
+  onPath: (p: string) => void;
+  folder: RepoFolder | null;
+  onFolder: (f: RepoFolder | null) => void;
+  expect?: string[];
+}) {
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const p = path.trim();
+    onFolder(null);
+    setError("");
+    if (!p) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setChecking(true);
+      try {
+        const f = await api.repoFolder(ws, p);
+        if (!cancelled) onFolder(f);
+      } catch (e) {
+        if (!cancelled) setError(errMsg(e));
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [ws, path]);
+  const mismatch = folder?.cloned && folder.origin && expect?.length && !expect.some((u) => u && repoKey(u) === repoKey(folder.origin));
+  return (
+    <FormField label="Folder" help="Absolute path or ~/…, on this computer. opsdeck works in it in place and never deletes it.">
+      <Input mono value={path} onChange={(e) => onPath(e.target.value)} placeholder="~/projects/deploy" autoFocus />
+      <div className="mt-1.5 text-xs">
+        {checking && <span className="text-faint">Checking…</span>}
+        {!checking && error && <span className="text-err">{error}</span>}
+        {!checking && folder?.cloned && (
+          <span className="text-ok inline-flex items-center gap-1 flex-wrap">
+            <CircleCheck className="size-3.5" /> Git working copy
+            {folder.branch && (
+              <>
+                {" "}
+                on <span className="font-mono">{folder.branch}</span>
+              </>
+            )}
+            {folder.origin && (
+              <span className="text-faint">
+                {" "}
+                · origin <span className="font-mono">{folder.origin}</span>
+              </span>
+            )}
+          </span>
+        )}
+        {!checking && mismatch && (
+          <div className="text-warn mt-1">Its origin is not the repository you picked: pull and push go to the picked repository.</div>
+        )}
+        {!checking && folder?.empty && <span className="text-muted">Empty or missing: opsdeck clones the repository into it.</span>}
+        {!checking && folder && !folder.cloned && !folder.empty && <span className="text-err">This folder is neither a Git working copy nor empty.</span>}
+      </div>
+    </FormField>
+  );
+}
+
+function ExistingRepoModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const { name: ws, workspace, resources } = useWs();
+  const toast = useToast();
+  const [path, setPath] = useState("");
+  const [folder, setFolder] = useState<RepoFolder | null>(null);
+  const [url, setUrl] = useState("");
+  const [name, setName] = useState("");
+  const [env, setEnv] = useState("");
+  const [via, setVia] = useState("");
+  const [docs, setDocs] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const existing = resources.filter((r) => r.kind === "GitRemote");
+  const hops = resources.filter((r) => NETWORK_KINDS.includes(r.kind) || r.kind === "Host");
+  useEffect(() => {
+    if (!folder?.cloned) return;
+    setUrl(folder.url ?? "");
+    const base = slugify(folder.path.split(/[\\/]/).filter(Boolean).pop() ?? "") || "repo";
+    const taken = new Set(existing.map((x) => x.name));
+    let n = base;
+    for (let i = 2; taken.has(n); i++) n = `${base}-${i}`;
+    setName(n);
+    setDocs(/doc|wiki|runbook|handbook/i.test(folder.path));
+  }, [folder]);
+  const dup = folder && existing.find((x) => x.spec.path && String(x.spec.path).replace(/\/+$/, "") === folder.path);
+
+  async function add() {
+    if (!folder?.cloned) return;
+    setBusy(true);
+    try {
+      const spec: Record<string, unknown> = { url: url.trim(), path: path.trim() };
+      if (docs) spec.docs = true;
+      await api.createResource(ws, { kind: "GitRemote", name, environment: env || undefined, via: via || undefined, spec } as Resource);
+      toast.success(`Added ${name}`, `working copy ${folder.path}`);
+      onAdded();
+    } catch (e) {
+      toast.error("Could not add the repository", errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Use an existing clone"
+      icon={<Folder />}
+      width={600}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!folder?.cloned || !url.trim() || !!dup || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name)} loading={busy} onClick={() => void add()}>
+            Add
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="text-xs text-muted">
+          A GitHub or GitLab repository you already cloned somewhere on this computer. opsdeck and the agent work in that folder in place, with the connector of its server (or the token set on the repository).
+        </div>
+        <FolderField ws={ws} path={path} onPath={setPath} folder={folder} onFolder={setFolder} />
+        {dup && <div className="text-xs text-err">This folder is already the working copy of {dup.name}.</div>}
+        {folder?.empty && <div className="text-xs text-muted">To clone a repository into this folder, pick it under Add repository and choose Existing folder.</div>}
+        {folder?.cloned && (
+          <div className="rounded-md border border-line bg-panel-2 p-3 space-y-3">
+            <FormField label="Repository URL" help={folder.connection ? `Served by the connector ${folder.connection}` : "No connector serves this server: set a token on the repository for private ones"}>
+              <Input mono value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://gitlab.example.com/group/project.git" />
+            </FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Name in this workspace">
+                <Input mono value={name} onChange={(e) => setName(e.target.value)} />
+              </FormField>
+              <FormField label="Environment" help="Protected environments make every push ask.">
+                <Select value={env} onChange={(e) => setEnv(e.target.value)}>
+                  <option value="">—</option>
+                  {(workspace?.environments ?? []).map((e) => (
+                    <option key={e.name} value={e.name}>
+                      {e.name}
+                      {e.protected ? " (protected)" : ""}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+            {hops.length > 0 && (
+              <FormField label="Reach the server through">
+                <Select value={via} onChange={(e) => setVia(e.target.value)}>
+                  <option value="">direct</option>
+                  {hops.map((h) => {
+                    const ref = `${h.kind === "Host" ? "host" : "network"}/${h.name}`;
+                    return (
+                      <option key={ref} value={ref}>
+                        {ref}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </FormField>
+            )}
+            <Toggle checked={docs} onChange={setDocs} label={<span className="text-xs">Use as documentation</span>} />
           </div>
         )}
       </div>

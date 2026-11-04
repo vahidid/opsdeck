@@ -39,19 +39,27 @@ func TestParseAgyModels(t *testing.T) {
 	}
 }
 
-// A fake agy gets the bridge in .agents/mcp_config.json and the
-// instructions with the first message; the conversation id comes back.
+// A fake agy gets the bridge in .agents/mcp_config.json and the message
+// (with the instructions, the first time) on stdin as stream-json, after an
+// empty -p=; agy's settings allow the opsdeck tools; the conversation id
+// comes back.
 func TestRunAntigravityFake(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script")
 	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	settings := filepath.Join(home, ".gemini", "antigravity-cli", "settings.json")
+	os.MkdirAll(filepath.Dir(settings), 0o700)
+	os.WriteFile(settings, []byte(`{"colorScheme":"dark","permissions":{"allow":["command(git)"]}}`), 0o600)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "agy")
 	os.WriteFile(bin, []byte(`#!/bin/sh
+[ "$1" = "-p=" ] || { echo "-p took $2 as its prompt" >&2; exit 2; }
 cfg=$(cat .agents/mcp_config.json)
 in=$(cat)
 case "$cfg" in *tok-1*) ;; *) echo '{"status":"error","error":"no bridge"}'; exit 1;; esac
-case "$in" in *"<instructions>"*) ;; *) echo '{"status":"error","error":"no instructions"}'; exit 1;; esac
+case "$in" in *'"event":"user"'*'<instructions>'*) ;; *) echo '{"status":"error","error":"bad input"}'; exit 1;; esac
 echo '{"conversation_id":"conv-9","status":"success","response":"done: '"$*"'"}'
 `), 0o755)
 	work := filepath.Join(dir, "work")
@@ -62,10 +70,19 @@ echo '{"conversation_id":"conv-9","status":"success","response":"done: '"$*"'"}'
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Resume != "conv-9" || len(got) != 1 || !strings.Contains(got[0].Text, "--model gemini-3-pro") || !strings.Contains(got[0].Text, "--sandbox") {
+	if res.Resume != "conv-9" || len(got) != 1 || !strings.Contains(got[0].Text, "--model gemini-3-pro") || !strings.Contains(got[0].Text, "--input-format stream-json") {
 		t.Fatalf("%+v %+v", res, got)
 	}
 	if _, err := os.Stat(filepath.Join(work, ".agents", "mcp_config.json")); err == nil {
 		t.Fatal("the token file is left behind")
+	}
+	b, _ := os.ReadFile(settings)
+	if !strings.Contains(string(b), `"mcp(opsdeck/*)"`) || !strings.Contains(string(b), `"command(git)"`) || !strings.Contains(string(b), `"colorScheme"`) {
+		t.Fatalf("settings %s", b)
+	}
+	// a second run does not add the rule again
+	Run(context.Background(), Request{Spec: Spec{Kind: Antigravity, Command: bin}, Prompt: "again", System: "x", FirstTurn: true, MCPURL: "u", MCPToken: "tok-1", WorkDir: work}, func(Event) {})
+	if b2, _ := os.ReadFile(settings); strings.Count(string(b2), "mcp(opsdeck/*)") != 1 {
+		t.Fatalf("settings %s", b2)
 	}
 }

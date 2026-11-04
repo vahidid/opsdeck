@@ -5,16 +5,12 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
-### Fixed
+## [0.6.0] — 2026-11-04
 
-- **Antigravity CLI as the model** failed at once ("-p took --output-format as its
-  prompt"): agy's `-p` takes the prompt as its value. opsdeck now passes an empty `-p=` and
-  sends the message on stdin (`--input-format stream-json`), so a long first message is not
-  limited by the command line, and allows opsdeck's tools (`mcp(opsdeck/*)`) in agy's
-  settings, since headless agy refuses every tool that would ask.
-- **Antigravity CLI** then failed with "--input-format stream-json requires --output-format
-  stream-json": opsdeck now reads agy's stream-json events (`init`, `step_update`,
-  `result`), so the answer also streams into the chat as it is written.
+Connecting Claude Code, Codex, Cursor, Gemini CLI, Antigravity or VS Code to opsdeck is now
+one click, and keys can be rotated without touching a config file. The Antigravity CLI joins
+the local agents, files and screenshots go with a message, and an approval an agent waits
+for reaches you on any page and on the desktop.
 
 ### Agent
 
@@ -31,9 +27,11 @@ each release's section becomes its notes on GitHub.
   keeps only its hash.
 - **Antigravity.** The Antigravity CLI (`agy`) can be the agent's model, like Claude Code,
   with your Google sign-in: it runs in print mode in an empty folder with the terminal
-  sandbox on and opsdeck's tools as its only MCP server, keeps its conversation between
-  turns, and lists its models with `agy models`. `opsdeck skill install antigravity` installs
-  the skill for it.
+  sandbox on and opsdeck's tools as its only MCP server, gets the message on stdin and
+  streams its answer into the chat (stream-json), keeps its conversation between turns, and
+  lists its models with `agy models`. Since headless agy refuses every tool that would ask,
+  opsdeck allows the tools of its own server (`mcp(opsdeck/*)`) in agy's settings.
+  `opsdeck skill install antigravity` installs the skill for it.
 - **Attachments.** Files and images go with a message: the paperclip, a paste (screenshots)
   or a drop on the message box. Images go to the model as images (API models, Claude Code,
   Codex, ACP agents that take them), PDFs to Anthropic models and Claude Code, text files as

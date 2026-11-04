@@ -20,14 +20,14 @@ import (
 // written to the scratch folder's workspace config (.agents/mcp_config.json)
 // with the opsdeck tools pre-allowed; the folder is empty and the terminal
 // sandbox is on, so its own file and shell tools have nothing to work on.
-// The JSON envelope (`--output-format json`) carries the conversation id,
-// the answer and the usage.
 //
 // agy's -p takes the prompt as its value; an empty one (-p=) with
 // --input-format stream-json reads the message from stdin instead, so a long
 // first message (it carries opsdeck's instructions) is not limited by the
-// command line. Headless agy denies every tool that would ask, MCP tools
-// too: the opsdeck server is allowed in agy's own settings (agyAllowOpsdeck).
+// command line. stream-json input needs stream-json output: one event per
+// line, {"event":"init"|"step_update"|"result", …} (see agyStream).
+// Headless agy denies every tool that would ask, MCP tools too: the opsdeck
+// server is allowed in agy's own settings (agyAllowOpsdeck).
 func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result, error) {
 	cleanup, err := writeAntigravityWorkspace(req)
 	if err != nil {
@@ -38,7 +38,7 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 		emit(Event{Kind: "notice", Text: "Could not allow opsdeck's tools in the Antigravity CLI settings (" + err.Error() + "): add \"" + agyRule + "\" to permissions.allow in " + agySettingsPath() + ", or agy refuses every opsdeck tool"})
 	}
 
-	args := []string{"-p=", "--input-format", "stream-json", "--output-format", "json", "--disable-slash-commands", "--sandbox",
+	args := []string{"-p=", "--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--sandbox",
 		// opsdeck's calls may wait minutes for a human approval
 		"--print-timeout", "60m"}
 	if m := req.Spec.Model; m != "" && m != "default" {
@@ -55,12 +55,10 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 	if req.FirstTurn && req.System != "" {
 		prompt = "<instructions>\n" + req.System + "\n</instructions>\n\n" + prompt
 	}
-	// one stream-json user message ("event" is what agy reads; "type" as
-	// in other stream-json dialects)
 	var line bytes.Buffer
 	enc := json.NewEncoder(&line)
 	enc.SetEscapeHTML(false)
-	enc.Encode(map[string]any{"event": "user", "type": "user", "message": map[string]string{"role": "user", "content": prompt}})
+	enc.Encode(map[string]any{"event": "user", "message": map[string]string{"role": "user", "content": prompt}})
 	env := append(childEnv(req.Spec.Env), "AGY_CLI_DISABLE_AUTO_UPDATE=true")
 	p, err := start(ctx, req.Spec.Command, args, env, req.WorkDir)
 	if err != nil {
@@ -69,15 +67,14 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 	p.stdin.Write(line.Bytes())
 	p.stdin.Close()
 
-	var out strings.Builder
+	st := &agyStream{msgID: fmt.Sprintf("agy-%d", time.Now().UnixNano())}
 	for p.stdout.Scan() {
-		out.Write(p.stdout.Bytes())
-		out.WriteByte('\n')
+		st.line(p.stdout.Bytes(), emit)
 	}
 	werr := p.wait(ctx)
-	res, text, failure := parseAntigravity(out.String())
+	res, text, failure := st.finish()
 	if text != "" {
-		emit(Event{Kind: "text", MsgID: fmt.Sprintf("agy-%d", time.Now().UnixNano()), Text: text})
+		emit(Event{Kind: "text", MsgID: st.msgID, Text: text})
 	}
 	if failure != "" {
 		low := strings.ToLower(failure)
@@ -98,82 +95,100 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 	return res, nil
 }
 
-// parseAntigravity reads agy's JSON envelope ({conversation_id, status,
-// response, usage}); NDJSON (one event per line) and plain text are read as
-// well, since the format has changed between versions.
-func parseAntigravity(out string) (res Result, text, failure string) {
-	type envelope struct {
-		Type           string          `json:"type"`
-		ConversationID string          `json:"conversation_id"`
-		SessionID      string          `json:"session_id"`
-		Status         string          `json:"status"`
-		Response       string          `json:"response"`
-		Result         string          `json:"result"`
-		Content        json.RawMessage `json:"content"`
-		Role           string          `json:"role"`
-		Delta          bool            `json:"delta"`
-		Error          json.RawMessage `json:"error"`
-		Usage          struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-			Prompt       int `json:"prompt_tokens"`
-			Completion   int `json:"completion_tokens"`
-		} `json:"usage"`
+// agyStream reads agy's stream-json output:
+//
+//	{"event":"init","conversation_id":"…","init":{"model":…}}
+//	{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"…",…}}
+//	{"event":"result","result":{"status":"SUCCESS"|"ERROR","response":"…","error":"…","usage":{…}}}
+//
+// Text deltas are streamed to the chat; the answer, a failure and the usage
+// come only from the final result. Lines that are not JSON are kept and
+// used as the answer when no result came (an older agy printing text).
+type agyStream struct {
+	msgID     string
+	res       Result
+	response  string
+	failure   string
+	gotResult bool
+	deltas    strings.Builder
+	plain     strings.Builder
+}
+
+type agyUsage struct {
+	InputTokens     int `json:"input_tokens"`
+	CacheReadTokens int `json:"cache_read_tokens"`
+	OutputTokens    int `json:"output_tokens"`
+}
+
+func (s *agyStream) line(b []byte, emit func(Event)) {
+	var ev struct {
+		Event          string `json:"event"`
+		ConversationID string `json:"conversation_id"`
+		StepUpdate     struct {
+			ConversationID string `json:"conversation_id"`
+			StepType       string `json:"step_type"`
+			TextDelta      string `json:"text_delta"`
+		} `json:"step_update"`
+		Result struct {
+			ConversationID string          `json:"conversation_id"`
+			Status         string          `json:"status"`
+			Response       string          `json:"response"`
+			Error          json.RawMessage `json:"error"`
+			Usage          agyUsage        `json:"usage"`
+		} `json:"result"`
 	}
-	read := func(e envelope) {
-		if id := firstNonEmptyStr(e.ConversationID, e.SessionID); id != "" {
-			res.Resume = id
+	if json.Unmarshal(b, &ev) != nil || ev.Event == "" {
+		if t := strings.TrimSpace(string(b)); t != "" {
+			s.plain.WriteString(t + "\n")
 		}
-		res.InputTokens += e.Usage.InputTokens + e.Usage.Prompt
-		res.OutputTokens += e.Usage.OutputTokens + e.Usage.Completion
-		if len(e.Error) > 0 && string(e.Error) != "null" {
-			var s string
-			if json.Unmarshal(e.Error, &s) != nil {
-				var o struct{ Message string }
-				json.Unmarshal(e.Error, &o)
-				s = o.Message
-			}
-			if s != "" {
-				failure = s
-			}
-		}
-		if e.Status != "" && e.Status != "success" && e.Status != "ok" && e.Status != "completed" && failure == "" && e.Response == "" {
-			failure = e.Status
-		}
-		switch {
-		case e.Response != "":
-			text = e.Response
-		case e.Type == "result" && e.Result != "":
-			text = e.Result
-		case e.Role == "assistant" && len(e.Content) > 0:
-			var s string
-			if json.Unmarshal(e.Content, &s) == nil {
-				if e.Delta {
-					text += s
-				} else {
-					text = s
-				}
-			}
-		}
-	}
-	trimmed := strings.TrimSpace(out)
-	var whole envelope
-	if json.Unmarshal([]byte(trimmed), &whole) == nil {
-		read(whole)
 		return
 	}
-	parsed := false
-	for _, line := range strings.Split(trimmed, "\n") {
-		var e envelope
-		if json.Unmarshal([]byte(strings.TrimSpace(line)), &e) == nil {
-			parsed = true
-			read(e)
+	for _, id := range []string{ev.ConversationID, ev.StepUpdate.ConversationID, ev.Result.ConversationID} {
+		if id != "" && s.res.Resume == "" {
+			s.res.Resume = id
 		}
 	}
-	if !parsed {
-		text = trimmed
+	switch ev.Event {
+	case "step_update":
+		if ev.StepUpdate.StepType == "agent_response" && ev.StepUpdate.TextDelta != "" {
+			s.deltas.WriteString(ev.StepUpdate.TextDelta)
+			emit(Event{Kind: "text_delta", MsgID: s.msgID, Text: ev.StepUpdate.TextDelta})
+		}
+	case "result":
+		r := ev.Result
+		s.gotResult = true
+		s.response = r.Response
+		s.res.InputTokens = r.Usage.InputTokens + r.Usage.CacheReadTokens
+		s.res.OutputTokens = r.Usage.OutputTokens
+		if msg := agyError(r.Error); msg != "" {
+			s.failure = msg
+		} else if strings.EqualFold(r.Status, "ERROR") || strings.EqualFold(r.Status, "FAILED") {
+			s.failure = "the turn failed (" + r.Status + ")"
+		}
 	}
-	return
+}
+
+// agyError reads a result's error: a string or {"message": …}.
+func agyError(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return strings.TrimSpace(s)
+	}
+	var o struct{ Message string }
+	json.Unmarshal(raw, &o)
+	return strings.TrimSpace(o.Message)
+}
+
+func (s *agyStream) finish() (res Result, text, failure string) {
+	text = s.response
+	if !s.gotResult {
+		// no result event: whatever was streamed, or plain output
+		text = firstNonEmptyStr(strings.TrimSpace(s.deltas.String()), strings.TrimSpace(s.plain.String()))
+	}
+	return s.res, text, s.failure
 }
 
 // writeAntigravityWorkspace puts the opsdeck bridge into the scratch

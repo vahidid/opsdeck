@@ -12,6 +12,9 @@ each release's section becomes its notes on GitHub.
   sends the message on stdin (`--input-format stream-json`), so a long first message is not
   limited by the command line, and allows opsdeck's tools (`mcp(opsdeck/*)`) in agy's
   settings, since headless agy refuses every tool that would ask.
+- **Antigravity CLI** then failed with "--input-format stream-json requires --output-format
+  stream-json": opsdeck now reads agy's stream-json events (`init`, `step_update`,
+  `result`), so the answer also streams into the chat as it is written.
 
 ### Agent
 

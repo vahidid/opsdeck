@@ -9,21 +9,37 @@ import (
 	"testing"
 )
 
-func TestParseAntigravity(t *testing.T) {
-	res, text, fail := parseAntigravity(`{"conversation_id":"c-1","status":"success","response":"all good","usage":{"input_tokens":10,"output_tokens":3}}`)
-	if res.Resume != "c-1" || text != "all good" || fail != "" || res.InputTokens != 10 || res.OutputTokens != 3 {
+func agyRun(out string) (Result, string, string, []Event) {
+	var evs []Event
+	st := &agyStream{msgID: "m"}
+	for _, l := range strings.Split(out, "\n") {
+		st.line([]byte(l), func(e Event) { evs = append(evs, e) })
+	}
+	res, text, fail := st.finish()
+	return res, text, fail, evs
+}
+
+func TestAgyStream(t *testing.T) {
+	res, text, fail, evs := agyRun(`{"event":"init","conversation_id":"c-1","init":{"cwd":"/w","permission_mode":"always-proceed"}}
+{"event":"step_update","step_update":{"step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"mcp_opsdeck_inventory"}}
+{"event":"step_update","step_update":{"conversation_id":"c-1","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"First part. "}}
+{"event":"step_update","step_update":{"conversation_id":"c-1","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"Second part."}}
+{"event":"result","result":{"status":"SUCCESS","response":"First part. Second part.","num_turns":2,"usage":{"input_tokens":10,"cache_read_tokens":5,"output_tokens":3}}}`)
+	if res.Resume != "c-1" || text != "First part. Second part." || fail != "" || res.InputTokens != 15 || res.OutputTokens != 3 {
 		t.Fatalf("%+v %q %q", res, text, fail)
 	}
-	_, _, fail = parseAntigravity(`{"conversation_id":"c-1","status":"error","error":{"message":"not signed in"}}`)
-	if fail != "not signed in" {
+	if len(evs) != 2 || evs[0].Kind != "text_delta" || evs[0].Text != "First part. " || evs[1].MsgID != "m" {
+		t.Fatalf("%+v", evs)
+	}
+	_, _, fail, _ = agyRun(`{"event":"result","result":{"status":"ERROR","error":"quota exceeded"}}`)
+	if fail != "quota exceeded" {
 		t.Fatalf("%q", fail)
 	}
-	// NDJSON events
-	res, text, _ = parseAntigravity("{\"type\":\"init\",\"session_id\":\"s-2\"}\n{\"role\":\"assistant\",\"content\":\"he\",\"delta\":true}\n{\"role\":\"assistant\",\"content\":\"llo\",\"delta\":true}\n")
-	if res.Resume != "s-2" || text != "hello" {
-		t.Fatalf("%+v %q", res, text)
+	_, _, fail, _ = agyRun(`{"event":"result","result":{"status":"ERROR"}}`)
+	if !strings.Contains(fail, "ERROR") {
+		t.Fatalf("%q", fail)
 	}
-	if _, text, _ = parseAntigravity("plain answer\n"); text != "plain answer" {
+	if _, text, _, _ = agyRun("plain answer"); text != "plain answer" {
 		t.Fatalf("%q", text)
 	}
 }
@@ -56,11 +72,14 @@ func TestRunAntigravityFake(t *testing.T) {
 	bin := filepath.Join(dir, "agy")
 	os.WriteFile(bin, []byte(`#!/bin/sh
 [ "$1" = "-p=" ] || { echo "-p took $2 as its prompt" >&2; exit 2; }
+case "$*" in *"--input-format stream-json"*) case "$*" in *"--output-format stream-json"*) ;; *) echo "Error: --input-format stream-json requires --output-format stream-json" >&2; exit 2;; esac;; esac
 cfg=$(cat .agents/mcp_config.json)
 in=$(cat)
-case "$cfg" in *tok-1*) ;; *) echo '{"status":"error","error":"no bridge"}'; exit 1;; esac
-case "$in" in *'"event":"user"'*'<instructions>'*) ;; *) echo '{"status":"error","error":"bad input"}'; exit 1;; esac
-echo '{"conversation_id":"conv-9","status":"success","response":"done: '"$*"'"}'
+case "$cfg" in *tok-1*) ;; *) echo '{"event":"result","result":{"status":"ERROR","error":"no bridge"}}'; exit 1;; esac
+case "$in" in *'"event":"user"'*'<instructions>'*) ;; *) echo '{"event":"result","result":{"status":"ERROR","error":"bad input"}}'; exit 1;; esac
+echo '{"event":"init","conversation_id":"conv-9","init":{"cwd":"/w"}}'
+echo '{"event":"step_update","step_update":{"step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"done"}}'
+echo '{"event":"result","result":{"status":"SUCCESS","response":"done: '"$*"'"}}'
 `), 0o755)
 	work := filepath.Join(dir, "work")
 	os.MkdirAll(work, 0o700)
@@ -70,7 +89,8 @@ echo '{"conversation_id":"conv-9","status":"success","response":"done: '"$*"'"}'
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Resume != "conv-9" || len(got) != 1 || !strings.Contains(got[0].Text, "--model gemini-3-pro") || !strings.Contains(got[0].Text, "--input-format stream-json") {
+	if res.Resume != "conv-9" || len(got) != 2 || got[0].Kind != "text_delta" || got[1].Kind != "text" || got[0].MsgID != got[1].MsgID ||
+		!strings.Contains(got[1].Text, "--model gemini-3-pro") || !strings.Contains(got[1].Text, "--output-format stream-json") {
 		t.Fatalf("%+v %+v", res, got)
 	}
 	if _, err := os.Stat(filepath.Join(work, ".agents", "mcp_config.json")); err == nil {

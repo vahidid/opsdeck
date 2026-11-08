@@ -36,7 +36,7 @@ export function ConnectorsPage() {
           <SectionHead
             icon={<GitBranch />}
             title="Git hosting"
-            sub="GitHub and GitLab accounts: repositories for the Repositories page and the agent's Git tools."
+            sub="GitHub and GitLab accounts (add as many as you need, each with its own name, token and server): repositories for the Repositories page and the agent's Git tools."
             action={
               <Button variant="primary" size="sm" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
                 Connect a Git account
@@ -61,7 +61,7 @@ export function ConnectorsPage() {
           <SectionHead
             icon={<Globe />}
             title="DNS & CDN"
-            sub="Cloudflare and ArvanCloud accounts: the zones for the Domains page and the agent's dns tool."
+            sub="Cloudflare and ArvanCloud accounts (add as many as you need, each with its own name, token and API URL): the zones for the Domains page and the agent's dns tool."
             action={
               <Button variant="primary" size="sm" icon={<Plus className="size-4" />} onClick={() => setAddingDNS(true)}>
                 Connect a DNS account
@@ -183,7 +183,7 @@ function ConnectorCard({ c, onChanged, onReconnect }: { c: GitConnection; onChan
         <ProviderMark provider={c.provider} className="size-6 text-fg shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[14px] font-semibold">{c.name || c.login}</span>
+            <span className="text-[14px] font-semibold">{c.title || c.name || c.login}</span>
             <span className="text-muted text-xs font-mono">@{c.login}</span>
             <Badge tone="neutral">{c.host}</Badge>
             {state && <Badge tone={state.ok ? "ok" : "err"}>{state.ok ? "working" : "failing"}</Badge>}
@@ -216,6 +216,7 @@ export function ConnectModal({ reconnect, onClose, onConnected }: { reconnect?: 
   const initial = reconnect ? SERVICES.find((s) => s.provider === reconnect.provider && (s.url === reconnect.url || s.selfHosted)) : undefined;
   const [svc, setSvc] = useState<Service | undefined>(initial);
   const [url, setUrl] = useState(reconnect?.url ?? "");
+  const [title, setTitle] = useState(reconnect?.title ?? "");
   const [caCert, setCaCert] = useState(reconnect?.caCert ?? "");
   const [apiUrl, setApiUrl] = useState(reconnect?.apiUrl ?? "");
   const [clientId, setClientId] = useState(reconnect?.oauthClientId ?? "");
@@ -227,7 +228,7 @@ export function ConnectModal({ reconnect, onClose, onConnected }: { reconnect?: 
   const [flow, setFlow] = useState<OAuthStart | null>(null);
   const flowRef = useRef<string | null>(null);
 
-  const input = (): ConnInput => ({ provider: svc!.provider, url: svc!.selfHosted ? url : svc!.url, caCert, apiUrl, clientId: clientId || opts?.clientId });
+  const input = (): ConnInput => ({ id: reconnect?.id, title: title.trim() || undefined, provider: svc!.provider, url: svc!.selfHosted ? url : svc!.url, caCert, apiUrl, clientId: clientId || opts?.clientId });
   const ready = !!svc && (!svc.selfHosted || /\w+\.\w+|localhost|\d+\.\d+/.test(url));
 
   // Look up the ways in for this server.
@@ -303,6 +304,7 @@ export function ConnectModal({ reconnect, onClose, onConnected }: { reconnect?: 
     <Modal open onClose={onClose} title={reconnect ? `Reconnect ${reconnect.host}` : "Connect a Git account"} icon={<Plug />} width={600}>
       <div className="space-y-4">
         {!reconnect && <ServiceTiles selected={svc?.id} onPick={(s) => setSvc(s)} />}
+        {svc && <TitleField value={title} onChange={setTitle} placeholder={`e.g. ${svc.label} – work`} />}
         {svc?.selfHosted && (
           <FormField label="Server address" help={svc.provider === "gitlab" ? "e.g. gitlab.example.com" : "e.g. github.example.com"}>
             <Input mono autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder={svc.provider === "gitlab" ? "https://gitlab.example.com" : "https://github.example.com"} />
@@ -320,11 +322,14 @@ export function ConnectModal({ reconnect, onClose, onConnected }: { reconnect?: 
                     <Textarea mono rows={3} value={caCert} onChange={(e) => setCaCert(e.target.value)} placeholder="-----BEGIN CERTIFICATE-----" />
                   </FormField>
                 )}
-                {svc.selfHosted && (
-                  <FormField label="API URL" help="Only when the API is not at the usual place.">
-                    <Input mono value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder={svc.provider === "gitlab" ? "https://gitlab.example.com/api/v4" : "https://github.example.com/api/v3"} />
-                  </FormField>
-                )}
+                <FormField label="API URL" help="Only when the API is not at the usual place (a mirror or a proxy in front of it).">
+                  <Input
+                    mono
+                    value={apiUrl}
+                    onChange={(e) => setApiUrl(e.target.value)}
+                    placeholder={svc.selfHosted ? (svc.provider === "gitlab" ? "https://gitlab.example.com/api/v4" : "https://github.example.com/api/v3") : svc.provider === "gitlab" ? "https://gitlab.com/api/v4" : "https://api.github.com"}
+                  />
+                </FormField>
                 <FormField
                   label="OAuth application ID (for browser sign-in)"
                   help={
@@ -528,6 +533,7 @@ export function DNSConnectModal({ reconnect, onClose, onConnected }: { reconnect
   const [token, setToken] = useState("");
   const [apiUrl, setApiUrl] = useState(reconnect?.apiUrl ?? "");
   const [proxy, setProxy] = useState(reconnect?.proxy ?? "");
+  const [title, setTitle] = useState(reconnect?.title ?? "");
   const [advanced, setAdvanced] = useState(!!(reconnect?.apiUrl || reconnect?.proxy));
   const [busy, setBusy] = useState(false);
   const prov = providers.data?.find((p) => p.id === providerId);
@@ -536,7 +542,7 @@ export function DNSConnectModal({ reconnect, onClose, onConnected }: { reconnect
     if (!prov) return;
     setBusy(true);
     try {
-      const c = await api.dnsConnect({ id: reconnect?.id, provider: prov.id, apiUrl: apiUrl.trim() || undefined, proxy: proxy.trim() || undefined, token: token.trim() });
+      const c = await api.dnsConnect({ id: reconnect?.id, provider: prov.id, title: title.trim() || undefined, apiUrl: apiUrl.trim() || undefined, proxy: proxy.trim() || undefined, token: token.trim() });
       toast.success(`Connected ${c.label}`, c.account ? c.account : `${c.zones} zones`);
       onConnected(c);
     } catch (e) {
@@ -553,6 +559,7 @@ export function DNSConnectModal({ reconnect, onClose, onConnected }: { reconnect
         {providers.error && <div className="text-xs text-err">{providers.error}</div>}
         {prov && (
           <>
+            <TitleField value={title} onChange={setTitle} placeholder={`e.g. ${prov.label} – work`} />
             <Way
               icon={<KeyRound className="size-4" />}
               title={`An API token for ${prov.label}`}
@@ -592,6 +599,15 @@ export function DNSConnectModal({ reconnect, onClose, onConnected }: { reconnect
         )}
       </div>
     </Modal>
+  );
+}
+
+// TitleField names a connector, so several of one provider can be told apart.
+function TitleField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <FormField label="Name" help="Optional. Tells this connector apart from others of the same provider.">
+      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+    </FormField>
   );
 }
 

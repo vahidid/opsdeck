@@ -55,6 +55,8 @@ func (s *Server) connList(w http.ResponseWriter, r *http.Request) {
 
 // connInput is what the UI sends to connect an account.
 type connInput struct {
+	ID       string `json:"id"` // reconnecting this connector
+	Title    string `json:"title"`
 	Provider string `json:"provider"`
 	URL      string `json:"url"`
 	APIURL   string `json:"apiUrl"`
@@ -66,7 +68,7 @@ type connInput struct {
 
 // normalize checks the provider and reduces the URL to the server's root.
 func (in *connInput) conn() (config.GitConnection, error) {
-	c := config.GitConnection{Provider: in.Provider, APIURL: strings.TrimSpace(in.APIURL), CACert: strings.TrimSpace(in.CACert), OAuthClientID: strings.TrimSpace(in.ClientID)}
+	c := config.GitConnection{Provider: in.Provider, Title: strings.TrimSpace(in.Title), APIURL: strings.TrimSpace(in.APIURL), CACert: strings.TrimSpace(in.CACert), OAuthClientID: strings.TrimSpace(in.ClientID)}
 	raw := strings.TrimSpace(in.URL)
 	switch in.Provider {
 	case "github":
@@ -96,12 +98,13 @@ func (in *connInput) conn() (config.GitConnection, error) {
 
 var idClean = regexp.MustCompile(`[^a-z0-9]+`)
 
-// connID reuses the ID of a connector for the same server, else derives
-// one from the host.
-func (s *Server) connID(c config.GitConnection) string {
+// connID keeps the ID of the connector being reconnected, else derives a
+// free one from the host: every new connection is a connector of its own,
+// so any number of accounts (or tokens) of one server can be added.
+func (s *Server) connID(c config.GitConnection, reconnect string) string {
 	existing := s.cfg.GitConnections()
 	for _, x := range existing {
-		if x.Provider == c.Provider && x.URL == c.URL {
+		if x.ID == reconnect && x.Provider == c.Provider {
 			return x.ID
 		}
 	}
@@ -131,7 +134,7 @@ func (s *Server) connID(c config.GitConnection) string {
 }
 
 // saveConn checks the token against the account and stores the connector.
-func (s *Server) saveConn(ctx context.Context, c config.GitConnection, tok *gitx.OAuthToken) (config.GitConnection, error) {
+func (s *Server) saveConn(ctx context.Context, c config.GitConnection, tok *gitx.OAuthToken, reconnect string) (config.GitConnection, error) {
 	acct, err := gitx.NewAccount(c, tok.AccessToken, nil)
 	if err != nil {
 		return c, err
@@ -140,8 +143,14 @@ func (s *Server) saveConn(ctx context.Context, c config.GitConnection, tok *gitx
 	if err != nil {
 		return c, fmt.Errorf("could not sign in to %s: %w", c.URL, err)
 	}
-	c.ID = s.connID(c)
 	c.Login, c.Name = u.Login, u.Name
+	c.ID = s.connID(c, reconnect)
+	if old, ok := s.findConn(c.ID); ok {
+		c.Created = old.Created
+		if c.Title == "" {
+			c.Title = old.Title
+		}
+	}
 	if c.Created.IsZero() {
 		c.Created = time.Now().UTC()
 	}
@@ -225,7 +234,7 @@ func (s *Server) connCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	c, err = s.saveConn(ctx, c, &gitx.OAuthToken{AccessToken: token})
+	c, err = s.saveConn(ctx, c, &gitx.OAuthToken{AccessToken: token}, in.ID)
 	s.record(r, "", "git.connect", c.URL, map[string]any{"method": c.Method, "login": c.Login}, err)
 	if err != nil {
 		fail(w, err)
@@ -387,7 +396,7 @@ func (s *Server) oauthStart(w http.ResponseWriter, r *http.Request) {
 		tok, err := gitx.PollDevice(ctx, hc, c, dc)
 		var saved config.GitConnection
 		if err == nil {
-			saved, err = s.saveConn(ctx, c, tok)
+			saved, err = s.saveConn(ctx, c, tok, in.ID)
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()

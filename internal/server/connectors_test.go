@@ -73,9 +73,9 @@ func TestGitConnectors(t *testing.T) {
 		t.Fatalf("test: %v", test)
 	}
 
-	// Browser sign-in for the same server replaces it (same ID).
+	// Reconnecting with the browser sign-in replaces it (same ID).
 	var flow map[string]any
-	c.must("POST", "/api/git/oauth", map[string]any{"provider": "gitlab", "url": gl.URL, "caCert": ca, "clientId": "app1"}, &flow)
+	c.must("POST", "/api/git/oauth", map[string]any{"id": id, "provider": "gitlab", "url": gl.URL, "caCert": ca, "clientId": "app1"}, &flow)
 	if flow["userCode"] != "WDJB-MJHT" {
 		t.Fatalf("flow: %v", flow)
 	}
@@ -95,6 +95,18 @@ func TestGitConnectors(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("connections: %v", list)
 	}
+	// Connecting again (even the same account) adds a connector of its own,
+	// with the name the user gave it.
+	var second map[string]any
+	c.must("POST", "/api/git/connections", map[string]any{"provider": "gitlab", "url": gl.URL, "caCert": ca, "method": "cli", "title": "Bot, second token"}, &second)
+	if second["id"] == id || second["title"] != "Bot, second token" || second["credential"] == conn["credential"] {
+		t.Fatalf("second connection: %v", second)
+	}
+	c.must("GET", "/api/git/connections", nil, &list)
+	if len(list) != 2 {
+		t.Fatalf("connections: %v", list)
+	}
+	c.must("DELETE", "/api/git/connections/"+second["id"].(string), nil, nil)
 
 	// Pick a repository from the account and add it to the workspace.
 	var repos []map[string]any

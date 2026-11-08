@@ -38,7 +38,7 @@ export function TabStrip({ ws }: { ws: string }) {
     <div className="h-full flex-1 min-w-0 flex items-center">
       <div
         ref={strip}
-        className="flex items-center gap-1 overflow-x-auto min-w-0 h-full [scrollbar-width:none]"
+        className="flex items-center gap-1 overflow-x-auto min-w-0 h-full no-scrollbar"
         onDoubleClick={(e) => {
           if (e.target === e.currentTarget) setMenu(true);
         }}

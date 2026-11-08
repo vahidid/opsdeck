@@ -168,9 +168,11 @@ type file struct {
 type GitConnection struct {
 	ID       string `yaml:"id" json:"id"`
 	Provider string `yaml:"provider" json:"provider"` // github | gitlab
-	URL      string `yaml:"url" json:"url"`           // web root: https://github.com, https://gitlab.example.com
-	APIURL   string `yaml:"apiUrl,omitempty" json:"apiUrl"`
-	CACert   string `yaml:"caCert,omitempty" json:"caCert"`
+	// Title is the name the user gave this connector ("GitHub – work").
+	Title  string `yaml:"title,omitempty" json:"title"`
+	URL    string `yaml:"url" json:"url"` // web root: https://github.com, https://gitlab.example.com
+	APIURL string `yaml:"apiUrl,omitempty" json:"apiUrl"`
+	CACert string `yaml:"caCert,omitempty" json:"caCert"`
 	// Credential is the vault item with the token (vault://global/…).
 	Credential string `yaml:"credential" json:"credential"`
 	Method     string `yaml:"method" json:"method"` // token | oauth | gh | glab
@@ -187,6 +189,8 @@ type GitConnection struct {
 type DNSConnection struct {
 	ID       string `yaml:"id" json:"id"`
 	Provider string `yaml:"provider" json:"provider"` // cloudflare | arvancloud
+	// Title is the name the user gave this connector ("Arvan – work").
+	Title string `yaml:"title,omitempty" json:"title"`
 	// APIURL overrides the provider's API root (tests, a proxy in front
 	// of the API).
 	APIURL string `yaml:"apiUrl,omitempty" json:"apiUrl"`

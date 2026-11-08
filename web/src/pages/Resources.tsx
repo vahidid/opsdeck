@@ -905,6 +905,7 @@ function ConnectionField({ label, help, value, onChange }: { label: string; help
         <option value="">Automatic (by server)</option>
         {(conns.data ?? []).map((c) => (
           <option key={c.id} value={c.id}>
+            {c.title ? `${c.title} · ` : ""}
             {c.provider === "github" ? "GitHub" : "GitLab"} · {c.host} · {c.login}
           </option>
         ))}

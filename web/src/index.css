@@ -156,6 +156,19 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--c-border-strong) transparent;
 }
+/* a pane keeps the bar's room even when it does not scroll, so content
+   does not shift sideways when it starts to */
+.overflow-y-auto:not(.overflow-x-auto),
+.overflow-auto {
+  scrollbar-gutter: stable;
+}
+/* strips that scroll sideways (tabs) without a bar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
 ::selection {
   background: color-mix(in srgb, var(--c-accent) 35%, transparent);

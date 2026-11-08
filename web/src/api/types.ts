@@ -707,6 +707,7 @@ export type MergeRequest = {
 export type GitConnection = {
   id: string;
   provider: "github" | "gitlab";
+  title?: string;
   url: string;
   host: string;
   apiUrl: string;
@@ -719,7 +720,7 @@ export type GitConnection = {
   created: string;
   tokenPage: string;
 };
-export type ConnInput = { provider: "github" | "gitlab"; url: string; apiUrl?: string; caCert?: string; method?: "token" | "cli"; token?: string; clientId?: string };
+export type ConnInput = { id?: string; title?: string; provider: "github" | "gitlab"; url: string; apiUrl?: string; caCert?: string; method?: "token" | "cli"; token?: string; clientId?: string };
 export type ConnOptions = {
   url: string;
   host: string;
@@ -761,6 +762,7 @@ export type DNSProvider = {
 export type DNSConnection = {
   id: string;
   provider: "cloudflare" | "arvancloud";
+  title?: string;
   apiUrl: string;
   proxy: string;
   credential: string;
@@ -772,7 +774,7 @@ export type DNSConnection = {
   tokenPage: string;
   dashboard: string;
 };
-export type DNSConnInput = { id?: string; provider: "cloudflare" | "arvancloud"; apiUrl?: string; proxy?: string; token: string };
+export type DNSConnInput = { id?: string; provider: "cloudflare" | "arvancloud"; title?: string; apiUrl?: string; proxy?: string; token: string };
 export type DNSZone = {
   id: string;
   name: string;

@@ -5,6 +5,34 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-08
+
+Any number of connectors of one provider, each with its own name, token and API URL, and a
+terminal that shows up every time it connects.
+
+### Connectors
+
+- **Add as many connectors as you need.** Connecting a Git or DNS account no longer
+  replaces an earlier one of the same provider or server: every connection, whichever way
+  it was made (token, browser sign-in, `gh`/`glab` login), is a connector of its own with
+  its own token in the vault (`github`, `github-2`, `arvancloud-2`…). *Reconnect* still
+  replaces that one connector. Before, a second ArvanCloud account overwrote the first.
+- **Name a connector** ("Arvan – work", "GitHub – client") to tell them apart on the
+  Connectors page and in the connector pickers of Domains and repositories.
+- **API URL for every Git connector**, not only self-hosted ones, under *Advanced*, like
+  the DNS connectors' API URL and proxy.
+
+### Fixed
+
+- **A connected terminal stayed blank** when it was opened from another page (Resources,
+  Overview, the command palette) while a Terminal tab was open in the background: the
+  hidden tab took the terminal or opened it at size zero. A terminal now attaches only to
+  a Terminal page on screen.
+- **The terminal's *New* menu** opened inside the tab bar and had to be scrolled there; it
+  now opens over the terminal. The tab bar scrolls sideways with the mouse wheel.
+- **Scroll bars no longer move the page**: panes keep the room for their scroll bar, so
+  content does not shift sideways when a list grows long enough to scroll.
+
 ## [0.6.0] — 2026-11-04
 
 Connecting Claude Code, Codex, Cursor, Gemini CLI, Antigravity or VS Code to opsdeck is now

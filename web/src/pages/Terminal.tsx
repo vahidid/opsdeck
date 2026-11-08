@@ -8,23 +8,27 @@ import { Popover } from "../components/overlay";
 
 export function TerminalPage() {
   const { name: ws, hosts } = useWs();
-  const { tabs, activeId, setActive, open, close, reconnect, attach, fitActive } = useTerminals();
+  const { tabs, activeId, setActive, open, close, reconnect, attach } = useTerminals();
   const hostRef = useRef<HTMLDivElement>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const [q, setQ] = useState("");
   const active = tabs.find((t) => t.id === activeId) ?? null;
 
-  useEffect(() => {
-    if (active && hostRef.current) attach(active.id, hostRef.current);
-  }, [active, attach]);
-
+  // Background workspace tabs stay mounted but hidden: attach only while
+  // this page is on screen, else a hidden copy of it takes the terminal
+  // (or opens xterm at size 0, which then never draws). Showing the tab
+  // resizes the host from 0, which attaches it here.
   useEffect(() => {
     const el = hostRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => fitActive());
+    if (!el || !active) return;
+    const sync = () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) attach(active.id, el);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [fitActive]);
+  }, [active, attach]);
 
   const filteredHosts = hosts.filter((h) => !q || h.name.includes(q) || hostAddress(h).includes(q));
 
@@ -33,7 +37,7 @@ export function TerminalPage() {
       <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setPickOpen((o) => !o)}>
         New
       </Button>
-      <Popover open={pickOpen} onClose={() => setPickOpen(false)} className="left-0 mt-1 w-80 p-2">
+      <Popover open={pickOpen} onClose={() => setPickOpen(false)} className="left-0 top-full mt-1 w-80 p-2">
         <SearchInput value={q} onChange={setQ} placeholder="Find host…" autoFocus />
         <div className="max-h-72 overflow-y-auto mt-1.5">
           {filteredHosts.length === 0 && <div className="text-xs text-faint p-2">No hosts in this workspace</div>}
@@ -60,12 +64,14 @@ export function TerminalPage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center h-10 border-b border-line bg-panel px-2 gap-1 shrink-0">
-        <div className="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0">
+        {/* the picker stays outside the scrolling strip, so its menu is not clipped to the bar */}
+        <div className="flex items-center gap-0.5 overflow-x-auto min-w-0 no-scrollbar" onWheel={(e) => (e.currentTarget.scrollLeft += e.deltaY)}>
           {tabs.map((t) => (
             <TabButton key={t.id} t={t} active={t.id === activeId} currentWs={ws} onClick={() => setActive(t.id)} onClose={() => close(t.id)} />
           ))}
-          {picker}
         </div>
+        <div className="shrink-0">{picker}</div>
+        <div className="flex-1" />
         {active && (
           <div className="flex items-center gap-2 pl-2 shrink-0">
             <span className="text-[11px] text-muted truncate max-w-72">{active.message}</span>

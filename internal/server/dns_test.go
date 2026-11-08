@@ -58,6 +58,13 @@ func TestDNSConnectors(t *testing.T) {
 	if arconn["id"] != "arvancloud" || arconn["zones"] != 1.0 {
 		t.Fatalf("arvan connection: %v", arconn)
 	}
+	// Connecting again is a connector of its own, named by the user.
+	var ar2 map[string]any
+	c.must("POST", "/api/dns/connections", map[string]any{"provider": "arvancloud", "apiUrl": ar.URL, "token": dnsserver.Token, "title": "Arvan work"}, &ar2)
+	if ar2["id"] != "arvancloud-2" || ar2["label"] != "Arvan work" {
+		t.Fatalf("second arvan connection: %v", ar2)
+	}
+	c.must("DELETE", "/api/dns/connections/arvancloud-2", nil, nil)
 	// Reconnecting the same account keeps the ID.
 	c.must("POST", "/api/dns/connections", map[string]any{"id": "cloudflare", "provider": "cloudflare", "apiUrl": cf.URL, "token": dnsserver.Token}, &conn)
 	var list []map[string]any
@@ -142,7 +149,7 @@ func TestDNSConnectors(t *testing.T) {
 			actions[e["action"].(string)]++
 		}
 	}
-	if actions["dns.connect"] != 3 || actions["dns.record.create"] != 2 || actions["dns.record.update"] != 1 || actions["dns.record.delete"] != 1 {
+	if actions["dns.connect"] != 4 || actions["dns.record.create"] != 2 || actions["dns.record.update"] != 1 || actions["dns.record.delete"] != 1 {
 		t.Fatalf("audit: %v", actions)
 	}
 

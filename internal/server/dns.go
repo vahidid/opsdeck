@@ -47,7 +47,11 @@ type DNSConnInfo struct {
 
 func dnsConnInfo(c config.DNSConnection) DNSConnInfo {
 	p, _ := dnsx.ProviderByID(c.Provider)
-	return DNSConnInfo{DNSConnection: c, Label: p.Label, TokenPage: p.TokenPage, Dashboard: p.Dashboard}
+	label := p.Label
+	if c.Title != "" {
+		label = c.Title
+	}
+	return DNSConnInfo{DNSConnection: c, Label: label, TokenPage: p.TokenPage, Dashboard: p.Dashboard}
 }
 
 func (s *Server) dnsConnList(w http.ResponseWriter, r *http.Request) {
@@ -60,17 +64,13 @@ func (s *Server) dnsConnList(w http.ResponseWriter, r *http.Request) {
 
 var dnsIDClean = regexp.MustCompile(`[^a-z0-9]+`)
 
-// dnsConnID keeps the ID of the connector being reconnected (or of one for
-// the same account), else derives a free one from the provider.
+// dnsConnID keeps the ID of the connector being reconnected, else derives a
+// free one from the provider: every new connection is a connector of its
+// own, so any number of accounts (or tokens) of one provider can be added.
 func (s *Server) dnsConnID(c config.DNSConnection, reconnect string) string {
 	existing := s.cfg.DNSConnections()
 	for _, x := range existing {
 		if x.ID == reconnect && x.Provider == c.Provider {
-			return x.ID
-		}
-	}
-	for _, x := range existing {
-		if x.Provider == c.Provider && x.APIURL == c.APIURL && (x.Account == c.Account && c.Account != "" || c.Account == "" && x.Account == "") {
 			return x.ID
 		}
 	}
@@ -94,6 +94,7 @@ func (s *Server) dnsConnCreate(w http.ResponseWriter, r *http.Request) {
 		Provider string `json:"provider"`
 		APIURL   string `json:"apiUrl"`
 		Proxy    string `json:"proxy"`
+		Title    string `json:"title"`
 		Token    string `json:"token"`
 	}
 	if err := readJSON(r, &in); err != nil {
@@ -109,7 +110,7 @@ func (s *Server) dnsConnCreate(w http.ResponseWriter, r *http.Request) {
 		fail(w, errors.New("a token is required"))
 		return
 	}
-	c := config.DNSConnection{Provider: in.Provider, APIURL: strings.TrimSuffix(strings.TrimSpace(in.APIURL), "/"), Proxy: strings.TrimSpace(in.Proxy), Method: "token"}
+	c := config.DNSConnection{Provider: in.Provider, APIURL: strings.TrimSuffix(strings.TrimSpace(in.APIURL), "/"), Proxy: strings.TrimSpace(in.Proxy), Title: strings.TrimSpace(in.Title), Method: "token"}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	c, err := s.saveDNSConn(ctx, c, token, in.ID)
@@ -134,8 +135,11 @@ func (s *Server) saveDNSConn(ctx context.Context, c config.DNSConnection, token,
 	}
 	c.Account, c.Zones = acct, zones
 	c.ID = s.dnsConnID(c, reconnect)
-	if old, ok := s.dns.Find(c.ID); ok && !old.Created.IsZero() {
+	if old, ok := s.dns.Find(c.ID); ok {
 		c.Created = old.Created
+		if c.Title == "" {
+			c.Title = old.Title
+		}
 	}
 	if c.Created.IsZero() {
 		c.Created = time.Now().UTC()

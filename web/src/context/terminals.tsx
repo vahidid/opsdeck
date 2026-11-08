@@ -184,9 +184,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     (id: string, parent: HTMLElement | null) => {
       const tab = tabsRef.current.find((t) => t.id === id);
       if (!tab || !parent) return;
-      if (tab.el.parentElement !== parent) {
-        parent.innerHTML = "";
-        parent.appendChild(tab.el);
+      const moved = tab.el.parentElement !== parent;
+      if (moved) {
+        parent.replaceChildren(tab.el);
       }
       if (!tab.opened) {
         tab.term.open(tab.el);
@@ -201,12 +201,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         requestAnimationFrame(() => {
           try {
             tab.fit.fit();
+            // drawn while detached or hidden: repaint what is there
+            if (moved) tab.term.refresh(0, tab.term.rows - 1);
           } catch {
             /* ignore */
           }
         });
       }
-      tab.term.focus();
+      if (moved || !tab.opened) tab.term.focus();
     },
     [connect],
   );

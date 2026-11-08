@@ -1593,7 +1593,8 @@ function AddRepoModal({ onClose, onAdded, onManual, onExisting }: { onClose: () 
             >
               {(conns.data ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.provider === "github" ? "GitHub" : "GitLab"} · {c.host} · {c.login}
+                  {c.title ? `${c.title} · ` : ""}
+            {c.provider === "github" ? "GitHub" : "GitLab"} · {c.host} · {c.login}
                 </option>
               ))}
               <option value="__new">+ Connect another account…</option>

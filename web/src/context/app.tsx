@@ -151,6 +151,11 @@ export function useWs(): WsCtx {
   return c;
 }
 
+/** the workspace, or null outside one (app-level screens) */
+export function useWsMaybe(): WsCtx | null {
+  return useContext(WCtx);
+}
+
 export function hostAddress(r: Resource): string {
   const s = r.spec || {};
   const addr = String(s.address ?? "");

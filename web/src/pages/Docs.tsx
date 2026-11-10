@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Brain, ClipboardList, FileArchive, FilePlus2, FileText, GitBranch, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, Brain, ClipboardList, Download, FileArchive, FilePlus2, FileText, GitBranch, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
 import { api, errMsg } from "../api/client";
 import type { DocInfo } from "../api/types";
 import { useWs } from "../context/app";
@@ -8,6 +8,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Badge, Button, EmptyState, ErrorBox, FormField, Input, Loading, Textarea, cx } from "../components/ui";
 import { Modal, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
+import { exportHtml } from "../lib/exportDoc";
 import { useAsync } from "../hooks";
 import { timeAgo } from "../lib/format";
 
@@ -27,6 +28,7 @@ export function DocsPage() {
   const [loadErr, setLoadErr] = useState("");
   const [saving, setSaving] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const rendered = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const confirm = useConfirm();
   const editing = edit !== null;
@@ -224,6 +226,17 @@ export function DocsPage() {
                   Delete
                 </Button>
               )}
+              {content?.trim() && (!isArtifact || sel.endsWith(".md")) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Download className="size-3.5" />}
+                  title="Save as a self-contained HTML file (opens in any browser, prints to PDF)"
+                  onClick={() => rendered.current && void exportHtml(rendered.current, sel.split("/").pop() || "document")}
+                >
+                  Export
+                </Button>
+              )}
               {!isArtifact && !repoDoc && (
                 <Button size="sm" icon={<Pencil className="size-3.5" />} onClick={() => setEdit(content ?? "")} disabled={content === null}>
                   Edit
@@ -256,7 +269,7 @@ export function DocsPage() {
             ) : isArtifact && !sel.endsWith(".md") ? (
               <pre className="px-6 py-5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-all text-fg">{content}</pre>
             ) : content.trim() ? (
-              <div className="max-w-3xl px-8 py-6">
+              <div ref={rendered} className="max-w-3xl px-8 py-6">
                 <Markdown>{stripFrontMatter(content)}</Markdown>
               </div>
             ) : (

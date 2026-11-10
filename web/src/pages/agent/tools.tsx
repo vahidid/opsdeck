@@ -675,7 +675,7 @@ function SubagentBody({ item, ctx, live }: { item: ToolItem; ctx: Ctx; live: boo
               <ToolGroup key={b.id} items={b.items} ctx={ctx} live={live && running && i === blocks.length - 1} expandAll={false} flush />
             ) : b.kind === "assistant" ? (
               <div key={b.id} className="text-[12.5px] text-muted">
-                {b.text ? <Markdown dir={textDir(b.text) === "rtl" ? "rtl" : "auto"}>{b.text}</Markdown> : <span className="text-faint">…</span>}
+                {b.text ? <Markdown dir={textDir(b.text) === "rtl" ? "rtl" : "auto"} streaming={b.streaming}>{b.text}</Markdown> : <span className="text-faint">…</span>}
                 {b.streaming && <span className="inline-block w-1.5 h-3.5 bg-agent-ink/70 ml-0.5 align-text-bottom pulse-dot" />}
               </div>
             ) : b.kind === "error" ? (

@@ -8,6 +8,7 @@ import {
   ChevronDown,
   CircleSlash,
   Cpu,
+  Download,
   Eye,
   FileClock,
   FileText,
@@ -40,6 +41,8 @@ import { useTerminals } from "../context/terminals";
 import { Badge, Button, EmptyState, IconButton, Input, Segmented, Select, StatusDot, cx } from "../components/ui";
 import { MenuItem, Modal, Popover, useConfirm, useToast } from "../components/overlay";
 import { Markdown } from "../components/Markdown";
+import { exportHtml } from "../lib/exportDoc";
+import { ActionCtx } from "../components/rich";
 import { textDir } from "../lib/rtl";
 import { useAsync, useLocalStorage } from "../hooks";
 import { fmtBytes, fmtTokens, timeAgo } from "../lib/format";
@@ -759,6 +762,11 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     return null;
   }
 
+  // an action button of an answer sends its prompt as the next message
+  const sendRef = useRef<(text: string) => void>(() => {});
+  sendRef.current = (text) => void send(text);
+  const sendAction = useCallback((text: string) => sendRef.current(text), []);
+
   async function send(text: string, files: File[] = []) {
     const sh = parseShell(text);
     if (sh) {
@@ -902,7 +910,11 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
               case "recall":
                 return <Recall key={t.id} items={t.items} preloaded={t.preloaded} />;
               case "assistant":
-                return <AssistantMsg key={t.id} text={t.text} streaming={t.streaming} />;
+                return (
+                  <ActionCtx.Provider key={t.id} value={sendAction}>
+                    <AssistantMsg text={t.text} streaming={t.streaming} />
+                  </ActionCtx.Provider>
+                );
               case "tools":
                 return <ToolGroup key={t.id} items={t.items} ctx={ctx} live={running && bi === blocks.length - 1} expandAll={toolView === "open"} />;
               case "error":
@@ -920,9 +932,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
             return null;
           })}
           {state === "running" && !timeline.some((t) => t.kind === "assistant" && t.streaming) && blocks[blocks.length - 1]?.kind !== "tools" && (
-            <div className="flex items-center gap-2 text-muted text-xs pl-9">
-              <Loader2 className="size-3.5 animate-spin" /> Thinking…
-            </div>
+            <Thinking key={blocks[blocks.length - 1]?.id} after={blocks[blocks.length - 1]?.kind} step={todo?.find((t) => t.status === "in_progress")?.text} onStop={() => void stop()} />
           )}
         </div>
       </div>
@@ -1122,15 +1132,80 @@ function UserMsg({
 }
 
 function AssistantMsg({ text, streaming }: { text: string; streaming: boolean }) {
+  const body = useRef<HTMLDivElement>(null);
   return (
-    <div className="flex gap-3">
+    <div className="group/msg flex gap-3">
       <span className="size-6 rounded-md bg-agent text-agent-fg grid place-items-center shrink-0 mt-0.5">
         <Bot className="size-3.5 text-agent-fg" />
       </span>
       <div className="flex-1 min-w-0 text-[13.5px] pt-0.5">
-        {text ? <Markdown dir={textDir(text) === "rtl" ? "rtl" : "auto"}>{text}</Markdown> : <span className="text-faint">…</span>}
+        <div ref={body}>
+          {text ? (
+            <Markdown dir={textDir(text) === "rtl" ? "rtl" : "auto"} streaming={streaming}>
+              {text}
+            </Markdown>
+          ) : (
+            <span className="text-faint">…</span>
+          )}
+        </div>
         {streaming && <span className="inline-block w-1.5 h-4 bg-agent-ink/80 ml-0.5 align-text-bottom pulse-dot" />}
+        {!streaming && text.length > 400 && (
+          <button
+            onClick={() => body.current && void exportHtml(body.current, body.current.querySelector("h1,h2,h3")?.textContent || "opsdeck answer")}
+            title="Save this answer as a self-contained HTML file (opens in any browser, prints to PDF)"
+            className="mt-1 flex items-center gap-1 text-[11px] text-faint hover:text-fg opacity-0 group-hover/msg:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <Download className="size-3" /> Export
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+// The wait before the agent's next words: what it is doing (from what came
+// last), how long it has been, the checklist step it is on, and a way to stop.
+function Thinking({ after, step, onStop }: { after?: string; step?: string; onStop: () => void }) {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const phase =
+    sec >= 30
+      ? "Still on it. Some steps take a minute"
+      : after === "user"
+        ? sec < 3
+          ? "Reading your message"
+          : "Working out where to start"
+        : after === "recall"
+          ? "Going through what this workspace already knows"
+          : after === "assistant"
+            ? "Deciding the next step"
+            : "Thinking it through";
+  return (
+    <div className="flex items-center gap-3" role="status">
+      <span className="size-6 rounded-md bg-agent/15 grid place-items-center shrink-0">
+        <span className="think-mark" aria-hidden>
+          <i />
+          <i />
+          <i />
+        </span>
+      </span>
+      <div className="min-w-0 flex-1">
+        <span className="think-text text-[13px]">{phase}</span>
+        {step && (
+          <div dir="auto" className="text-[11.5px] text-faint truncate text-start">
+            {step}
+          </div>
+        )}
+      </div>
+      <span className="text-[11px] text-faint tabular-nums" aria-hidden>
+        {sec >= 60 ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${sec}s`}
+      </span>
+      <button onClick={onStop} className="h-6 px-2 rounded-md border border-line text-[11px] text-muted hover:text-fg hover:border-line-strong">
+        Stop
+      </button>
     </div>
   );
 }

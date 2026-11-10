@@ -49,7 +49,7 @@ func TestTopologyAndSkills(t *testing.T) {
 	}
 	var lib map[string]any
 	c.must("GET", "/api/skills/library", nil, &lib)
-	if len(lib["skills"].([]any)) != 20 || !strings.Contains(lib["attribution"].(string), "MIT") {
+	if len(lib["skills"].([]any)) != 21 || !strings.Contains(lib["attribution"].(string), "MIT") {
 		t.Fatalf("library: %v", len(lib["skills"].([]any)))
 	}
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -495,9 +496,13 @@ func toolMetricsQuery() Tool {
 				"step":   str("Range resolution, e.g. 30s, 5m (default: about 120 points)"),
 				"label":  str("label_values: the label name, e.g. job"),
 				"match":  str("series: a selector, e.g. up{job=\"node\"}"),
+				"save":   map[string]any{"type": "boolean", "description": "Range query: also keep the points as a CSV artifact, to plot in an answer or report with a chart block (\"data\": the artifact's path)"},
 			})},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
-			var in struct{ Source, Action, Query, Since, Start, End, Step, Label, Match string }
+			var in struct {
+				Source, Action, Query, Since, Start, End, Step, Label, Match string
+				Save                                                         bool
+			}
 			if err := decode(input, &in); err != nil {
 				return nil, err
 			}
@@ -514,7 +519,7 @@ func toolMetricsQuery() Tool {
 				Credentials: env.apiCredentials(r), Run: func(ctx context.Context) (string, error) {
 					ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 					defer cancel()
-					return promAction(ctx, env, r, action, in.Query, in.Since, in.Start, in.End, in.Step, in.Label, in.Match)
+					return promAction(ctx, env, r, action, in.Query, in.Since, in.Start, in.End, in.Step, in.Label, in.Match, in.Save)
 				}}, nil
 		},
 	}
@@ -528,7 +533,7 @@ type promResp struct {
 	ErrorType string          `json:"errorType"`
 }
 
-func promAction(ctx context.Context, env *Env, r *workspace.Resource, action, query, since, start, end, step, label, match string) (string, error) {
+func promAction(ctx context.Context, env *Env, r *workspace.Resource, action, query, since, start, end, step, label, match string, save bool) (string, error) {
 	var res promResp
 	call := func(path string, q map[string]any) error {
 		if err := env.apiGet(ctx, r, "GET", path, q, nil, &res); err != nil {
@@ -572,7 +577,16 @@ func promAction(ctx context.Context, env *Env, r *workspace.Resource, action, qu
 		if err := call("/api/v1/query_range", map[string]any{"query": query, "start": from.Unix(), "end": to.Unix(), "step": st}); err != nil {
 			return "", err
 		}
-		return warn(renderPromRange(ctx, query, from, to, st, res.Data)), nil
+		out := renderPromRange(ctx, query, from, to, st, res.Data)
+		if table := promCSV(res.Data); save && table != "" {
+			path, err := env.WS.SaveArtifact(workspace.ArtifactPath(time.Now(), "metrics", query[:min(len(query), 60)]+".csv"), []byte(table),
+				workspace.ArtifactMeta{Source: "metrics " + r.Name + ": " + query, Session: env.SessionID}, time.Now())
+			if err != nil {
+				return "", err
+			}
+			out += fmt.Sprintf("points saved as %s — plot them with a chart block: {\"title\":\"…\",\"unit\":\"…\",\"data\":%q}\n", path, path)
+		}
+		return warn(out), nil
 	case "series":
 		sel := firstNonEmpty(match, query)
 		if sel == "" {
@@ -819,6 +833,71 @@ func renderPromRange(ctx context.Context, query string, from, to time.Time, step
 		fmt.Fprintf(&b, "... %d more series\n", len(stats)-100)
 	}
 	setView(ctx, map[string]any{"kind": "timeseries", "query": query, "series": view, "total": len(stats), "step": step})
+	return b.String()
+}
+
+// promCSV is a range result as a table for a chart block: a time column and
+// one column per series (the 8 with the highest peak), at most 240 rows.
+func promCSV(data json.RawMessage) string {
+	var d struct {
+		Result []struct {
+			Metric map[string]string `json:"metric"`
+			Values [][2]any          `json:"values"`
+		} `json:"result"`
+	}
+	json.Unmarshal(data, &d)
+	type col struct {
+		name string
+		max  float64
+		at   map[int64]float64
+	}
+	var cols []col
+	seen := map[int64]bool{}
+	var times []int64
+	for _, s := range d.Result {
+		c := col{name: firstNonEmpty(promLabels(s.Metric), "value"), max: math.Inf(-1), at: map[int64]float64{}}
+		for _, p := range s.Values {
+			ts, _ := p[0].(float64)
+			f := promFloat(p[1])
+			if math.IsInf(f, 0) || math.IsNaN(f) {
+				continue
+			}
+			t := int64(ts)
+			c.at[t], c.max = f, math.Max(c.max, f)
+			if !seen[t] {
+				seen[t] = true
+				times = append(times, t)
+			}
+		}
+		if len(c.at) > 0 {
+			cols = append(cols, c)
+		}
+	}
+	if len(cols) == 0 {
+		return ""
+	}
+	sort.SliceStable(cols, func(i, j int) bool { return cols[i].max > cols[j].max })
+	cols = cols[:min(len(cols), 8)]
+	sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+	var b strings.Builder
+	w := csv.NewWriter(&b)
+	row := []string{"time"}
+	for _, c := range cols {
+		row = append(row, c.name)
+	}
+	w.Write(row)
+	for i := 0; i < len(times); i += (len(times) + 239) / 240 {
+		row = []string{time.Unix(times[i], 0).UTC().Format(time.RFC3339)}
+		for _, c := range cols {
+			if v, ok := c.at[times[i]]; ok {
+				row = append(row, strconv.FormatFloat(v, 'g', 6, 64))
+			} else {
+				row = append(row, "")
+			}
+		}
+		w.Write(row)
+	}
+	w.Flush()
 	return b.String()
 }
 

@@ -1112,7 +1112,7 @@ func toolWriteReport() Tool {
 		Def: llm.Tool{Name: "write_report", Description: "Save the result of an investigation, analysis, audit, incident or plan as a new Markdown report in the workspace (reports/<year>/<month>/<date>-<title>.md). Use it whenever the work produced findings worth keeping; include evidence (commands and key output), conclusions and next steps. Reports are never overwritten.",
 			Schema: obj(map[string]any{
 				"title":   str("Short descriptive title, e.g. \"nginx 502 on app-1 — root cause\""),
-				"content": str("Full Markdown body"),
+				"content": str("Full Markdown body; the chart, stats and timeline blocks and callouts of your answers render in reports too"),
 				"tags":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags, e.g. incident, audit, plan"},
 			}, "title", "content")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {

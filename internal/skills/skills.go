@@ -49,8 +49,12 @@ var categories = map[string]string{
 	"distributed-tracing":        "Observability",
 	"incident-runbook-templates": "Incidents",
 	"postmortem-writing":         "Incidents",
+	"report-templates":           "Incidents",
 	"bash-defensive-patterns":    "Shell",
 }
+
+// own are the skills written for opsdeck; the others come from library/SOURCES.md.
+var own = map[string]bool{"report-templates": true}
 
 // Frontmatter reads name and description from a SKILL.md / skill file.
 func Frontmatter(text string) (name, description string) {
@@ -95,6 +99,9 @@ func Library() []Skill {
 		}
 		s := Skill{Name: name, Description: desc, Category: categories[e.Name()], Path: "library/" + e.Name() + "/SKILL.md", Builtin: true,
 			Source: "wshobson/agents", License: "MIT"}
+		if own[e.Name()] {
+			s.Source = "opsdeck"
+		}
 		s.Files = files(lib, "library/"+e.Name())
 		out = append(out, s)
 	}

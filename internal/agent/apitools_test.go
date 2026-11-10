@@ -268,3 +268,16 @@ func TestSoftwareLookup(t *testing.T) {
 		t.Fatal("software_lookup without web access")
 	}
 }
+
+func TestPromCSV(t *testing.T) {
+	data := `{"result":[
+		{"metric":{"job":"low"},"values":[[60,"1"],[120,"2"]]},
+		{"metric":{"job":"high"},"values":[[60,"9"],[120,"NaN"],[180,"7"]]}]}`
+	want := "time,\"{job=\"\"high\"\"}\",\"{job=\"\"low\"\"}\"\n1970-01-01T00:01:00Z,9,1\n1970-01-01T00:02:00Z,,2\n1970-01-01T00:03:00Z,7,\n"
+	if got := promCSV(json.RawMessage(data)); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	if promCSV(json.RawMessage(`{"result":[]}`)) != "" {
+		t.Error("an empty result should give no table")
+	}
+}

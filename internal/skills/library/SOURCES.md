@@ -1,6 +1,6 @@
 # Sources of the built-in skills
 
-The skills in this folder are copied unchanged from [wshobson/agents](https://github.com/wshobson/agents)
+The skills in this folder, except the one named at the end, are copied unchanged from [wshobson/agents](https://github.com/wshobson/agents)
 (MIT License, Copyright (c) 2024 Seth Hobson — see LICENSE-wshobson-agents), commit `0874a27b17a22e2b7c2e2bcd725768e0803cad06`.
 
 | Skill | Upstream path |
@@ -25,3 +25,5 @@ The skills in this folder are copied unchanged from [wshobson/agents](https://gi
 | incident-runbook-templates | `plugins/incident-response/skills/incident-runbook-templates` |
 | postmortem-writing | `plugins/incident-response/skills/postmortem-writing` |
 | bash-defensive-patterns | `plugins/shell-scripting/skills/bash-defensive-patterns` |
+
+`report-templates` is opsdeck's own (MIT, like opsdeck).

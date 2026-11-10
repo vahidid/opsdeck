@@ -7,8 +7,8 @@ import (
 
 func TestLibrary(t *testing.T) {
 	lib := Library()
-	if len(lib) != 20 {
-		t.Fatalf("want 20 built-in skills, got %d", len(lib))
+	if len(lib) != 21 {
+		t.Fatalf("want 21 built-in skills, got %d", len(lib))
 	}
 	for _, s := range lib {
 		if s.Description == "" || s.Category == "" {

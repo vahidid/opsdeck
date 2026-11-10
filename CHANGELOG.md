@@ -5,6 +5,35 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-10
+
+The agent's answers and reports show the data: charts, key figures, timelines and
+interactive components, in Persian as well as English.
+
+### Agent
+
+- **Answers and reports that show the data.** The agent can now put components in its
+  answers and in the reports it saves: key figures (`stats`), a `timeline`, `chart`s (line,
+  area, bar, with marked moments such as the start of an incident) and its own interactive
+  `widget`s — fenced blocks in plain Markdown, so a report stays a readable file. Tables
+  sort and filter, long code blocks fold, and `> [!WARNING]` quotes are callouts. Persian
+  text is laid out right-to-left in all of them. A widget runs in a sandbox without network
+  access. *Export* (on an answer, and in Docs) saves a self-contained HTML file that opens
+  in any browser and prints to PDF.
+- **Charts of the real data.** `metrics_query` with `save=true` keeps the points of a range
+  query as a CSV artifact, and a `chart` block plots an artifact (`"data": "artifacts/…"`),
+  so the agent types no numbers; any CSV kept with `save_artifact` works the same way.
+- **Next steps as buttons.** An `actions` block ends an answer with the options the agent
+  offers; a click sends that instruction as your next message (in Docs it opens as a draft
+  in a new session). Changes still ask for approval.
+- **More in an answer.** A `topology` block draws the path of a request or a failure
+  through the workspace's diagram with the failing hops marked; ` ```diff ` blocks are
+  coloured; the name of a resource in backticks links to it.
+- **While the agent thinks** the chat says what it is doing (reading your message, deciding
+  the next step, the checklist step it is on), how long it has been, and has its own *Stop*.
+- **Report templates.** The built-in skill `report-templates` gives incident postmortems,
+  audits and health reviews a fixed structure; a workspace skill of the same name replaces it.
+
 ## [0.7.0] — 2026-11-08
 
 Any number of connectors of one provider, each with its own name, token and API URL, and a
@@ -42,27 +71,6 @@ for reaches you on any page and on the desktop.
 
 ### Agent
 
-- **Answers and reports that show the data.** The agent can now put components in its
-  answers and in the reports it saves: key figures (`stats`), a `timeline`, `chart`s (line,
-  area, bar, with marked moments such as the start of an incident) and its own interactive
-  `widget`s — fenced blocks in plain Markdown, so a report stays a readable file. Tables
-  sort and filter, long code blocks fold, and `> [!WARNING]` quotes are callouts. Persian
-  text is laid out right-to-left in all of them. A widget runs in a sandbox without network
-  access. *Export* (on an answer, and in Docs) saves a self-contained HTML file that opens
-  in any browser and prints to PDF.
-- **Charts of the real data.** `metrics_query` with `save=true` keeps the points of a range
-  query as a CSV artifact, and a `chart` block plots an artifact (`"data": "artifacts/…"`),
-  so the agent types no numbers; any CSV kept with `save_artifact` works the same way.
-- **Next steps as buttons.** An `actions` block ends an answer with the options the agent
-  offers; a click sends that instruction as your next message (in Docs it opens as a draft
-  in a new session). Changes still ask for approval.
-- **More in an answer.** A `topology` block draws the path of a request or a failure
-  through the workspace's diagram with the failing hops marked; ` ```diff ` blocks are
-  coloured; the name of a resource in backticks links to it.
-- **While the agent thinks** the chat says what it is doing (reading your message, deciding
-  the next step, the checklist step it is on), how long it has been, and has its own *Stop*.
-- **Report templates.** The built-in skill `report-templates` gives incident postmortems,
-  audits and health reviews a fixed structure; a workspace skill of the same name replaces it.
 - **Connect an agent in one click.** *App settings › Agent access › Connect an agent* shows
   the agents opsdeck can set up — Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI,
   Antigravity CLI, Antigravity, VS Code, Windsurf — and which are on this computer. *Connect*

@@ -245,6 +245,20 @@ agent"). A long output that was cut for the model can be opened in full.
   (command, state, output) or stopped. A finished task's notification is a message of its own.
 - **Canary** — the approval card of a change over several hosts names the hosts and offers to
   run on one first; after it, a card asks to continue on the rest or stop.
+- **Messages while the agent works** — the message box stays open during a turn. **After this
+  turn** (Enter) queues the message: it is sent when the turn ends, together with the other
+  queued ones, in the order they were sent, and starts the next turn. **Steer now**
+  (Ctrl/⌘+Enter) adds it to the running turn at its next step: after the tool calls of the
+  current step (and their approvals), before the agent's next model request, so it reads the
+  message with the results. A steering message that finds no next step (the turn was ending)
+  goes with the next turn. Waiting messages are listed above the box (queued or steer) and
+  can be cancelled; sent ones appear in the chat marked *sent after the turn* or *steered into
+  the turn*. **Stop** sends none of them: they go back into the message box. Neither is a way
+  around a safeguard: the text is redacted like any message, a steering message answers no
+  approval and does not lift the extra care after web content, and what the agent does next
+  asks as usual. A local agent CLI cannot be steered mid-turn: its steering messages go with
+  the next turn. Waiting messages live in memory: they are lost if opsdeck quits during the
+  turn.
 - **Composer** — `/` lists the slash commands (built-in and the workspace's, with their
   argument hints); `!` switches to shell mode. The session menu (⋯) forks, compacts and
   exports the session.

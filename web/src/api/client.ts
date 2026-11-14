@@ -109,6 +109,8 @@ import type {
   DbTable,
   DbTableInfo,
   DbNotRead,
+  DeliverMode,
+  PendingMessage,
   ProviderLimits,
   ProviderModels,
   ProviderConfig,
@@ -606,11 +608,13 @@ export const api = {
   createSession: (ws: string, b: { model?: string; mode?: SessionMode }) => post<SessionInfo>(`${W(ws)}/sessions`, b),
   harness: (ws: string) => get<HarnessInfo>(`${W(ws)}/harness`),
   session: (ws: string, id: string) =>
-    get<{ session: SessionInfo; events: AgentEvent[] | null }>(S(ws, id)).then((r) => ({ ...r, events: r.events ?? [] })),
+    get<{ session: SessionInfo; events: AgentEvent[] | null; pending?: PendingMessage[] }>(S(ws, id)).then((r) => ({ ...r, events: r.events ?? [], pending: r.pending ?? [] })),
   updateSession: (ws: string, id: string, b: { title?: string; model?: string; mode?: SessionMode }) =>
     put<SessionInfo>(S(ws, id), b),
   deleteSession: (ws: string, id: string) => del(S(ws, id)),
-  sendMessage: (ws: string, id: string, text: string, attachments?: string[]) => post(`${S(ws, id)}/messages`, { text, attachments }),
+  sendMessage: (ws: string, id: string, text: string, attachments?: string[], mode?: DeliverMode) =>
+    post<{ ok: boolean; pending?: PendingMessage }>(`${S(ws, id)}/messages`, { text, attachments, mode }),
+  cancelPending: (ws: string, id: string, pid: string) => del(`${S(ws, id)}/pending/${e(pid)}`),
   attach: (ws: string, id: string, file: File) => attach(`${S(ws, id)}/attachments`, file),
   attachmentUrl: (ws: string, id: string, aid: string, download?: boolean) => `${S(ws, id)}/attachments/${e(aid)}${download ? "?download=1" : ""}`,
   interrupt: (ws: string, id: string) => post(`${S(ws, id)}/interrupt`),

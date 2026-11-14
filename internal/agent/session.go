@@ -81,6 +81,8 @@ type Session struct {
 	// inbox holds notifications (background tasks) that arrived during a
 	// turn; they start the next one.
 	inbox []string
+	// queued are the user's messages sent during a turn (queue or steer).
+	queued []PendingMessage
 	// context is what the user ran with ! since their last message; it goes
 	// to the model with the next one.
 	context []string

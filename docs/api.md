@@ -449,10 +449,11 @@ on the rest, deny stops).
 |---|---|---|
 | GET | `/api/workspaces/{ws}/sessions` | → `[SessionInfo]` |
 | POST | `/api/workspaces/{ws}/sessions` | `{model?, mode?}` → `SessionInfo` |
-| GET | `/api/workspaces/{ws}/sessions/{id}` | → `{session: SessionInfo, events: [Event]}` |
+| GET | `/api/workspaces/{ws}/sessions/{id}` | → `{session: SessionInfo, events: [Event], pending: [PendingMessage]}` |
 | PUT | `/api/workspaces/{ws}/sessions/{id}` | `{title?, model?, mode?}` |
 | DELETE | `/api/workspaces/{ws}/sessions/{id}` | |
-| POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text, attachments?: [id]}` → 202 (text may be empty when files are attached) |
+| POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text, attachments?: [id], mode?: "queue"\|"steer"}` → 202 (text may be empty when files are attached). While a turn runs: no `mode` → 409; `queue` waits for the turn to end, `steer` joins it at its next step; both → 202 `{ok, pending: PendingMessage}` |
+| DELETE | `/api/workspaces/{ws}/sessions/{id}/pending/{pendingId}` | cancel a message that waits; 404 when it was sent already |
 | POST | `/api/workspaces/{ws}/sessions/{id}/attachments?name=` | the file as the body (≤ 20 MB; images ≤ 5 MB) → `{id, name, mime, size, kind: "image"\|"pdf"\|"text"\|"file"}` |
 | GET | `/api/workspaces/{ws}/sessions/{id}/attachments/{attachmentId}` | the file: images inline, others as a download (`?download=1` for images too) |
 | POST | `/api/workspaces/{ws}/sessions/{id}/interrupt` | |
@@ -499,11 +500,14 @@ type SessionInfo = { id; workspace; title; model; mode: "plan"|"ask"|"auto"|"ful
                      created; updated; usage: {inputTokens: number; outputTokens: number; cacheRead: number};
                      context?: {model; used?; window?};  // the latest request against the model's window; window absent = not reported
                      headless?; forkedFrom? }
+type PendingMessage = { id; text; mode: "queue"|"steer"; created; attachments? }
 type TaskInfo = { id; callId; tool; target; command; notifyOn?; started; ended?; state: "running"|"done"|"failed"|"stopped";
                   exitCode; matched?; error?; lines }
 type Event = { id: string; ts: string; type: string; parent?: string; ... }
 // parent: set on the events of a subagent — the callId of its delegate call
-// user              {text, command?, prompt?}     command: a workspace slash command, prompt: what the agent got
+// user              {text, command?, prompt?, pendingId?, steered?}     command: a workspace slash command, prompt: what the agent got
+//                   pendingId: it waited during a turn; steered: it joined the running turn at a step
+// pending           {messages: [PendingMessage], returned?: [PendingMessage]}   what waits (not persisted); returned: given back by Stop
 // notification      {text}                        a background task finished or matched (starts a turn)
 // shell             {command, target, label, output, exitCode, durationMs}   the user's ! command
 // recall            {items: [{kind: "skill"|"doc"|"report"|"script", ref, title}], preloaded}

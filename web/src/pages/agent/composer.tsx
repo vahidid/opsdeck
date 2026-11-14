@@ -3,6 +3,7 @@ import { ArrowUp, FileText, Loader2, Paperclip, Server, Slash, Square, SquareTer
 import { Button, cx } from "../../components/ui";
 import { useToast } from "../../components/overlay";
 import { fmtBytes } from "../../lib/format";
+import type { DeliverMode } from "../../api/types";
 
 /** a file picked for the next message, not uploaded yet */
 type Pending = { key: string; file: File; url?: string };
@@ -54,9 +55,11 @@ export function Composer({
   hosts = [],
   shell = true,
   seed,
+  deliver,
+  refill,
 }: {
-  /** files: what the user attached (only with a message, not with / or !) */
-  onSend: (text: string, files: File[]) => Promise<boolean> | boolean;
+  /** files: what the user attached (only with a message, not with / or !); mode: how a message sent while running is delivered */
+  onSend: (text: string, files: File[], mode?: DeliverMode) => Promise<boolean> | boolean;
   disabled?: boolean;
   running?: boolean;
   onStop?: () => void;
@@ -69,9 +72,19 @@ export function Composer({
   shell?: boolean;
   /** prefills the box (e.g. a message forked to be edited) */
   seed?: string;
+  /** while running, messages can still be sent: queued for the next turn or steering this one */
+  deliver?: boolean;
+  /** text given back (a stopped turn's waiting messages): added to the box when n changes */
+  refill?: { text: string; n: number };
 }) {
   const toast = useToast();
   const [text, setText] = useState(seed ?? "");
+  const [mode, setMode] = useState<DeliverMode>("queue");
+  useEffect(() => {
+    if (refill?.text) setText((t) => (t.trim() ? t.trimEnd() + "\n\n" : "") + refill.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refill?.n]);
+  const whileRunning = !!running && !!deliver;
   const [files, setFiles] = useState<Pending[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -151,13 +164,13 @@ export function Composer({
   }, [text, commands, hosts, shell, dismissed]);
   useEffect(() => setSel(0), [suggestions.length, text]);
 
-  async function send(t = text.trim()) {
+  async function send(t = text.trim(), how: DeliverMode = mode) {
     // files go with a message to the agent, not with a command
     const withFiles = files.length > 0 && !(t.startsWith("/") || (shell && t.startsWith("!")));
-    if ((!t && !withFiles) || disabled || sending || (running && !(shell && t.startsWith("!")))) return;
+    if ((!t && !withFiles) || disabled || sending || (running && !whileRunning && !(shell && t.startsWith("!")))) return;
     setSending(true);
     try {
-      const ok = await onSend(t, withFiles ? files.map((p) => p.file) : []);
+      const ok = await onSend(t, withFiles ? files.map((p) => p.file) : [], whileRunning ? how : undefined);
       if (ok !== false) {
         setText("");
         if (withFiles) {
@@ -296,7 +309,8 @@ export function Composer({
             }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              void send();
+              // while the agent works, Ctrl/⌘+Enter steers this turn
+              void send(undefined, whileRunning && (e.metaKey || e.ctrlKey) ? "steer" : mode);
             }
           }}
           rows={1}
@@ -330,16 +344,39 @@ export function Composer({
           <span className="text-[10.5px] text-faint hidden md:inline">
             <span className="font-mono">/</span> commands{shell && <> · <span className="font-mono">!</span> shell · <span className="font-mono">!@host</span></>}
           </span>
-          {running && !sh ? (
+          {whileRunning && !sh && (
+            <div className="flex items-center rounded-md border border-line bg-panel-2 p-0.5 text-[11px]" role="radiogroup" aria-label="Deliver while the agent works">
+              {(
+                [
+                  ["queue", "After this turn", "Sent when the agent's turn ends (Enter)"],
+                  ["steer", "Steer now", "Joins the running turn at its next step (Ctrl/⌘+Enter); it answers no approval"],
+                ] as const
+              ).map(([id, label, title]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === id}
+                  title={title}
+                  onClick={() => setMode(id)}
+                  className={cx("h-6 px-2 rounded whitespace-nowrap", mode === id ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {running && !sh && (
             <Button size="sm" variant="danger" icon={<Square className="size-3 fill-current" />} onClick={onStop}>
               Stop
             </Button>
-          ) : (
+          )}
+          {(!running || sh || whileRunning) && (
             <button
               onClick={() => void send()}
-              disabled={(!text.trim() && !files.length) || disabled || sending || (running && !sh)}
+              disabled={(!text.trim() && !files.length) || disabled || sending || (running && !sh && !whileRunning)}
               className={cx("size-8 rounded-lg grid place-items-center disabled:opacity-30 hover:brightness-110 transition", sh ? "bg-info text-white" : "bg-agent text-agent-fg shadow-sm shadow-agent/30")}
-              aria-label={sh ? "Run" : "Send"}
+              aria-label={sh ? "Run" : whileRunning ? (mode === "steer" ? "Steer" : "Queue") : "Send"}
             >
               {sending ? <Loader2 className="size-4 animate-spin" /> : sh ? <SquareTerminal className="size-4" /> : <ArrowUp className="size-4" />}
             </button>

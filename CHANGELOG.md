@@ -3,6 +3,12 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
+## [Unreleased]
+
+### Agent & Chat
+
+- **Queue and steer messages while the agent works (#33).** The message box stays open during a turn: **After this turn** (Enter) queues a message for when the turn ends (several go together, in order), **Steer now** (Ctrl/⌘+Enter) adds it to the running turn at its next step, after the current tool calls and their approvals. Waiting messages are listed above the box and can be cancelled; sent ones are marked in the chat; Stop puts them back into the box. Steering answers no approval and the text is redacted like any message.
+
 ## [0.11.0] — 2026-11-14
 
 Chat context, token usage and provider limits, and subagent runs shown under their delegate call.

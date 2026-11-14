@@ -15,7 +15,7 @@ export type ToolItem = {
   answer?: Ev<"question_answered">;
   todo?: TodoItem[];
   /** a delegate call: the subagent's own timeline */
-  sub?: { start?: Ev<"subagent">; end?: Ev<"subagent">; items: Timeline[] };
+  sub?: { start?: Ev<"subagent">; usage?: Ev<"subagent">; end?: Ev<"subagent">; items: Timeline[] };
 };
 
 export type Timeline =
@@ -139,6 +139,7 @@ export function buildTimeline(events: AgentEvent[], deltas: Record<string, strin
         const t = toolFor(e.callId, parent);
         t.sub ??= { items: [] };
         if (e.phase === "start") t.sub.start = e;
+        else if (e.phase === "usage") t.sub.usage = e;
         else t.sub.end = e;
         break;
       }

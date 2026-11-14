@@ -27,6 +27,8 @@ import type { ApprovalItem, Block, Ev, ToolItem } from "./timeline";
 import { groupBlocks, waiting } from "./timeline";
 import { ToolIcon, inputCommand, inputSummary, toolLabel } from "./toolmeta";
 import { ToolViewBlock, viewIsEnough } from "./views";
+import { ContextMeter } from "./usage";
+import type { Tone } from "../../components/ui";
 
 type Ctx = { ws: string; sid: string; progress: Record<string, string> };
 
@@ -189,6 +191,7 @@ export function ToolCard({ item, ctx, nested, live, flush, openViews }: { item: 
         <ToolIcon tool={tool} className={cx("size-3.5 shrink-0", isSub ? "text-agent-ink" : "text-muted")} />
         <span className="font-mono text-[12px] font-medium shrink-0">{label}</span>
         {isSub && <Badge tone={item.sub?.start?.readOnly === false ? "warn" : "info"}>{item.sub?.start?.readOnly === false ? "can change" : "read-only"}</Badge>}
+        {isSub && <SubagentStatus item={item} />}
         {target && !isSub && (
           <Badge mono className="max-w-48 truncate">
             {target}
@@ -198,6 +201,11 @@ export function ToolCard({ item, ctx, nested, live, flush, openViews }: { item: 
           {isSub ? ((input as { task?: string })?.task ?? "") : summary}
         </span>
         {progress && !expanded && <span className="hidden md:inline text-[11px] text-info truncate max-w-64">{progress}</span>}
+        {isSub && !expanded && subNumbers(item) && (
+          <span className="hidden sm:inline text-[10.5px] text-faint tabular-nums shrink-0">
+            {fmtTokens(subNumbers(item)?.inputTokens)} in · {fmtTokens(subNumbers(item)?.outputTokens)} out
+          </span>
+        )}
         {result && !expanded && (
           <span className={cx("inline-flex items-center gap-1 font-mono text-[11px] truncate max-w-44 sm:max-w-64 md:max-w-80", result.isError ? "text-err" : "text-faint")}>
             <span className="text-muted/40">→</span>
@@ -664,11 +672,40 @@ function QuestionBox({ ctx, q, answer, done }: { ctx: Ctx; q: Ev<"question">; an
 
 // ---------------------------------------------------------------- subagents
 
+/** the subagent's latest numbers: final at its end, live while it works */
+function subNumbers(item: ToolItem): Ev<"subagent"> | undefined {
+  return item.sub?.end ?? item.sub?.usage;
+}
+
+/** subagentState names where a subagent run is: its end state, or what it waits for */
+export function subagentState(item: ToolItem): { label: string; tone: Tone } {
+  const end = item.sub?.end;
+  if (end) {
+    if (end.state === "done") return { label: "done", tone: "ok" };
+    if (end.state === "interrupted") return { label: "interrupted", tone: "warn" };
+    return { label: "failed", tone: "err" };
+  }
+  if (item.result) return item.result.isError ? { label: "failed", tone: "err" } : { label: "done", tone: "ok" };
+  const w = waiting(item.sub?.items ?? []);
+  if (w.approvals) return { label: "waiting for approval", tone: "warn" };
+  if (w.questions) return { label: "waiting for an answer", tone: "warn" };
+  return { label: "running", tone: "info" };
+}
+
+function SubagentStatus({ item }: { item: ToolItem }) {
+  const st = subagentState(item);
+  return (
+    <span data-testid="subagent-status">
+      <Badge tone={st.tone}>{st.label}</Badge>
+    </span>
+  );
+}
+
 function SubagentBody({ item, ctx, live }: { item: ToolItem; ctx: Ctx; live: boolean }) {
   const [showTask, setShowTask] = useState(false);
   const input = (item.call?.input ?? {}) as { task?: string; context?: string };
   const start = item.sub?.start;
-  const end = item.sub?.end;
+  const nums = subNumbers(item);
   const report = item.result && !item.result.isError ? item.result.output.replace(/^Report of subagent [^\n]*\n+/, "") : "";
   const blocks: Block[] = groupBlocks(item.sub?.items ?? []);
   // the report is the subagent's last message: show it once, as the report
@@ -688,11 +725,12 @@ function SubagentBody({ item, ctx, live }: { item: ToolItem; ctx: Ctx; live: boo
             </>
           )}
         </span>
-        {end && (
-          <span className="text-faint">
-            · {end.steps} steps · {end.toolCalls} tool calls · {fmtTokens(end.inputTokens)} in / {fmtTokens(end.outputTokens)} out
+        {nums && (
+          <span className="text-faint tabular-nums" data-testid="subagent-usage">
+            · {nums.steps} steps · {nums.toolCalls} tool calls · {fmtTokens(nums.inputTokens)} in / {fmtTokens(nums.outputTokens)} out
           </span>
         )}
+        {nums && <ContextMeter context={nums.context} />}
         <span className="flex-1" />
         <button onClick={() => setShowTask((s) => !s)} className="text-[11px] text-accent hover:underline">
           {showTask ? "Hide task" : "Task"}

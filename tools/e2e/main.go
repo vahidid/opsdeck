@@ -143,6 +143,17 @@ func seedTests(c *client, home string) (*fakellm.Server, string) {
 		}},
 		{Text: "## Report\n\n- `app-1` is up.\n- Wrote `marker.txt`.\n\nE2E-DONE"},
 	})
+	// a message with "e2e-delegate" hands a read-only check to a subagent
+	llm.ByPrompt = map[string][]fakellm.Turn{"e2e-delegate": {
+		{Text: "I'll have the investigator check it.", Tools: []fakellm.ToolCall{
+			{Name: "delegate", Args: map[string]any{"agent": "investigator", "task": "Check whether app-1 is up and report."}},
+		}},
+		{Text: "The investigator found app-1 up.\n\nE2E-SUB-DONE"},
+	}}
+	llm.ByMarker = map[string][]fakellm.Turn{`subagent "investigator"`: {
+		{Text: "Reading the inventory.", Tools: []fakellm.ToolCall{{Name: "inventory", Args: map[string]any{}}}},
+		{Text: "app-1 is up (SUB-REPORT)."},
+	}}
 	// what a provider that reports its window and rate limits sends
 	llm.ContextLength = 128000
 	llm.Headers = map[string]string{"x-ratelimit-limit-requests": "60", "x-ratelimit-remaining-requests": "59", "x-ratelimit-reset-requests": "1s"}

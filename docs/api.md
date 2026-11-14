@@ -521,7 +521,9 @@ type Event = { id: string; ts: string; type: string; parent?: string; ... }
 // question          {questionId, callId, question, options: [{label, description?}], multiple, allowText}
 // question_answered {questionId, choices?, text?, skipped?}
 // todo              {callId, items: [{text, status: "pending"|"in_progress"|"done"|"skipped"}]}
-// subagent          {callId, agent, phase: "start"|"end", model?, readOnly?, state?, steps?, toolCalls?, inputTokens?, outputTokens?}
+// subagent          {callId, agent, phase: "start"|"usage"|"end", model?, readOnly?, state?, steps?, toolCalls?, inputTokens?, outputTokens?, context?}
+//                   usage: live numbers after each of its model responses (not persisted); end: state "done"|"interrupted"|"error"
+//                   context: {model, used?, window?} the subagent's own context, like SessionInfo.context
 // task              {task: TaskInfo}              a background task started or changed
 // hook              {callId?, hook, event, outcome: "ok"|"deny"|"ask"|"allow"|"error", message?}
 // status            {state, usage, context?}

@@ -223,7 +223,11 @@ agent"). A long output that was cut for the model can be opened in full.
 - **Questions** — `ask_user` shows a card with the options (one or several), a free answer and
   Skip; the bar above the message box points to it.
 - **Subagents** — a `delegate` call shows the subagent's own steps, tool calls and approvals
-  inside the call, then its report.
+  inside the call, then its report. Its line names the subagent, whether it is read-only, and
+  its status (running, waiting for approval, done, interrupted, failed); inside are the task,
+  the steps, tool calls and tokens so far (updated after each of its model responses) and its
+  own context against its model's window, shown like the session's (see *Context and usage*).
+  Its tokens count in the session's totals, not in the session's context.
 - **Live progress** — long calls (`wait_for`, fan-out over hosts, background output) show what
   they are doing in their line.
 - **Context and usage** — the session header shows how full the model's context window is

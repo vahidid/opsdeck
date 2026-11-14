@@ -627,7 +627,8 @@ export type AgentEvent =
       type: "subagent";
       callId: string;
       agent: string;
-      phase: "start" | "end";
+      /** usage: live numbers while it works (not stored) */
+      phase: "start" | "usage" | "end";
       model?: string;
       readOnly?: boolean;
       state?: string;
@@ -635,6 +636,8 @@ export type AgentEvent =
       toolCalls?: number;
       inputTokens?: number;
       outputTokens?: number;
+      /** the subagent's own context: its latest request against its model's window */
+      context?: ContextUse;
     })
   | (EventBase & { type: "task"; task: TaskInfo })
   | (EventBase & { type: "hook"; callId?: string; hook: string; event: string; outcome: "ok" | "deny" | "ask" | "allow" | "error"; message?: string })

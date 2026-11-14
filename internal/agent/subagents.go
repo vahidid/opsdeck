@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -213,10 +215,27 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 	var final string
 	toolCalls, steps := 0, 0
 	var usage llm.Usage
-	end := func(state string) {
-		s.emit("subagent", map[string]any{"callId": callID, "agent": def.Name, "phase": "end", "state": state, "steps": steps, "toolCalls": toolCalls,
-			"inputTokens": usage.InputTokens, "outputTokens": usage.OutputTokens}, true)
+	// the subagent's own context: its latest request against its model's
+	// window, as the provider reports them
+	sctx := ContextUse{Model: model}
+	var window atomic.Int64
+	go func() {
+		wctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if n, err := m.deps.Router().ContextWindow(wctx, model); err == nil {
+			window.Store(int64(n))
+		}
+	}()
+	report := func(phase string, persist bool, extra map[string]any) {
+		sctx.Window = int(window.Load())
+		ev := map[string]any{"callId": callID, "agent": def.Name, "phase": phase, "steps": steps, "toolCalls": toolCalls,
+			"inputTokens": usage.InputTokens, "outputTokens": usage.OutputTokens, "context": sctx}
+		for k, v := range extra {
+			ev[k] = v
+		}
+		s.emit("subagent", ev, persist)
 	}
+	end := func(state string) { report("end", true, map[string]any{"state": state}) }
 	for ; steps < maxSubagentSteps; steps++ {
 		if ctx.Err() != nil {
 			end("interrupted")
@@ -232,6 +251,9 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 		}
 		usage.InputTokens += resp.Usage.InputTokens
 		usage.OutputTokens += resp.Usage.OutputTokens
+		if used := contextUsed(resp.Usage); used > 0 {
+			sctx.Used = used
+		}
 		s.addUsage(model, resp.Usage, false)
 		if len(resp.Content) > 0 {
 			msgs = append(msgs, llm.Message{Role: "assistant", Content: resp.Content})
@@ -265,6 +287,9 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 			break
 		}
 		toolCalls += len(calls)
+		// live numbers for the chat while the subagent works (not stored:
+		// the end event has the final ones)
+		report("usage", false, nil)
 		results := sub.runCalls(ctx, calls, resp.StopReason == "max_tokens")
 		msgs = append(msgs, llm.Message{Role: "user", Content: results})
 		s.save()

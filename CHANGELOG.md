@@ -8,6 +8,7 @@ each release's section becomes its notes on GitHub.
 ### Agent & Chat
 
 - **Context, usage and provider limits in the chat (#31).** The session header shows how full the model's context window is, the session's tokens in and out (updated after every model response, subagents included), and a **Limits** popover with each provider's rate limits and quota. Only what the provider reports is shown: Anthropic and OpenAI-compatible rate limit headers, OpenRouter credits, and the context window from the provider's models API; everything else says "not reported".
+- **Subagent runs in the chat (#32).** A `delegate` call shows its subagent's status (running, waiting for approval, done, interrupted, failed), and its steps, tool calls, tokens and own context, updated live while it works. A test covers that a workspace's own read-only subagent runs in Plan mode and one that may change things does not.
 
 ## [0.10.0] — 2026-11-14
 

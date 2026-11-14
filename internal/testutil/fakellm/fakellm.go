@@ -22,11 +22,13 @@ type ToolCall struct {
 }
 
 // Server answers the n-th assistant turn of a conversation with Script[n].
-// A conversation whose system prompt contains a key of ByMarker (a
-// subagent's) follows that script instead.
+// A conversation whose first user message contains a key of ByPrompt
+// follows that script instead, and one whose system prompt contains a key of
+// ByMarker (a subagent's) follows that one.
 type Server struct {
 	*httptest.Server
 	Script   []Turn
+	ByPrompt map[string][]Turn
 	ByMarker map[string][]Turn
 	// ContextLength, when set, is listed for every model on GET /models
 	// (as OpenRouter does); otherwise GET /models lists no models.
@@ -67,6 +69,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	script := s.Script
+	for _, m := range msgs {
+		mm, _ := m.(map[string]any)
+		if mm["role"] != "user" {
+			continue
+		}
+		text, _ := mm["content"].(string)
+		for key, sc := range s.ByPrompt {
+			if strings.Contains(text, key) {
+				script = sc
+			}
+		}
+		break
+	}
 	for _, m := range msgs {
 		mm, _ := m.(map[string]any)
 		sys, _ := mm["content"].(string)

@@ -56,6 +56,11 @@ func TestResponsesRecordRateLimits(t *testing.T) {
 		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 	}))
 	defer srv.Close()
+	// a fresh record each run (go test -count=N)
+	reported.Lock()
+	delete(reported.m, "rec-test")
+	delete(reported.m, "rec-anthropic")
+	reported.Unlock()
 	if _, ok := ReportedLimits("rec-test"); ok {
 		t.Fatal("limits before any response")
 	}

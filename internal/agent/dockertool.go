@@ -44,13 +44,12 @@ func dockerActions() []string {
 
 func toolDocker() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "docker", Description: `Manage Docker on a host over SSH (sudo -n is used when the SSH user is not in the docker group).
+		Def: llm.Tool{Name: "docker", Description: `Manage Docker and Docker Compose on a host over SSH (sudo -n is used when the SSH user is not in the docker group). ALWAYS use this dedicated tool instead of running raw docker commands via exec.
 Containers: ps, inspect, logs (tail, since), top, stats, start, stop, restart, pause, unpause, kill, rm.
 Compose projects: compose_ls, compose_ps, compose_logs (service optional), compose_file (read a compose file or .env: file), compose_up, compose_recreate, compose_pull, compose_restart, compose_stop, compose_start (services optional), compose_write (replace a compose file or .env after validating it with docker compose config; deploy=true then runs up -d), compose_down, compose_down_volumes (also deletes the project's volumes).
 Swarm (on a manager): services, service_ps, service_logs, service_scale (replicas), service_redeploy, service_rollback, service_image (image), service_rm, stacks, stack_ps, stack_deploy (stack + file on the host or content), stack_rm, nodes, node_availability (node, availability).
 Volumes: volumes, volume_ls / volume_read (path inside the volume), volume_write (path + content), volume_delete (path), volume_rm.
-Engine: info, df, images, image_pull, image_rm, networks, network_rm, prune (kind: containers, images, images-unused, build-cache, networks, volumes, system).
-For anything else (build, run, exec) use exec with the docker CLI.`,
+Engine: info, df, images, image_pull, image_rm, networks, network_rm, prune (kind: containers, images, images-unused, build-cache, networks, volumes, system).`,
 			Schema: obj(map[string]any{
 				"host":         str("Host name"),
 				"action":       enum("Action", dockerActions()...),

@@ -8,6 +8,7 @@ import {
   FolderInput,
   Lock,
   PanelLeftClose,
+  PanelLeftOpen,
   PencilLine,
   Pin,
   PinOff,
@@ -98,7 +99,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </>
       )}
       <main className="flex-1 min-w-0 min-h-0 flex flex-col bg-bg">
-        <TopBar ws={ws} onSearch={() => setPaletteOpen(true)} />
+        <TopBar ws={ws} onSearch={() => setPaletteOpen(true)} docked={docked} />
         {children}
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} ws={ws} />
@@ -228,11 +229,24 @@ function NavPanel({ ws, group, section, onClose }: { ws: string | null; group: N
             <div className="px-2.5 h-7 flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint">
               <span className="flex-1">{g.label}</span>
               {onClose ? (
-                <button onClick={onClose} title="Close" className="rounded p-1 hover:bg-panel-3 hover:text-fg">
-                  <X className="size-3.5" />
-                </button>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => {
+                      set({ menu: "panel" });
+                      onClose();
+                    }}
+                    title="Pin sidebar open"
+                    aria-label="Pin sidebar open"
+                    className="rounded p-1 hover:bg-panel-3 hover:text-fg text-faint"
+                  >
+                    <Pin className="size-3.5" />
+                  </button>
+                  <button onClick={onClose} title="Close" aria-label="Close" className="rounded p-1 hover:bg-panel-3 hover:text-fg text-faint">
+                    <X className="size-3.5" />
+                  </button>
+                </div>
               ) : (
-                <button onClick={() => set({ menu: "rail" })} title="Collapse the menu to icons" className="rounded p-1 hover:bg-panel-3 hover:text-fg">
+                <button onClick={() => set({ menu: "rail" })} title="Collapse the menu to icons" aria-label="Collapse the menu" className="rounded p-1 hover:bg-panel-3 hover:text-fg text-faint">
                   <PanelLeftClose className="size-3.5" />
                 </button>
               )}
@@ -311,12 +325,23 @@ function SectionLink({ ws, n, terminals }: { ws: string; n: NavItem; terminals: 
 }
 
 // TopBar holds the open tabs, the search box and the agent button.
-function TopBar({ ws, onSearch }: { ws: string | null; onSearch: () => void }) {
+function TopBar({ ws, onSearch, docked }: { ws: string | null; onSearch: () => void; docked?: boolean }) {
   const wsTabs = useTabs();
+  const { set } = useAppearance();
   const section = useMatch("/w/:ws/:section/*")?.params.section ?? "";
   const inWs = !!useMatch("/w/:ws/*");
   return (
     <header className="h-12 shrink-0 flex items-center gap-2 border-b border-line bg-panel/60 pl-2 pr-3">
+      {!docked && (
+        <button
+          onClick={() => set({ menu: "panel" })}
+          title="Keep sidebar open"
+          aria-label="Keep sidebar open"
+          className="size-8 rounded-lg grid place-items-center text-faint hover:text-fg hover:bg-panel transition-colors shrink-0"
+        >
+          <PanelLeftOpen className="size-4" />
+        </button>
+      )}
       <div className="flex-1 min-w-0 h-full flex items-center">{inWs && ws ? <TabStrip ws={ws} /> : null}</div>
       <button
         onClick={onSearch}

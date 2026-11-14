@@ -3,10 +3,12 @@ import {
   Activity,
   Archive,
   BadgeCheck,
+  Blocks,
   Bot,
   Boxes,
   Brain,
   ChartLine,
+  Cloud,
   Container,
   Database,
   FileClock,
@@ -21,11 +23,13 @@ import {
   ListTodo,
   MessageCircleQuestionMark,
   Network,
+  Package,
   PackageSearch,
   Plug,
   ScrollText,
   Search,
   Shield,
+  ShieldAlert,
   Sparkles,
   SquareTerminal,
   Workflow,
@@ -84,6 +88,10 @@ const META: Record<string, Meta> = {
   vault_list: { icon: (c) => <KeyRound className={c} /> },
   vault_add_item: { icon: (c) => <KeyRound className={c} /> },
   vault_import_ssh_key: { icon: (c) => <KeyRound className={c} /> },
+  terraform: { icon: (c) => <Blocks className={c} />, label: "terraform" },
+  hcloud: { icon: (c) => <Cloud className={c} />, label: "hcloud" },
+  helm: { icon: (c) => <Package className={c} />, label: "helm" },
+  security_scan: { icon: (c) => <ShieldAlert className={c} />, label: "security scan" },
 };
 
 export function ToolIcon({ tool, className = "size-3.5 text-muted" }: { tool: string; className?: string }) {
@@ -123,6 +131,14 @@ export function inputSummary(tool: string, input: unknown): string {
       return `${s("condition")} ${s("target") || s("command") || s("name")}`.trim();
     case "tasks":
       return `${s("action")} ${s("id")}`.trim();
+    case "terraform":
+      return `${s("action")} ${s("dir")}`.trim();
+    case "hcloud":
+      return `${s("action")} ${s("server") || s("ip") || ""}`.trim();
+    case "helm":
+      return `${s("action")} ${s("release") || s("chart") || ""}`.trim();
+    case "security_scan":
+      return `${s("action")} ${s("target")}`.trim();
   }
   if (typeof o.command === "string") return o.command;
   for (const k of ["path", "playbook", "action", "query", "url", "name", "resource", "target", "module"]) {

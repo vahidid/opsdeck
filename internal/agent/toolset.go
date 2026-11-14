@@ -20,6 +20,7 @@ var toolNeeds = map[string][]string{
 	"docker": {"Host"}, "run_script": {"Host"},
 	"database":   {"Database"},
 	"kubernetes": {"KubernetesCluster"},
+	"helm":       {"KubernetesCluster"},
 	"repo":       {"GitRemote"}, "repo_files": {"GitRemote"}, "repo_write": {"GitRemote"}, "merge_request": {"GitRemote"}, "git_sync": {"GitRemote"},
 	"ansible": {"AnsibleProject"}, "ansible_run": {"AnsibleProject"}, "ansible_vault": {"AnsibleProject"},
 	"vpn":           workspace.NetworkKinds,

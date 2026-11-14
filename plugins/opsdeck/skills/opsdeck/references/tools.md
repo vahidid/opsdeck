@@ -21,10 +21,12 @@ and the access key's mode.
 | `database` | Work with a workspace database (Database resources: PostgreSQL, MySQL, MariaDB, MongoDB, Redis). |
 | `deploy` | The workspace's deployment platforms (DeployPlatform resources: Portainer stacks, Argo CD applications, Komodo stacks and deployments), through the platform's API with its vault credential — you … |
 | `dns` | The DNS zones of the workspace's domains (Domain resources, managed at Cloudflare or ArvanCloud through a connected account — you never see its token). |
-| `docker` | Manage Docker on a host over SSH (sudo -n is used when the SSH user is not in the docker group). |
+| `docker` | Manage Docker and Docker Compose on a host over SSH (sudo -n is used when the SSH user is not in the docker group). |
 | `edit_file` | Replace one exact occurrence of old_string with new_string in a text file on a host (backup kept). |
 | `exec` | Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). |
 | `git_sync` | Clone a workspace Git repository (a GitRemote resource) onto a host, or update it if already cloned (fetch + fast-forward pull). |
+| `hcloud` | Manage Hetzner Cloud infrastructure directly via the Hetzner Cloud API. |
+| `helm` | Work with Helm releases on Kubernetes clusters. |
 | `http_request` | Call the HTTP API of a workspace web panel or service (Panel, Prometheus, Loki, Elasticsearch resources: Grafana, Alertmanager, Consul, Harbor, Proxmox, Jenkins, Traefik, an app's admin API…) … |
 | `inventory` | List the workspace's resources (hosts, groups, networks, panels, clusters, databases, git remotes) with addresses, environments, roles and how each is reached. |
 | `knowledge` | Search everything this workspace knows — skills (its own and the built-in library), documentation and runbooks, repository docs, reports of earlier work, memory notes and saved scripts — in one … |
@@ -52,8 +54,10 @@ and the access key's mode.
 | `run_script` | Run a saved script (see the Scripts list in the system prompt, or script action=list) on one or more workspace hosts as one unit: the exact approved content, uploaded to a private temporary folder … |
 | `save_artifact` | Keep a file as evidence in the workspace (artifacts/<date>/...): source=file copies a text file from a host (e.g. a config snapshot before changing it); source=command saves the FULL output of a … |
 | `script` | Saved scripts: reusable shell scripts the user approved (server bootstrap, hardening, agent installs…) that run_script runs on hosts as one unit. |
+| `security_scan` | Scan containers, filesystems and configuration files for security vulnerabilities (CVEs) and misconfigurations using Trivy. |
 | `software_lookup` | Look up facts about software versions from public registries: action=eol — support and end-of-life dates of a product's release cycles (endoflife.date: ubuntu, debian, rhel, nginx, postgresql, … |
 | `tasks` | The session's background tasks (started with exec or local_exec background=true): list them, read a task's output (the latest lines, or grep), wait for one to finish, or stop one. |
+| `terraform` | Work with Terraform or OpenTofu configurations on workspace hosts or this computer. |
 | `topology` | The workspace's infrastructure topology (topology.yaml): zones (data centers, VPCs, subnets, DMZ, offices), components (routers of every kind, switches, firewalls, CDN, WAF, DDoS protection, load … |
 | `vault_add_item` | Create a vault item without exposing secrets to you. |
 | `vault_import_ssh_key` | Import an SSH private key file from THIS computer (e.g. ~/.ssh/id_ed25519) into the vault. |

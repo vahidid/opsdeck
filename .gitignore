@@ -9,4 +9,6 @@ web/node_modules/
 
 # local
 *.log
+release-key.txt
+*.key
 .DS_Store

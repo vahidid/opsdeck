@@ -106,7 +106,7 @@ func (m *Manager) lookupBridge(tok string) *bridge {
 // bridgeServer builds the MCP server with the workspace's tool set.
 func (m *Manager) bridgeServer(b *bridge) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "opsdeck", Version: "0.1.0"}, &mcp.ServerOptions{
-		Instructions: "Infrastructure tools of the opsdeck workspace " + b.ws + ". Credentials are used by opsdeck and never shown; changes may wait for the user's approval.",
+		Instructions: "Infrastructure tools of the opsdeck workspace " + b.ws + ". IMPORTANT: Always prefer specialized tools over exec: use 'docker' for containers/compose/logs, 'kubernetes' for clusters, 'database' for DBs, 'read_file'/'edit_file' for host files, and 'metrics_query'/'logs_query' for monitoring. Use 'exec' only for host OS administration commands when no dedicated tool exists. Credentials are used by opsdeck and never shown; changes may wait for the user's approval.",
 	})
 	w, err := m.deps.Workspaces.Get(b.ws)
 	if err != nil {

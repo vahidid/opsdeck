@@ -305,6 +305,7 @@ func Tools() []Tool {
 		toolAnsible(), toolAnsibleRun(), toolAnsibleVault(),
 		toolReadOutput(), toolWebSearch(), toolWebFetch(), toolSoftwareLookup(),
 		toolHTTPRequest(), toolMetricsQuery(), toolLogsQuery(), toolDNS(), toolDeploy(), toolCertificate(),
+		toolTerraform(), toolHCloud(), toolHelm(), toolSecurityScan(),
 		toolWaitFor(), toolAskUser(), toolTodo(), toolDelegate(), toolTasks(),
 	}
 }
@@ -591,7 +592,7 @@ func toolWriteDoc() Tool {
 
 func toolExec() Tool {
 	return Tool{
-		Def: llm.Tool{Name: "exec", Description: "Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). target is a host name, group/<name>, or a comma-separated list. Commands run as the host's configured user; use 'sudo -n' when root is needed. Do not run interactive programs (vim, less, top without -b). Output is limited; filter with grep/head/tail. A change on several hosts can roll out as a canary (canary=true: the first host, then the user decides on the rest). Long commands (a deploy, a build, a log tail) can run in the background on one host (background=true): you are told when they finish, or when a line matches notify_on.",
+		Def: llm.Tool{Name: "exec", Description: "Run a non-interactive shell command on one or more workspace hosts over SSH (VPN/jump hosts are handled automatically). IMPORTANT: Do NOT use exec for Docker/containers, Kubernetes, databases, or file operations: always prefer the dedicated tools (docker, kubernetes, database, read_file, edit_file) instead. target is a host name, group/<name>, or a comma-separated list. Commands run as the host's configured user; use 'sudo -n' when root is needed. Do not run interactive programs (vim, less, top without -b). Output is limited; filter with grep/head/tail. A change on several hosts can roll out as a canary (canary=true: the first host, then the user decides on the rest). Long commands (a deploy, a build, a log tail) can run in the background on one host (background=true): you are told when they finish, or when a line matches notify_on.",
 			Schema: obj(map[string]any{
 				"target":      str("Host name, group/<name>, or comma-separated host names"),
 				"command":     str("Shell command"),

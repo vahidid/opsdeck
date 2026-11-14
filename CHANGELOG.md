@@ -5,6 +5,37 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-14
+
+New AI infrastructure tools (Terraform, Hetzner Cloud, Helm, Trivy security scanner),
+guided tool prioritization for external agents, and sidebar docking controls.
+
+### Tools & Agent
+
+- **Terraform & OpenTofu tool (`terraform`).** Run `plan`, `show`, `state_list`, `validate`,
+  `output`, `refresh` and `apply` on hosts or locally. Analyzes the plan output to highlight
+  blast radius (added, changed, and destroyed resources) and warns before applying destructive changes.
+- **Hetzner Cloud tool (`hcloud`).** Direct Hetzner Cloud API integration for server power cycles,
+  reboots, emergency hard resets, instant snapshots, cloud firewalls, and floating IP failovers—even
+  when SSH is completely unreachable.
+- **Helm lifecycle management tool (`helm`).** Full Helm release management on Kubernetes clusters:
+  `list`, `status`, `values`, `history`, `diff` preview before upgrades, `upgrade`, `rollback`, and
+  `uninstall`.
+- **Security & vulnerability scanner tool (`security_scan`).** Scan container images, filesystems,
+  and Kubernetes/Dockerfile configurations for CVEs and misconfigurations using Trivy, with formatted
+  severity tables.
+- **Tool selection prioritization for external agents.** External agents connected via the MCP bridge
+  (Claude Code, Codex, Antigravity, ACP agents) are now explicitly guided to prioritize dedicated tools
+  (`docker`, `kubernetes`, `database`, `read_file`, `edit_file`) instead of defaulting to raw `exec` shell
+  commands.
+
+### UI & Workbench
+
+- **Sidebar pin & dock controls.** Added pin controls (`Pin`) in the flyout menu and an open button
+  (`<PanelLeftOpen>`) in the top bar to easily re-dock the sidebar when collapsed into rail mode.
+- **Tool metadata and icons.** Dedicated Lucide icons and input summaries for the new infrastructure tools
+  in the agent chat timeline.
+
 ## [0.8.0] — 2026-11-10
 
 The agent's answers and reports show the data: charts, key figures, timelines and

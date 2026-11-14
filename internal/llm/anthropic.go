@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 
@@ -19,6 +20,7 @@ import (
 type anthropicProvider struct {
 	client   anthropic.Client
 	id       string
+	pid      string // the provider's id in the settings
 	official bool
 }
 
@@ -28,7 +30,7 @@ func newAnthropic(p config.Provider, apiKey string) *anthropicProvider {
 	if p.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(p.BaseURL))
 	}
-	return &anthropicProvider{client: anthropic.NewClient(opts...), id: "anthropic:" + p.ID, official: official}
+	return &anthropicProvider{client: anthropic.NewClient(opts...), id: "anthropic:" + p.ID, pid: p.ID, official: official}
 }
 
 // Models of the current generation take output_config.effort and the
@@ -76,7 +78,15 @@ func (a *anthropicProvider) Chat(ctx context.Context, req Request, onText func(s
 		params.Betas = append(params.Betas, anthropic.AnthropicBetaServerSideFallback2026_07_01)
 	}
 
-	stream := a.client.Beta.Messages.NewStreaming(ctx, params)
+	// The rate limit headers of every response (retries and 429s too)
+	// are what the chat shows as the provider's limits.
+	stream := a.client.Beta.Messages.NewStreaming(ctx, params, option.WithMiddleware(func(r *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+		res, err := next(r)
+		if res != nil {
+			recordRateLimits(a.pid, res.Header)
+		}
+		return res, err
+	}))
 	msg := anthropic.BetaMessage{}
 	for stream.Next() {
 		ev := stream.Current()

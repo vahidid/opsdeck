@@ -232,11 +232,7 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 		}
 		usage.InputTokens += resp.Usage.InputTokens
 		usage.OutputTokens += resp.Usage.OutputTokens
-		s.mu.Lock()
-		s.info.Usage.InputTokens += resp.Usage.InputTokens
-		s.info.Usage.OutputTokens += resp.Usage.OutputTokens
-		s.info.Usage.CacheRead += resp.Usage.CacheRead
-		s.mu.Unlock()
+		s.addUsage(model, resp.Usage, false)
 		if len(resp.Content) > 0 {
 			msgs = append(msgs, llm.Message{Role: "assistant", Content: resp.Content})
 		}

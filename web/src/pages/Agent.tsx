@@ -54,6 +54,7 @@ import type { SlashCommand } from "./agent/composer";
 import { NotificationMsg, ShellMsg, TasksButton, TodoPanel, UserCommand, useTasks } from "./agent/panels";
 import { buildTimeline, callKey, groupBlocks, waiting } from "./agent/timeline";
 import { ToolGroup } from "./agent/tools";
+import { ContextMeter, LimitsButton } from "./agent/usage";
 
 type DateGroup = {
   title: string;
@@ -615,6 +616,8 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
   const [progress, setProgress] = useState<Record<string, string>>({});
   const [loadErr, setLoadErr] = useState("");
   const [connected, setConnected] = useState(false);
+  // bumps on every usage event: the limits popover refreshes while open
+  const [usageTick, setUsageTick] = useState(0);
   const [menu, setMenu] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [busy, setBusy] = useState("");
@@ -696,8 +699,13 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
         );
         return;
       }
+      if (ev.type === "usage") {
+        setSession((s) => (s ? { ...s, usage: ev.usage, context: ev.context ?? s.context } : s));
+        setUsageTick((n) => n + 1);
+        return;
+      }
       if (ev.type === "status") {
-        setSession((s) => (s ? { ...s, state: ev.state, usage: ev.usage ?? s.usage } : s));
+        setSession((s) => (s ? { ...s, state: ev.state, usage: ev.usage ?? s.usage, context: ev.context ?? s.context } : s));
         if (ev.state === "idle") onChangedRef.current();
       }
       if (ev.type === "tool_result")
@@ -967,11 +975,13 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
           )}
         </div>
         <span className="text-xs text-muted">{stateText}</span>
+        {session && <ContextMeter context={session.context} model={session.model} className="hidden md:inline-flex" />}
         {session && (
-          <span className="text-[11px] text-faint tabular-nums" title="Tokens in / out">
+          <span className="text-[11px] text-faint tabular-nums" title="Tokens of this session: in / out" data-testid="session-tokens">
             {fmtTokens(session.usage?.inputTokens)} in · {fmtTokens(session.usage?.outputTokens)} out
           </span>
         )}
+        {session && <LimitsButton provider={session.model.split("/")[0]} tick={usageTick} />}
         {!connected && <Badge tone="warn">reconnecting</Badge>}
         <TasksButton ws={ws} sid={sid} tasks={tasks} open={tasksOpen} setOpen={setTasksOpen} />
         <Segmented

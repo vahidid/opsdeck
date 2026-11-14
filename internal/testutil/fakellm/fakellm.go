@@ -28,6 +28,11 @@ type Server struct {
 	*httptest.Server
 	Script   []Turn
 	ByMarker map[string][]Turn
+	// ContextLength, when set, is listed for every model on GET /models
+	// (as OpenRouter does); otherwise GET /models lists no models.
+	ContextLength int
+	// Headers are sent with every chat response (rate limit headers).
+	Headers map[string]string
 
 	Mu       sync.Mutex
 	Requests []map[string]any
@@ -40,6 +45,15 @@ func New(script []Turn) *Server {
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/models") {
+		w.Header().Set("Content-Type", "application/json")
+		models := []any{}
+		if s.ContextLength > 0 {
+			models = append(models, map[string]any{"id": "scripted", "context_length": s.ContextLength})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": models})
+		return
+	}
 	var req map[string]any
 	json.NewDecoder(r.Body).Decode(&req)
 	s.Mu.Lock()
@@ -68,6 +82,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	turn := Turn{Text: "(script exhausted)"}
 	if n < len(script) {
 		turn = script[n]
+	}
+	for k, v := range s.Headers {
+		w.Header().Set(k, v)
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(v any) {

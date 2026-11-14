@@ -44,6 +44,9 @@ type Info struct {
 	Created   time.Time `json:"created"`
 	Updated   time.Time `json:"updated"`
 	Usage     llm.Usage `json:"usage"`
+	// Context is how full the model's context window is (nil before the
+	// first model response with usage).
+	Context *ContextUse `json:"context,omitempty"`
 	// External agent conversation ("<provider>:<id>") when the model is a
 	// local agent CLI; it keeps the agent's own context between turns.
 	External string `json:"external,omitempty"`
@@ -383,9 +386,12 @@ func (s *Session) setState(state string) {
 	s.mu.Lock()
 	s.info.State = state
 	s.info.Updated = time.Now().UTC()
-	usage := s.info.Usage
+	ev := map[string]any{"state": state, "usage": s.info.Usage}
+	if s.info.Context != nil {
+		ev["context"] = *s.info.Context
+	}
 	s.mu.Unlock()
-	s.emit("status", map[string]any{"state": state, "usage": usage}, false)
+	s.emit("status", ev, false)
 }
 
 // Interrupt cancels the running turn.

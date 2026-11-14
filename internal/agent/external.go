@@ -105,9 +105,9 @@ func (m *Manager) runExternal(ctx context.Context, s *Session, w *workspace.Work
 	if res.Resume != "" {
 		s.info.External = p.ID + ":" + res.Resume
 	}
-	s.info.Usage.InputTokens += res.InputTokens
-	s.info.Usage.OutputTokens += res.OutputTokens
 	s.mu.Unlock()
+	// an agent CLI reports its totals, not its context
+	s.addUsage(s.Info().Model, llm.Usage{InputTokens: res.InputTokens, OutputTokens: res.OutputTokens}, false)
 	if err != nil && ctx.Err() == nil {
 		s.emit("error", map[string]any{"message": m.redactor.Redact(err.Error())}, true)
 	}

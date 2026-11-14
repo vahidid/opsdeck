@@ -109,6 +109,7 @@ import type {
   DbTable,
   DbTableInfo,
   DbNotRead,
+  ProviderLimits,
   ProviderModels,
   ProviderConfig,
   AnsibleProject,
@@ -280,6 +281,7 @@ export const api = {
   detectAgents: () => arr(get<InstalledAgent[]>("/api/agents/detect")),
   models: () => arr(get<ModelInfo[]>("/api/models")),
   providerModels: (p: ProviderConfig) => post<ProviderModels>("/api/providers/models", p),
+  providerLimits: () => arr(get<ProviderLimits[]>("/api/providers/limits")),
 
   // workspaces
   workspaces: () => arr(get<WorkspaceSummary[]>("/api/workspaces")),

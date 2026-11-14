@@ -231,6 +231,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		s.emit("error", map[string]any{"message": err.Error()}, true)
 		return
 	}
+	m.fillWindow(s, modelID)
 	env := m.sessionEnv(s, w)
 	env.Model = modelID
 	if !notification && text != "" {
@@ -268,10 +269,8 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 			return
 		}
 
+		s.addUsage(modelID, resp.Usage, true)
 		s.mu.Lock()
-		s.info.Usage.InputTokens += resp.Usage.InputTokens
-		s.info.Usage.OutputTokens += resp.Usage.OutputTokens
-		s.info.Usage.CacheRead += resp.Usage.CacheRead
 		if len(resp.Content) > 0 {
 			s.messages = append(s.messages, llm.Message{Role: "assistant", Content: resp.Content})
 		}
@@ -488,7 +487,6 @@ func cleanSessionTitle(s string) string {
 	}
 	return cleaned
 }
-
 
 // ensure mcpx import is used for type references in toolset closures.
 var _ = mcpx.ToolName

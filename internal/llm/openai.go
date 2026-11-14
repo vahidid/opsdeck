@@ -20,6 +20,7 @@ import (
 type openaiProvider struct {
 	baseURL string
 	apiKey  string
+	pid     string // the provider's id in the settings
 	http    *http.Client
 }
 
@@ -28,7 +29,7 @@ func newOpenAI(p config.Provider, apiKey string) *openaiProvider {
 	if base == "" {
 		base = "https://api.openai.com/v1"
 	}
-	return &openaiProvider{baseURL: base, apiKey: apiKey, http: &http.Client{Timeout: 30 * time.Minute}}
+	return &openaiProvider{baseURL: base, apiKey: apiKey, pid: p.ID, http: &http.Client{Timeout: 30 * time.Minute}}
 }
 
 type oaMessage struct {
@@ -142,6 +143,7 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 		return nil, err
 	}
 	defer res.Body.Close()
+	recordRateLimits(o.pid, res.Header)
 	if res.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 		return nil, fmt.Errorf("model API %s: %s", res.Status, strings.TrimSpace(string(msg)))

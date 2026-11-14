@@ -54,6 +54,7 @@ Item types: `ssh-key`, `login`, `token`, `kubeconfig`, `vpn`, `certificate`, `fi
 | GET | `/api/models` | → `[{id: "providerId/model", provider, providerName, model, name, label}]` |
 | GET | `/api/agents/detect` | → `[{kind, name, command, args, path, version, login, models}]` agent CLIs found on PATH (`models`: built-in list) |
 | POST | `/api/providers/models` | provider config (saved or not) → `{models: [{id, name, description?}], source: "cli"\|"api"\|"builtin", error?}`: the models an agent CLI offers with your login, or an API offers with the key; `builtin` + `error` when it could not be asked |
+| GET | `/api/providers/limits` | → `[{id, name, type, limits: [{name, limit?, remaining?, used?, reset?, period?}], observed?, error?}]` every configured provider's limits as it reported them: the rate limit headers of its latest response since opsdeck started (`name`: requests, tokens, input tokens, output tokens, project tokens; `reset`: RFC 3339) and OpenRouter's credits (`name: "credits"`, `period`: its `limit_reset`); empty `limits` = not reported; `error`: asking for the quota failed |
 
 ```ts
 type Settings = { autoLockMinutes: number; defaultModel: string;
@@ -495,7 +496,9 @@ A message starting with `/<command>` of the workspace is sent as that command's 
 ```ts
 type SessionInfo = { id; workspace; title; model; mode: "plan"|"ask"|"auto"|"full";
                      state: "idle"|"running"|"waiting_approval"|"waiting_input";
-                     created; updated; usage: {inputTokens: number; outputTokens: number}; headless?; forkedFrom? }
+                     created; updated; usage: {inputTokens: number; outputTokens: number; cacheRead: number};
+                     context?: {model; used?; window?};  // the latest request against the model's window; window absent = not reported
+                     headless?; forkedFrom? }
 type TaskInfo = { id; callId; tool; target; command; notifyOn?; started; ended?; state: "running"|"done"|"failed"|"stopped";
                   exitCode; matched?; error?; lines }
 type Event = { id: string; ts: string; type: string; parent?: string; ... }
@@ -521,7 +524,8 @@ type Event = { id: string; ts: string; type: string; parent?: string; ... }
 // subagent          {callId, agent, phase: "start"|"end", model?, readOnly?, state?, steps?, toolCalls?, inputTokens?, outputTokens?}
 // task              {task: TaskInfo}              a background task started or changed
 // hook              {callId?, hook, event, outcome: "ok"|"deny"|"ask"|"allow"|"error", message?}
-// status            {state, usage}
+// status            {state, usage, context?}
+// usage             {usage, context?}             after every model response (not persisted)
 // error             {message}
 // compaction        {summary}
 ```

@@ -5,6 +5,10 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Agent & Chat
+
+- **Context, usage and provider limits in the chat (#31).** The session header shows how full the model's context window is, the session's tokens in and out (updated after every model response, subagents included), and a **Limits** popover with each provider's rate limits and quota. Only what the provider reports is shown: Anthropic and OpenAI-compatible rate limit headers, OpenRouter credits, and the context window from the provider's models API; everything else says "not reported".
+
 ## [0.10.0] — 2026-11-14
 
 Agent chat session renaming and smart auto-titling, organized sessions list with date grouping and real-time search, compact tool calls with smart output summaries, and visible thinking/reasoning stages.

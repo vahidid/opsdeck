@@ -89,15 +89,32 @@ type KeyFunc func(ref string) (string, error)
 // Router picks the provider for a "providerId/model" id.
 type Router struct {
 	providers map[string]config.Provider
+	order     []string // provider ids as configured
 	key       KeyFunc
 }
 
 func NewRouter(providers []config.Provider, key KeyFunc) *Router {
 	m := map[string]config.Provider{}
+	var order []string
 	for _, p := range providers {
+		if _, dup := m[p.ID]; !dup {
+			order = append(order, p.ID)
+		}
 		m[p.ID] = p
 	}
-	return &Router{providers: m, key: key}
+	return &Router{providers: m, order: order, key: key}
+}
+
+// apiKey resolves a provider's API key; "" when it has none (Ollama).
+func (r *Router) apiKey(p config.Provider) (string, error) {
+	if p.APIKeyRef == "" {
+		return "", nil
+	}
+	k, err := r.key(p.APIKeyRef)
+	if err != nil {
+		return "", fmt.Errorf("provider %s API key: %w", p.Name, err)
+	}
+	return k, nil
 }
 
 // Resolve returns the provider and bare model name of "providerId/model".
@@ -110,13 +127,9 @@ func (r *Router) Resolve(id string) (Provider, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("unknown model provider %q (configure it in Settings)", pid)
 	}
-	apiKey := ""
-	if p.APIKeyRef != "" {
-		k, err := r.key(p.APIKeyRef)
-		if err != nil {
-			return nil, "", fmt.Errorf("provider %s API key: %w", p.Name, err)
-		}
-		apiKey = k
+	apiKey, err := r.apiKey(p)
+	if err != nil {
+		return nil, "", err
 	}
 	switch p.Type {
 	case "anthropic":

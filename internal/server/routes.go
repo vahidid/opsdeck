@@ -69,6 +69,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, extagent.Detect(ctx))
 	}))
 	mux.HandleFunc("POST /api/providers/models", u(s.providerModels))
+	mux.HandleFunc("GET /api/providers/limits", u(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, s.router().Limits(r.Context()))
+	}))
 	mux.HandleFunc("GET /api/models", u(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, llm.ListModels(s.cfg.Settings().Providers))
 	}))

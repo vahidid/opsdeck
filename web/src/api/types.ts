@@ -441,7 +441,12 @@ export type HelmDetail = HelmRelease & { values: string; manifest: string; notes
 
 export type SessionMode = "plan" | "ask" | "auto" | "full";
 export type SessionState = "idle" | "running" | "waiting_approval" | "waiting_input";
-export type Usage = { inputTokens: number; outputTokens: number };
+export type Usage = { inputTokens: number; outputTokens: number; cacheRead?: number };
+/** how full the model's context window is, at the latest model request; window 0/absent = the provider does not report it */
+export type ContextUse = { model: string; used?: number; window?: number };
+/** a limit a provider reported: a rate limit from response headers or a quota from its API; absent fields were not reported */
+export type ProviderLimit = { name: string; limit?: number; remaining?: number; used?: number; reset?: string; period?: string };
+export type ProviderLimits = { id: string; name: string; type: string; limits: ProviderLimit[]; observed?: string; error?: string };
 export type SessionInfo = {
   id: string;
   workspace: string;
@@ -452,6 +457,7 @@ export type SessionInfo = {
   created: string;
   updated: string;
   usage: Usage;
+  context?: ContextUse;
   /** opsdeck run: nothing waits for an approval */
   headless?: boolean;
   forkedFrom?: string;
@@ -632,7 +638,8 @@ export type AgentEvent =
     })
   | (EventBase & { type: "task"; task: TaskInfo })
   | (EventBase & { type: "hook"; callId?: string; hook: string; event: string; outcome: "ok" | "deny" | "ask" | "allow" | "error"; message?: string })
-  | (EventBase & { type: "status"; state: SessionState; usage?: Usage })
+  | (EventBase & { type: "status"; state: SessionState; usage?: Usage; context?: ContextUse })
+  | (EventBase & { type: "usage"; usage: Usage; context?: ContextUse })
   | (EventBase & { type: "error"; message: string })
   | (EventBase & { type: "compaction"; summary: string });
 

@@ -226,6 +226,17 @@ agent"). A long output that was cut for the model can be opened in full.
   inside the call, then its report.
 - **Live progress** — long calls (`wait_for`, fan-out over hosts, background output) show what
   they are doing in their line.
+- **Context and usage** — the session header shows how full the model's context window is
+  (the tokens of the latest request and its response, against the window the provider
+  reports), the session's tokens in and out (subagents included), updated after every model
+  response, and **Limits**: each configured provider's limits as the provider reported
+  them — the rate limit headers of its latest response (Anthropic `anthropic-ratelimit-*`,
+  OpenAI-compatible `x-ratelimit-*`) and, for OpenRouter, the key's credits (`GET /key`).
+  The window comes from Anthropic's Models API (`max_input_tokens`) or from an
+  OpenAI-compatible `GET /models` that lists it (`context_length` on OpenRouter,
+  `max_model_len` on vLLM, `context_window`); OpenAI, Ollama and LM Studio list none. What a
+  provider does not report shows "not reported": nothing is estimated. Agent CLIs report
+  their tokens but not their context.
 - **Background tasks** — the session header shows the running tasks; each can be opened
   (command, state, output) or stopped. A finished task's notification is a message of its own.
 - **Canary** — the approval card of a change over several hosts names the hosts and offers to

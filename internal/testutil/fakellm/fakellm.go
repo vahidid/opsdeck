@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Turn is one scripted assistant response.
@@ -33,6 +34,8 @@ type Server struct {
 	// ContextLength, when set, is listed for every model on GET /models
 	// (as OpenRouter does); otherwise GET /models lists no models.
 	ContextLength int
+	// ModelsDelay delays the GET /models answer (a slow provider).
+	ModelsDelay time.Duration
 	// Headers are sent with every chat response (rate limit headers).
 	Headers map[string]string
 
@@ -48,6 +51,7 @@ func New(script []Turn) *Server {
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/models") {
+		time.Sleep(s.ModelsDelay)
 		w.Header().Set("Content-Type", "application/json")
 		models := []any{}
 		if s.ContextLength > 0 {

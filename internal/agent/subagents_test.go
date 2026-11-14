@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"opsdeck/internal/config"
 	"opsdeck/internal/llm"
@@ -121,11 +122,12 @@ func TestSubagentUsageAndContext(t *testing.T) {
 			end = ev
 		}
 	}
-	if live == nil || live["inputTokens"] != 100 || live["context"].(ContextUse).Used != 120 {
+	// live after the first response: one step, counted like the end event
+	if live == nil || live["steps"] != 1 || live["toolCalls"] != 1 || live["inputTokens"] != 100 || live["context"].(ContextUse).Used != 120 {
 		t.Fatalf("live usage: %v", live)
 	}
 	c := end["context"].(ContextUse)
-	if end["state"] != "done" || end["inputTokens"] != 200 || end["outputTokens"] != 40 || c.Used != 120 || c.Model != "fake/scripted" {
+	if end["state"] != "done" || end["steps"] != 2 || end["inputTokens"] != 200 || end["outputTokens"] != 40 || c.Used != 120 || c.Model != "fake/scripted" {
 		t.Fatalf("end: %v", end)
 	}
 	if c.Window != 64000 {
@@ -140,4 +142,33 @@ func TestSubagentUsageAndContext(t *testing.T) {
 			t.Fatal("a live usage event was stored")
 		}
 	}
+}
+
+// A one-step subagent run still stores its model's window when the
+// provider reports it: the end event waits briefly for the lookup.
+func TestShortSubagentRunKeepsTheWindow(t *testing.T) {
+	fake := fakellm.New(nil)
+	fake.ByMarker = map[string][]fakellm.Turn{`subagent "investigator"`: {{Text: "Report: nothing to check."}}}
+	fake.ContextLength = 32000
+	fake.ModelsDelay = 300 * time.Millisecond // answers after the one-step run ends
+	defer fake.Close()
+	var wrote []string
+	r, s := subagentRunner(t, fake, builtinAgents, &wrote)
+	r.m.deps.Router = func() *llm.Router {
+		return llm.NewRouter([]config.Provider{{ID: "fake", Type: "openai", BaseURL: fake.URL, Models: []string{"scripted"}}}, nil)
+	}
+	r.m.deps.Subagents = func() SubagentConfig { return SubagentConfig{Models: []string{"fake/scripted"}} }
+	s.info.Model = "fake/scripted"
+	if res := r.runCalls(context.Background(), []llm.Block{delegateCall("d1", "investigator")}, false); res[0].IsError {
+		t.Fatalf("result: %q", res[0].Content)
+	}
+	for _, ev := range s.Events() {
+		if ev["type"] == "subagent" && ev["phase"] == "end" {
+			if c := ev["context"].(ContextUse); c.Window != 32000 || ev["steps"] != 1 {
+				t.Fatalf("end: %v", ev)
+			}
+			return
+		}
+	}
+	t.Fatal("no end event")
 }

@@ -219,7 +219,9 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 	// window, as the provider reports them
 	sctx := ContextUse{Model: model}
 	var window atomic.Int64
+	windowDone := make(chan struct{})
 	go func() {
+		defer close(windowDone)
 		wctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if n, err := m.deps.Router().ContextWindow(wctx, model); err == nil {
@@ -235,7 +237,15 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 		}
 		s.emit("subagent", ev, persist)
 	}
-	end := func(state string) { report("end", true, map[string]any{"state": state}) }
+	end := func(state string) {
+		// the stored end event keeps the window: give a short run's lookup
+		// a moment to finish (it is usually cached already)
+		select {
+		case <-windowDone:
+		case <-time.After(2 * time.Second):
+		}
+		report("end", true, map[string]any{"state": state})
+	}
 	for ; steps < maxSubagentSteps; steps++ {
 		if ctx.Err() != nil {
 			end("interrupted")
@@ -279,6 +289,7 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 			sub.emit("assistant", map[string]any{"messageId": msgID, "text": final}, true)
 		}
 		if resp.StopReason == "refusal" {
+			steps++ // this response counts as a step
 			end("error")
 			return "", errors.New("the subagent's model declined: " + resp.Refusal)
 		}
@@ -288,8 +299,9 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 		}
 		toolCalls += len(calls)
 		// live numbers for the chat while the subagent works (not stored:
-		// the end event has the final ones)
-		report("usage", false, nil)
+		// the end event has the final ones); steps counts the responses so
+		// far, this one included, like the end event
+		report("usage", false, map[string]any{"steps": steps + 1})
 		results := sub.runCalls(ctx, calls, resp.StopReason == "max_tokens")
 		msgs = append(msgs, llm.Message{Role: "user", Content: results})
 		s.save()

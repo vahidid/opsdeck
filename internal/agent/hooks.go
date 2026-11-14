@@ -37,6 +37,8 @@ type Hook struct {
 	// Workspace hooks come from workspace.yaml and run only once the user
 	// trusted them on this machine; they cannot let a call run unasked.
 	FromWorkspace bool
+	// Key identifies the hook's definition for its last result (HookRuns).
+	Key string
 }
 
 // HookHash identifies a workspace hook definition for trust.
@@ -182,6 +184,7 @@ func (m *Manager) beforeHooks(ctx context.Context, r *runner, c llm.Block, call 
 		ev := r.hookBase(HookBeforeTool)
 		ev.Tool, ev.CallID, ev.Risk, ev.Target, ev.Environment, ev.Decision, ev.Reason = c.Name, c.ID, call.Risk, call.Target, call.Environment, d.Effect, d.Reason
 		json.Unmarshal([]byte(m.redactor.Redact(string(c.Input))), &ev.Input)
+		started := time.Now()
 		res := runHook(ctx, h, r.w, ev)
 		outcome, msg := "ok", firstNonEmpty(res.reason, res.stderr)
 		switch {
@@ -200,6 +203,7 @@ func (m *Manager) beforeHooks(ctx context.Context, r *runner, c llm.Block, call 
 			d = Decision{"allow", "allowed by hook " + h.Name}
 		}
 		r.hookEvent(c.ID, h, outcome, msg)
+		m.recordHookRun(h, r, c.Name, outcome, msg, started)
 		if d.Effect == "deny" {
 			return d
 		}
@@ -219,9 +223,14 @@ func (m *Manager) afterHooks(r *runner, c llm.Block, call *Call, out string, isE
 	json.Unmarshal([]byte(m.redactor.Redact(string(c.Input))), &ev.Input)
 	go func() {
 		for _, h := range hooks {
+			started := time.Now()
 			res := runHook(context.Background(), h, r.w, ev)
 			if res.err != nil || res.exit != 0 {
-				r.hookEvent(c.ID, h, "error", firstNonEmpty(errText(res.err), fmt.Sprintf("exit code %d %s", res.exit, res.stderr)))
+				msg := firstNonEmpty(errText(res.err), fmt.Sprintf("exit code %d %s", res.exit, res.stderr))
+				r.hookEvent(c.ID, h, "error", msg)
+				m.recordHookRun(h, r, c.Name, "error", msg, started)
+			} else {
+				m.recordHookRun(h, r, c.Name, "ok", res.stderr, started)
 			}
 		}
 	}()
@@ -241,12 +250,24 @@ func (m *Manager) turnEndHooks(s *Session, w *workspace.Workspace, lastMessage, 
 	}
 	go func() {
 		for _, h := range hooks {
+			started := time.Now()
 			res := runHook(context.Background(), h, w, ev)
 			if res.err != nil || res.exit != 0 {
-				r.hookEvent("", h, "error", firstNonEmpty(errText(res.err), fmt.Sprintf("exit code %d %s", res.exit, res.stderr)))
+				msg := firstNonEmpty(errText(res.err), fmt.Sprintf("exit code %d %s", res.exit, res.stderr))
+				r.hookEvent("", h, "error", msg)
+				m.recordHookRun(h, r, "", "error", msg, started)
+			} else {
+				m.recordHookRun(h, r, "", "ok", res.stderr, started)
 			}
 		}
 	}()
+}
+
+// recordHookRun keeps the hook's last result for its editor (redacted, like
+// what the chat shows).
+func (m *Manager) recordHookRun(h Hook, r *runner, tool, outcome, msg string, started time.Time) {
+	m.hookRuns.record(h.Key, HookRun{At: started.UTC(), Outcome: outcome, Message: m.redactor.Redact(truncate(msg, 500)),
+		DurationMs: time.Since(started).Milliseconds(), Workspace: r.w.Name(), Session: r.s.Info().ID, Tool: tool})
 }
 
 func errText(err error) string {

@@ -3,6 +3,12 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
+## [Unreleased]
+
+### Agent & Chat
+
+- **Hooks show their trust state and last result (#34).** The hook editors in App settings and Workspace settings show, for each workspace hook, whether it is trusted on this machine (an untrusted one does not run at all), and for every hook its last run since opsdeck started: when, where, for which tool, and what it did (ran, blocked, made the call ask, let it run, failed). The hooks' JSON input and behaviour are documented as they are; `turn_end` hooks and workspace hooks that block or ask are now covered by tests.
+
 ## [0.11.0] — 2026-11-14
 
 Chat context, token usage and provider limits, and subagent runs shown under their delegate call.

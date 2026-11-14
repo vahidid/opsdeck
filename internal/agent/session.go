@@ -168,6 +168,7 @@ type Manager struct {
 	pages    pageCache // web pages read recently
 	bg       bgRegistry
 	waiting  waitingRegistry
+	hookRuns hookRuns
 }
 
 func NewManager(d Deps) *Manager {

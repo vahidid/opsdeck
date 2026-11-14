@@ -15,15 +15,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"opsdeck/internal/paths"
-	"opsdeck/internal/sysproc"
 )
 
 // elicitServer is an opsdeck with workspace acme, served over HTTP.
 func elicitServer(t *testing.T) (*Server, *client, string) {
 	t.Helper()
 	t.Setenv("OPSDECK_HOME", t.TempDir())
-	desktopNotify = func(title, body string) error { return nil }
-	t.Cleanup(func() { desktopNotify = sysproc.Notify })
+	t.Cleanup(setDesktopNotify(func(title, body string) error { return nil }))
 	srv, err := New(paths.Default(), Options{Port: 0})
 	if err != nil {
 		t.Fatal(err)
@@ -309,5 +307,57 @@ func TestHarnessApprovesOnTheCurrentProtocol(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ws.Path, "docs", "from-app.md")); err != nil {
 		t.Fatal("the change approved in the app did not run")
+	}
+}
+
+// A paused call belongs to its access key: another key that sends its
+// state gets an error and the approval stays open.
+func TestPausedApprovalBelongsToItsKey(t *testing.T) {
+	srv, c, _ := elicitServer(t)
+	ws, _ := srv.ws.Get("acme")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	connect := func(label string) (string, *mcp.ClientSession) {
+		keyID, _ := newKey(c, label, "ask")
+		s, err := srv.agents.ClientSession(ws, keyID, label, "ask")
+		if err != nil {
+			t.Fatal(err)
+		}
+		clientT, serverT := mcp.NewInMemoryTransports()
+		if _, err := srv.agents.ClientServer(ws, s, "test").Connect(ctx, serverT, nil); err != nil {
+			t.Fatal(err)
+		}
+		client := mcp.NewClient(&mcp.Implementation{Name: label, Version: "1"}, &mcp.ClientOptions{
+			MultiRoundTrip:     &mcp.MultiRoundTripOptions{Disabled: true},
+			ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) { return nil, nil },
+		})
+		sess, err := client.Connect(ctx, clientT, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { sess.Close() })
+		return keyID, sess
+	}
+	keyA, a := connect("Agent A")
+	_, b := connect("Agent B")
+	args := map[string]any{"path": "docs/a.md", "content": "# a\n"}
+	first, err := a.CallTool(ctx, &mcp.CallToolParams{Name: "write_doc", Arguments: args})
+	if err != nil || !first.NeedsInput() {
+		t.Fatalf("first: %v %+v", err, first)
+	}
+	approve := mcp.InputResponseMap{"opsdeck": &mcp.ElicitResult{Action: "accept", Content: map[string]any{"decision": "approve"}}}
+	stolen, err := b.CallTool(ctx, &mcp.CallToolParams{Name: "write_doc", Arguments: args, RequestState: first.RequestState, InputResponses: approve})
+	if err != nil || !stolen.IsError || !strings.Contains(textOf(stolen), "no longer open") {
+		t.Fatalf("another key: %v %q", err, textOf(stolen))
+	}
+	if _, err := os.Stat(filepath.Join(ws.Path, "docs", "a.md")); err == nil {
+		t.Fatal("another key's answer ran the change")
+	}
+	if ev := resolvedEvents(c, keyA); len(ev) != 0 {
+		t.Fatalf("the approval was resolved: %v", ev)
+	}
+	own, err := a.CallTool(ctx, &mcp.CallToolParams{Name: "write_doc", Arguments: args, RequestState: first.RequestState, InputResponses: approve})
+	if err != nil || own.IsError {
+		t.Fatalf("own: %v %q", err, textOf(own))
 	}
 }

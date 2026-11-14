@@ -56,14 +56,16 @@ type Calls struct {
 }
 
 type pausedCall struct {
+	owner  string // who may resume it (the workspace and session of the access key)
 	asks   chan askReq
 	answer chan answerMsg
 	done   chan *mcp.CallToolResult
 	cancel context.CancelFunc
-	idle   *time.Timer
 
-	mu    sync.Mutex
-	round int
+	mu      sync.Mutex
+	round   int
+	idle    *time.Timer
+	serving bool // a request waits for it; only one at a time
 }
 
 type askReq struct {
@@ -76,13 +78,18 @@ type answerMsg struct {
 	res   *mcp.ElicitResult
 }
 
+func errorResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
 // Run runs a tool call; run gets the Ask for this client (nil without
 // forms). A call that comes back with the answer to a question resumes the
-// call that asked it.
-func (c *Calls) Run(ctx context.Context, req *mcp.CallToolRequest, run func(ctx context.Context, ask Ask) *mcp.CallToolResult) (*mcp.CallToolResult, error) {
+// call that asked it, if it has the same owner (an access key's session:
+// one key can never answer or read another's call).
+func (c *Calls) Run(ctx context.Context, owner string, req *mcp.CallToolRequest, run func(ctx context.Context, ask Ask) *mcp.CallToolResult) (*mcp.CallToolResult, error) {
 	ss := req.Session
 	if state := req.Params.RequestState; state != "" {
-		return c.resume(ctx, state, req.Params.InputResponses)
+		return c.resume(ctx, owner, state, req.Params.InputResponses)
 	}
 	if !SupportsForms(ss) {
 		return run(ctx, nil), nil
@@ -92,7 +99,7 @@ func (c *Calls) Run(ctx context.Context, req *mcp.CallToolRequest, run func(ctx 
 	}
 	// the call outlives this request: it may wait for the next one
 	rctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	pc := &pausedCall{asks: make(chan askReq), answer: make(chan answerMsg, 1), done: make(chan *mcp.CallToolResult, 1), cancel: cancel}
+	pc := &pausedCall{owner: owner, asks: make(chan askReq), answer: make(chan answerMsg, 1), done: make(chan *mcp.CallToolResult, 1), cancel: cancel, serving: true}
 	id := uuid.NewString()
 	c.mu.Lock()
 	if c.calls == nil {
@@ -133,19 +140,30 @@ func (pc *pausedCall) ask(ctx context.Context, p *mcp.ElicitParams) (*mcp.Elicit
 }
 
 // wait returns the call's result, or its next question as input required.
+// The caller holds pc.serving; wait gives it up.
 func (c *Calls) wait(ctx context.Context, id string, pc *pausedCall) (*mcp.CallToolResult, error) {
+	pc.mu.Lock()
 	if pc.idle != nil {
 		pc.idle.Stop()
+		pc.idle = nil
 	}
+	pc.mu.Unlock()
+	defer func() {
+		pc.mu.Lock()
+		pc.serving = false
+		pc.mu.Unlock()
+	}()
 	select {
 	case res := <-pc.done:
 		c.drop(id)
 		return res, nil
 	case a := <-pc.asks:
+		pc.mu.Lock()
 		pc.idle = time.AfterFunc(idleTimeout, func() {
 			pc.cancel()
 			c.drop(id)
 		})
+		pc.mu.Unlock()
 		return &mcp.CallToolResult{InputRequests: mcp.InputRequestMap{InputKey: a.params}, RequestState: id + ":" + strconv.Itoa(a.round)}, nil
 	case <-ctx.Done():
 		// the client hung up
@@ -155,21 +173,35 @@ func (c *Calls) wait(ctx context.Context, id string, pc *pausedCall) (*mcp.CallT
 	}
 }
 
-func (c *Calls) resume(ctx context.Context, state string, responses mcp.InputResponseMap) (*mcp.CallToolResult, error) {
+func (c *Calls) resume(ctx context.Context, owner, state string, responses mcp.InputResponseMap) (*mcp.CallToolResult, error) {
 	id, r, _ := strings.Cut(state, ":")
 	round, _ := strconv.Atoi(r)
 	c.mu.Lock()
 	pc := c.calls[id]
 	c.mu.Unlock()
-	if pc == nil {
-		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "this request is no longer open in opsdeck (it timed out); call the tool again"}}}, nil
+	if pc == nil || pc.owner != owner {
+		return errorResult("this request is no longer open in opsdeck (it timed out); call the tool again"), nil
 	}
+	pc.mu.Lock()
+	if pc.serving {
+		pc.mu.Unlock()
+		return errorResult("this request is already being answered"), nil
+	}
+	pc.serving = true
+	pc.mu.Unlock()
 	res, _ := responses[InputKey].(*mcp.ElicitResult)
 	select {
 	case <-pc.answer: // drop an unread older answer
 	default:
 	}
-	pc.answer <- answerMsg{round, res}
+	select {
+	case pc.answer <- answerMsg{round, res}:
+	case <-ctx.Done():
+		pc.mu.Lock()
+		pc.serving = false
+		pc.mu.Unlock()
+		return nil, ctx.Err()
+	}
 	return c.wait(ctx, id, pc)
 }
 

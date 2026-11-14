@@ -156,7 +156,9 @@ Environments: %s. Start with the inventory tool to see what exists.`,
 				meta = mcp.Meta{mcpx.RelayCallKey: tok}
 			}
 			args := req.Params.Arguments
-			return m.clientCalls.Run(ctx, req, func(ctx context.Context, ask mcpx.Ask) *mcp.CallToolResult {
+			// a paused call can only be resumed by the session it belongs to
+			owner := ws + "/" + s.Info().ID
+			return m.clientCalls.Run(ctx, owner, req, func(ctx context.Context, ask mcpx.Ask) *mcp.CallToolResult {
 				cur, err := m.deps.Workspaces.Get(ws)
 				if err != nil {
 					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}, IsError: true}

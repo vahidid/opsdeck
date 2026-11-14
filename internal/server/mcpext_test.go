@@ -15,7 +15,6 @@ import (
 
 	"opsdeck/internal/agent"
 	"opsdeck/internal/paths"
-	"opsdeck/internal/sysproc"
 )
 
 type bearerRT struct{ token string }
@@ -49,8 +48,7 @@ func textOf(r *mcp.CallToolResult) string {
 func TestExternalMCP(t *testing.T) {
 	t.Setenv("OPSDECK_HOME", t.TempDir())
 	notified := make(chan string, 4)
-	desktopNotify = func(title, body string) error { notified <- title + "\n" + body; return nil }
-	defer func() { desktopNotify = sysproc.Notify }()
+	defer setDesktopNotify(func(title, body string) error { notified <- title + "\n" + body; return nil })()
 	srv, err := New(paths.Default(), Options{Port: 0})
 	if err != nil {
 		t.Fatal(err)

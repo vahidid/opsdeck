@@ -18,7 +18,7 @@ func TestRelayPassesElicitation(t *testing.T) {
 	upstream := mcp.NewServer(&mcp.Implementation{Name: "up", Version: "1"}, nil)
 	upstream.AddTool(&mcp.Tool{Name: "change", InputSchema: map[string]any{"type": "object"}}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		meta := mcp.Meta{RelayCallKey: req.Params.Meta[RelayCallKey]}
-		return calls.Run(ctx, req, func(ctx context.Context, ask Ask) *mcp.CallToolResult {
+		return calls.Run(ctx, "", req, func(ctx context.Context, ask Ask) *mcp.CallToolResult {
 			text := func(s string) *mcp.CallToolResult {
 				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
 			}

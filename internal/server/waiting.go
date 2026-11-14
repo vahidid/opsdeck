@@ -39,8 +39,33 @@ func (p *presence) watched() bool {
 	return p.focused && time.Since(p.at) < 75*time.Second
 }
 
-// Replaced in tests.
-var desktopNotify = sysproc.Notify
+// desktopNotifyFn is replaced in tests (setDesktopNotify).
+var (
+	notifyMu        sync.Mutex
+	desktopNotifyFn = sysproc.Notify
+)
+
+// desktopNotify shows a desktop notification (tests replace it with
+// setDesktopNotify while notifications may still be on their way).
+func desktopNotify(title, body string) error {
+	notifyMu.Lock()
+	f := desktopNotifyFn
+	notifyMu.Unlock()
+	return f(title, body)
+}
+
+// setDesktopNotify replaces the notifier; restore puts the old one back.
+func setDesktopNotify(f func(title, body string) error) (restore func()) {
+	notifyMu.Lock()
+	old := desktopNotifyFn
+	desktopNotifyFn = f
+	notifyMu.Unlock()
+	return func() {
+		notifyMu.Lock()
+		desktopNotifyFn = old
+		notifyMu.Unlock()
+	}
+}
 
 func (s *Server) waitingRoutes(mux *http.ServeMux, u func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("GET /api/waiting", u(func(w http.ResponseWriter, r *http.Request) {

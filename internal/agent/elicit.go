@@ -101,8 +101,8 @@ func approvalMessage(req map[string]any) string {
 		}
 	}
 	if p := str("preview"); p != "" {
-		if len(p) > 4000 {
-			p = p[:4000] + "\n…"
+		if r := []rune(p); len(r) > 4000 {
+			p = string(r[:4000]) + "\n…"
 		}
 		b.WriteString("\n\n" + p)
 	}

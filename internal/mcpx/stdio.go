@@ -87,7 +87,7 @@ func relayOver(ctx context.Context, url, token, version string, transport mcp.Tr
 		name := t.Name
 		srv.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args := req.Params.Arguments
-			return calls.Run(ctx, req, func(ctx context.Context, ask Ask) *mcp.CallToolResult {
+			return calls.Run(ctx, "", req, func(ctx context.Context, ask Ask) *mcp.CallToolResult {
 				tok := uuid.NewString()
 				if ask != nil {
 					mu.Lock()

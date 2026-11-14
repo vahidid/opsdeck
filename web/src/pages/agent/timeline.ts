@@ -23,6 +23,7 @@ export type Timeline =
   | { kind: "notification"; id: string; text: string }
   | { kind: "shell"; id: string; ev: Ev<"shell"> }
   | { kind: "recall"; id: string; items: RecallItem[]; preloaded?: string }
+  | { kind: "thinking"; id: string; text: string }
   | { kind: "assistant"; id: string; text: string; streaming: boolean }
   | ToolItem
   | { kind: "error"; id: string; message: string }
@@ -93,6 +94,9 @@ export function buildTimeline(events: AgentEvent[], deltas: Record<string, strin
         break;
       case "recall":
         if (e.items?.length) root.push({ kind: "recall", id: e.id, items: e.items, preloaded: e.preloaded });
+        break;
+      case "thinking":
+        if (e.text?.trim()) listFor(parent).push({ kind: "thinking", id: e.id, text: e.text });
         break;
       case "assistant":
         if (e.text?.trim()) listFor(parent).push({ kind: "assistant", id: e.messageId || e.id, text: e.text, streaming: false });

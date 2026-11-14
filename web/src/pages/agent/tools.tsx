@@ -93,19 +93,52 @@ function outputSummary(item: ToolItem): string {
   if (v?.kind === "deploy") return v.targets ? `${v.targets.length} targets · ${v.platform}` : v.detail ? `${v.detail.name} · ${v.detail.status}` : v.platform;
   if (item.call?.tool === "delegate" && item.sub?.end) return `${item.sub.end.toolCalls ?? 0} calls · ${item.sub.end.state}`;
   if (item.call?.tool === "todo" && item.todo) return `${item.todo.filter((x) => x.status === "done" || x.status === "skipped").length}/${item.todo.length} done`;
-  const hostParts = (r.output.match(/^=== .+ ===$/gm) ?? []).length;
+
+  const output = r.output;
+  const tool = item.call?.tool ?? "";
+
+  if (tool === "terraform") {
+    const planMatch = output.match(/Plan:\s*(\d+\s+to add,\s*\d+\s+to change,\s*\d+\s+to destroy)/i);
+    if (planMatch) return planMatch[1];
+    if (/Apply complete!/i.test(output)) return "Apply complete";
+    if (/No changes\./i.test(output)) return "No changes";
+  }
+  if (tool === "security_scan") {
+    const vulnCount = (output.match(/CVE-\d{4}-\d+/gi) ?? []).length;
+    if (vulnCount > 0) return `${vulnCount} vulns found`;
+    if (/clean/i.test(output) || /no vulnerable/i.test(output)) return "Clean / no vulns";
+  }
+  if (tool === "helm") {
+    if (/STATUS:\s*deployed/i.test(output)) return "Release deployed";
+    const helmRows = output.trim().split("\n").length;
+    if (helmRows > 1 && /NAME\s+NAMESPACE/i.test(output)) return `${helmRows - 1} releases`;
+  }
+  if (tool === "hcloud") {
+    const lines = output.trim().split("\n");
+    if (lines.length > 1 && /ID\s+NAME/i.test(lines[0])) return `${lines.length - 1} resources`;
+  }
+  if (tool === "docker") {
+    const lines = output.trim().split("\n");
+    if (lines.length > 1 && /CONTAINER ID/i.test(lines[0])) return `${lines.length - 1} containers`;
+  }
+
+  const hostParts = (output.match(/^=== .+ ===$/gm) ?? []).length;
   if (hostParts > 1) {
-    const bad = (r.output.match(/^exit code: [1-9]/gm) ?? []).length;
+    const bad = (output.match(/^exit code: [1-9]/gm) ?? []).length;
     return `${hostParts} hosts${bad ? ` · ${bad} failed` : ""}`;
   }
-  const output = r.output;
   const lines = output.split("\n").filter((l) => l.trim() !== "");
   const exit = /^exit code: (-?\d+)/.exec(output);
   const first = lines.find((l) => !l.startsWith("exit code:") && !/^(stdout|stderr):$/.test(l.trim())) ?? "";
   const parts = [];
-  if (exit) parts.push(`exit ${exit[1]}`);
-  else if (r.isError) parts.push(first.replace(/^error:\s*/, "").slice(0, 80));
-  else if (first) parts.push(first.slice(0, 60));
+  if (exit) {
+    if (exit[1] === "0") parts.push("ok");
+    else parts.push(`exit ${exit[1]}`);
+  } else if (r.isError) {
+    parts.push(first.replace(/^error:\s*/i, "").slice(0, 60));
+  } else if (first) {
+    parts.push(first.slice(0, 50));
+  }
   if (lines.length > 1) parts.push(`${lines.length} lines`);
   return parts.join(" · ");
 }
@@ -166,7 +199,10 @@ export function ToolCard({ item, ctx, nested, live, flush, openViews }: { item: 
         </span>
         {progress && !expanded && <span className="hidden md:inline text-[11px] text-info truncate max-w-64">{progress}</span>}
         {result && !expanded && (
-          <span className={cx("hidden md:inline font-mono text-[11px] truncate max-w-56", result.isError ? "text-err" : "text-faint")}>{outputSummary(item)}</span>
+          <span className={cx("inline-flex items-center gap-1 font-mono text-[11px] truncate max-w-44 sm:max-w-64 md:max-w-80", result.isError ? "text-err" : "text-faint")}>
+            <span className="text-muted/40">→</span>
+            <span className="truncate">{outputSummary(item)}</span>
+          </span>
         )}
         {item.hooks.length > 0 && <Webhook className={cx("size-3.5 shrink-0", blocked ? "text-err" : "text-faint")} aria-label="hook" />}
         {env && env !== "internet" && <Badge tone={/prod/i.test(env) ? "err" : "neutral"}>{env}</Badge>}

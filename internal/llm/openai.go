@@ -148,6 +148,7 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 	}
 
 	var text strings.Builder
+	var reasoning strings.Builder
 	calls := map[int]*oaToolCall{}
 	resp := &Response{StopReason: "end_turn"}
 	sc := bufio.NewScanner(res.Body)
@@ -165,8 +166,9 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string       `json:"content"`
-					ToolCalls []oaToolCall `json:"tool_calls"`
+					Content          string       `json:"content"`
+					ReasoningContent string       `json:"reasoning_content"`
+					ToolCalls        []oaToolCall `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -189,6 +191,9 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 			resp.Usage.OutputTokens = chunk.Usage.CompletionTokens
 		}
 		for _, ch := range chunk.Choices {
+			if ch.Delta.ReasoningContent != "" {
+				reasoning.WriteString(ch.Delta.ReasoningContent)
+			}
 			if ch.Delta.Content != "" {
 				text.WriteString(ch.Delta.Content)
 				if onText != nil {
@@ -220,6 +225,9 @@ func (o *openaiProvider) Chat(ctx context.Context, req Request, onText func(stri
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	if reasoning.Len() > 0 {
+		resp.Content = append(resp.Content, Block{Type: "thinking", Text: reasoning.String(), Provider: "openai"})
 	}
 	if text.Len() > 0 {
 		resp.Content = append(resp.Content, Block{Type: "text", Text: text.String()})

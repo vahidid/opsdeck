@@ -5,6 +5,17 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-14
+
+Agent chat session renaming and smart auto-titling, organized sessions list with date grouping and real-time search, compact tool calls with smart output summaries, and visible thinking/reasoning stages.
+
+### Agent & Chat
+
+- **Session renaming & smart auto-titling.** Easily rename any agent session directly from the header via inline editing or the session menu. Auto-titling cleans up markdown artifacts, prompt commands, and excess whitespace to keep titles tidy.
+- **Enhanced sessions sidebar.** The sessions list now organizes chats into temporal groups (Today, Yesterday, Previous 7 days, Older) and features a real-time search input for instant filtering.
+- **Compact tool calls with smart summaries.** Completed tool calls collapse into sleek, single-line summaries showing duration and key results (e.g. Terraform plans, container counts, vulnerability totals, release statuses), keeping the chat clean while remaining fully expandable on demand.
+- **Visible thinking & reasoning stages.** Model reasoning and thinking processes (from DeepSeek R1, Ollama, OpenRouter, and Claude 3.7) are captured and displayed in a dedicated, collapsible `<ThinkingBlock>` with word count and preview, alongside an animated neural thinking indicator during generation.
+
 ## [0.9.0] — 2026-11-14
 
 New AI infrastructure tools (Terraform, Hetzner Cloud, Helm, Trivy security scanner),

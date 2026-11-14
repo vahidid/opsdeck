@@ -564,6 +564,7 @@ export type AgentEvent =
   | (EventBase & { type: "notification"; text: string })
   | (EventBase & { type: "shell"; command: string; target: string; label: string; output: string; exitCode: number; durationMs: number })
   | (EventBase & { type: "recall"; items: RecallItem[]; preloaded?: string })
+  | (EventBase & { type: "thinking"; text: string; durationMs?: number })
   | (EventBase & { type: "assistant_delta"; messageId: string; text: string })
   | (EventBase & { type: "assistant"; messageId: string; text: string })
   | (EventBase & {

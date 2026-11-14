@@ -244,6 +244,10 @@ func (r *runner) delegate(ctx context.Context, callID string, def workspace.Agen
 		var calls []llm.Block
 		for _, b := range resp.Content {
 			switch b.Type {
+			case "thinking":
+				if strings.TrimSpace(b.Text) != "" {
+					sub.emit("thinking", map[string]any{"text": b.Text}, true)
+				}
 			case "text":
 				if strings.TrimSpace(b.Text) != "" {
 					texts = append(texts, b.Text)

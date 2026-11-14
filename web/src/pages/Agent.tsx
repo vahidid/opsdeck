@@ -4,8 +4,10 @@ import {
   AlertTriangle,
   BookOpen,
   Bot,
+  Brain,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleSlash,
   Cpu,
   Download,
@@ -23,6 +25,7 @@ import {
   Plug,
   Rocket,
   ScrollText,
+  Search,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -51,6 +54,43 @@ import type { SlashCommand } from "./agent/composer";
 import { NotificationMsg, ShellMsg, TasksButton, TodoPanel, UserCommand, useTasks } from "./agent/panels";
 import { buildTimeline, callKey, groupBlocks, waiting } from "./agent/timeline";
 import { ToolGroup } from "./agent/tools";
+
+type DateGroup = {
+  title: string;
+  sessions: SessionInfo[];
+};
+
+function groupSessionsByDate(sessions: SessionInfo[]): DateGroup[] {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400000;
+  const startOfLast7Days = startOfToday - 6 * 86400000;
+
+  const today: SessionInfo[] = [];
+  const yesterday: SessionInfo[] = [];
+  const last7Days: SessionInfo[] = [];
+  const older: SessionInfo[] = [];
+
+  for (const s of sessions) {
+    const updated = s.updated ? new Date(s.updated).getTime() : 0;
+    if (updated >= startOfToday) {
+      today.push(s);
+    } else if (updated >= startOfYesterday) {
+      yesterday.push(s);
+    } else if (updated >= startOfLast7Days) {
+      last7Days.push(s);
+    } else {
+      older.push(s);
+    }
+  }
+
+  const groups: DateGroup[] = [];
+  if (today.length > 0) groups.push({ title: "Today", sessions: today });
+  if (yesterday.length > 0) groups.push({ title: "Yesterday", sessions: yesterday });
+  if (last7Days.length > 0) groups.push({ title: "Previous 7 days", sessions: last7Days });
+  if (older.length > 0) groups.push({ title: "Older", sessions: older });
+  return groups;
+}
 
 // ---------------------------------------------------------------- page
 
@@ -93,7 +133,14 @@ export function AgentPage() {
     return allowed.find((m) => m.id === pref)?.id ?? allowed[0]?.id ?? "";
   }, [allowed, settings.data, workspace]);
 
+  const [filter, setFilter] = useState("");
   const sorted = useMemo(() => [...(sessions.data ?? [])].sort((a, b) => (b.updated || "").localeCompare(a.updated || "")), [sessions.data]);
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return sorted;
+    const q = filter.trim().toLowerCase();
+    return sorted.filter((s) => (s.title || "Untitled session").toLowerCase().includes(q) || (s.mode || "").toLowerCase().includes(q));
+  }, [sorted, filter]);
+  const groups = useMemo(() => groupSessionsByDate(filtered), [filtered]);
 
   async function remove(s: SessionInfo) {
     if (!(await confirm({ title: `Delete session "${s.title || "Untitled"}"?`, message: "The transcript is deleted. The audit journal keeps its entries.", danger: true, confirmLabel: "Delete" })))
@@ -120,55 +167,82 @@ export function AgentPage() {
   return (
     <div className="flex h-full min-h-0">
       <aside className="hidden sm:flex w-52 md:w-64 shrink-0 border-r border-line bg-panel flex-col min-h-0">
-        <div className="p-2 border-b border-line">
+        <div className="p-2 border-b border-line space-y-1.5">
           <Button className="w-full" icon={<MessageSquarePlus className="size-4" />} {...openInTab("agent")}>
             New session
           </Button>
+          <div className="relative">
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search sessions..."
+              className="text-xs h-7.5 pl-7 pr-6"
+            />
+            <Search className="size-3.5 text-muted absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {filter && (
+              <button
+                onClick={() => setFilter("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-fg text-xs"
+                title="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-1.5 space-y-px">
-          {sorted.length === 0 && !sessions.loading && <div className="text-xs text-faint p-3">No sessions yet.</div>}
-          {sorted.map((s) => (
-            <div
-              key={s.id}
-              {...openInTab(`agent/${encodeURIComponent(s.id)}`)}
-              title="Ctrl/⌘-click or middle-click: open in a new tab"
-              className={cx("group relative flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer", s.id === sid ? "bg-panel-3" : "hover:bg-panel-2")}
-            >
-              {s.client ? <Plug className="size-3 shrink-0 text-agent-ink" aria-label="connected agent" /> : <StateDot state={s.state} />}
-              <div className="min-w-0 flex-1">
-                <div dir="auto" className={cx("truncate text-[12.5px] text-start", s.id === sid ? "text-fg" : "text-muted group-hover:text-fg")}>
-                  {s.title || "Untitled session"}
-                </div>
-                <div className="text-[10.5px] text-faint flex items-center gap-1.5">
-                  <span>{timeAgo(s.updated)}</span>
-                  <span className="uppercase">{s.mode}</span>
-                  {s.headless && (
-                    <span className="inline-flex items-center gap-0.5" title="Started by opsdeck run (headless)">
-                      <Terminal className="size-2.5" /> run
-                    </span>
-                  )}
-                  {s.forkedFrom && <GitFork className="size-2.5" aria-label="forked" />}
-                </div>
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-2">
+          {filtered.length === 0 && !sessions.loading && (
+            <div className="text-xs text-faint p-3 text-center">{filter ? "No matching sessions." : "No sessions yet."}</div>
+          )}
+          {groups.map((g) => (
+            <div key={g.title} className="space-y-px">
+              <div className="px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint">
+                {g.title}
               </div>
-              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <IconButton title="Session actions" className="size-6 opacity-0 group-hover:opacity-100" onClick={() => setMenu(menu === s.id ? null : s.id)}>
-                  <MoreHorizontal className="size-3.5" />
-                </IconButton>
-                <Popover open={menu === s.id} onClose={() => setMenu(null)} className="right-0 mt-1 w-44">
-                  <MenuItem icon={<SquareArrowOutUpRight />} onClick={() => (setMenu(null), wsTabs.open(ws, `agent/${encodeURIComponent(s.id)}`))}>
-                    Open in new tab
-                  </MenuItem>
-                  <MenuItem icon={<Pencil />} onClick={() => (setMenu(null), setRenaming(s))}>
-                    Rename
-                  </MenuItem>
-                  <MenuItem icon={<GitFork />} onClick={() => (setMenu(null), void fork(s))}>
-                    Fork
-                  </MenuItem>
-                  <MenuItem icon={<Trash2 />} danger onClick={() => (setMenu(null), void remove(s))}>
-                    Delete
-                  </MenuItem>
-                </Popover>
-              </div>
+              {g.sessions.map((s) => (
+                <div
+                  key={s.id}
+                  {...openInTab(`agent/${encodeURIComponent(s.id)}`)}
+                  title="Ctrl/⌘-click or middle-click: open in a new tab"
+                  className={cx("group relative flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer", s.id === sid ? "bg-panel-3" : "hover:bg-panel-2")}
+                >
+                  {s.client ? <Plug className="size-3 shrink-0 text-agent-ink" aria-label="connected agent" /> : <StateDot state={s.state} />}
+                  <div className="min-w-0 flex-1">
+                    <div dir="auto" className={cx("truncate text-[12.5px] text-start", s.id === sid ? "text-fg font-medium" : "text-muted group-hover:text-fg")}>
+                      {s.title || "Untitled session"}
+                    </div>
+                    <div className="text-[10.5px] text-faint flex items-center gap-1.5">
+                      <span>{timeAgo(s.updated)}</span>
+                      <span className="uppercase">{s.mode}</span>
+                      {s.headless && (
+                        <span className="inline-flex items-center gap-0.5" title="Started by opsdeck run (headless)">
+                          <Terminal className="size-2.5" /> run
+                        </span>
+                      )}
+                      {s.forkedFrom && <GitFork className="size-2.5" aria-label="forked" />}
+                    </div>
+                  </div>
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <IconButton title="Session actions" className="size-6 opacity-0 group-hover:opacity-100" onClick={() => setMenu(menu === s.id ? null : s.id)}>
+                      <MoreHorizontal className="size-3.5" />
+                    </IconButton>
+                    <Popover open={menu === s.id} onClose={() => setMenu(null)} className="right-0 mt-1 w-44">
+                      <MenuItem icon={<SquareArrowOutUpRight />} onClick={() => (setMenu(null), wsTabs.open(ws, `agent/${encodeURIComponent(s.id)}`))}>
+                        Open in new tab
+                      </MenuItem>
+                      <MenuItem icon={<Pencil />} onClick={() => (setMenu(null), setRenaming(s))}>
+                        Rename
+                      </MenuItem>
+                      <MenuItem icon={<GitFork />} onClick={() => (setMenu(null), void fork(s))}>
+                        Fork
+                      </MenuItem>
+                      <MenuItem icon={<Trash2 />} danger onClick={() => (setMenu(null), void remove(s))}>
+                        Delete
+                      </MenuItem>
+                    </Popover>
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -551,6 +625,25 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
   const stickRef = useRef(true);
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+
+  async function saveTitle(e?: React.FormEvent) {
+    e?.preventDefault();
+    const t = editTitle.trim();
+    if (!t || t === session?.title) {
+      setIsEditingTitle(false);
+      return;
+    }
+    try {
+      await api.updateSession(ws, sid, { title: t });
+      setSession((prev) => (prev ? { ...prev, title: t } : prev));
+      setIsEditingTitle(false);
+      onChangedRef.current?.();
+    } catch (err) {
+      toast.error("Rename failed", errMsg(err));
+    }
+  }
 
   useEffect(() => {
     if (params.get("draft")) {
@@ -819,9 +912,49 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
       <div className="flex items-center gap-3 px-4 h-12 border-b border-line bg-panel shrink-0">
         <StateDot state={state} />
         <div className="min-w-0 flex-1 flex items-center gap-2">
-          <div dir="auto" className="truncate font-medium">
-            {session?.title || "Untitled session"}
-          </div>
+          {isEditingTitle ? (
+            <form onSubmit={saveTitle} className="flex items-center gap-1.5 max-w-md flex-1">
+              <Input
+                autoFocus
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setIsEditingTitle(false);
+                }}
+                className="h-7 text-xs font-medium"
+              />
+              <Button size="xs" variant="primary" type="submit">
+                Save
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setIsEditingTitle(false)}>
+                Cancel
+              </Button>
+            </form>
+          ) : (
+            <div className="group/title flex items-center gap-1.5 min-w-0">
+              <div
+                dir="auto"
+                onClick={() => {
+                  setEditTitle(session?.title || "");
+                  setIsEditingTitle(true);
+                }}
+                className="truncate font-medium cursor-pointer hover:text-fg/80"
+                title="Click to rename"
+              >
+                {session?.title || "Untitled session"}
+              </div>
+              <button
+                onClick={() => {
+                  setEditTitle(session?.title || "");
+                  setIsEditingTitle(true);
+                }}
+                className="opacity-0 group-hover/title:opacity-100 p-0.5 text-muted hover:text-fg rounded transition-opacity"
+                title="Rename session"
+              >
+                <Pencil className="size-3" />
+              </button>
+            </div>
+          )}
           {session?.headless && (
             <Badge tone="info" title="Started by opsdeck run: nothing waits for an approval, what would ask is denied">
               headless
@@ -855,6 +988,16 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
             {busy ? <Loader2 className="size-4 animate-spin" /> : <MoreHorizontal className="size-4" />}
           </IconButton>
           <Popover open={menu} onClose={() => setMenu(false)} className="right-0 mt-1 w-72">
+            <MenuItem
+              icon={<Pencil />}
+              onClick={() => {
+                setMenu(false);
+                setEditTitle(session?.title || "");
+                setIsEditingTitle(true);
+              }}
+            >
+              Rename session
+            </MenuItem>
             <MenuItem icon={<GitFork />} onClick={() => (setMenu(false), void fork())} hint="/fork">
               Fork session
             </MenuItem>
@@ -909,6 +1052,8 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
                 return <ShellMsg key={t.id} ev={t.ev} />;
               case "recall":
                 return <Recall key={t.id} items={t.items} preloaded={t.preloaded} />;
+              case "thinking":
+                return <ThinkingBlock key={t.id} text={t.text} />;
               case "assistant":
                 return (
                   <ActionCtx.Provider key={t.id} value={sendAction}>
@@ -1163,6 +1308,41 @@ function AssistantMsg({ text, streaming }: { text: string; streaming: boolean })
   );
 }
 
+function ThinkingBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const words = useMemo(() => text.trim().split(/\s+/).length, [text]);
+  const preview = useMemo(() => {
+    const first = text.trim().split("\n")[0] || "";
+    return first.slice(0, 80) + (first.length > 80 ? "…" : "");
+  }, [text]);
+
+  return (
+    <div className="ml-9 rounded-lg border border-agent/20 bg-agent/5 overflow-hidden transition-all">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 h-8 text-left hover:bg-agent/10 text-muted transition-colors"
+      >
+        {open ? <ChevronDown className="size-3.5 text-agent shrink-0" /> : <ChevronRight className="size-3.5 text-agent shrink-0" />}
+        <Brain className="size-3.5 text-agent shrink-0" />
+        <span className="text-[12px] font-medium text-agent">Thought process</span>
+        <span className="text-[11px] text-faint tabular-nums shrink-0">({words} words)</span>
+        {!open && preview && (
+          <span dir="auto" className="flex-1 min-w-0 truncate font-mono text-[11px] text-faint text-start">
+            {preview}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-agent/15 px-3.5 py-2.5 text-[12.5px] text-muted leading-relaxed font-sans bg-panel/30">
+          <div dir="auto" className="whitespace-pre-wrap break-words border-l-2 border-agent/40 pl-3 py-0.5 text-start">
+            {text}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // The wait before the agent's next words: what it is doing (from what came
 // last), how long it has been, the checklist step it is on, and a way to stop.
 function Thinking({ after, step, onStop }: { after?: string; step?: string; onStop: () => void }) {
@@ -1186,11 +1366,7 @@ function Thinking({ after, step, onStop }: { after?: string; step?: string; onSt
   return (
     <div className="flex items-center gap-3" role="status">
       <span className="size-6 rounded-md bg-agent/15 grid place-items-center shrink-0">
-        <span className="think-mark" aria-hidden>
-          <i />
-          <i />
-          <i />
-        </span>
+        <Brain className="size-3.5 text-agent animate-pulse" />
       </span>
       <div className="min-w-0 flex-1">
         <span className="think-text text-[13px]">{phase}</span>

@@ -10,7 +10,10 @@ import (
 )
 
 func TestLocalPolicy(t *testing.T) {
-	home := t.TempDir()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	state := filepath.Join(home, ".local", "state", "opsdeck")
 	ws := filepath.Join(home, "work", "acme")
 	os.MkdirAll(filepath.Join(ws, ".opsdeck"), 0o700)

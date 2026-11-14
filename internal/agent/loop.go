@@ -190,12 +190,12 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		s.taint = "" // a new message from the user: they are back in the loop
 	}
 	if first && !notification {
-		title := strings.Join(strings.Fields(display), " ")
+		title := cleanSessionTitle(display)
 		if title == "" && len(in.Files) > 0 {
 			title = in.Files[0].Name
 		}
-		if r := []rune(title); len(r) > 70 {
-			title = string(r[:70]) + "…"
+		if title == "" {
+			title = "Untitled session"
 		}
 		s.info.Title = title
 	}
@@ -281,6 +281,10 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		var calls []llm.Block
 		for _, b := range resp.Content {
 			switch b.Type {
+			case "thinking":
+				if strings.TrimSpace(b.Text) != "" {
+					s.emit("thinking", map[string]any{"text": b.Text}, true)
+				}
 			case "text":
 				if strings.TrimSpace(b.Text) != "" {
 					textParts = append(textParts, b.Text)
@@ -449,6 +453,42 @@ func (m *Manager) compact(ctx context.Context, s *Session, p llm.Provider, model
 	s.emit("compaction", map[string]any{"summary": summary.String()}, true)
 	return nil
 }
+
+func cleanSessionTitle(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "/") {
+		parts := strings.SplitN(s, " ", 2)
+		if len(parts) > 1 {
+			s = strings.TrimSpace(parts[1])
+		}
+	}
+	lines := strings.Split(s, "\n")
+	var firstLine string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		l = strings.TrimLeft(l, "#*`- >")
+		l = strings.TrimSpace(l)
+		if l != "" {
+			firstLine = l
+			break
+		}
+	}
+	if firstLine == "" {
+		firstLine = s
+	}
+	fields := strings.Fields(firstLine)
+	cleaned := strings.Join(fields, " ")
+	runes := []rune(cleaned)
+	if len(runes) > 65 {
+		sub := string(runes[:65])
+		if idx := strings.LastIndex(sub, " "); idx > 35 {
+			return strings.TrimSpace(sub[:idx]) + "…"
+		}
+		return strings.TrimSpace(sub) + "…"
+	}
+	return cleaned
+}
+
 
 // ensure mcpx import is used for type references in toolset closures.
 var _ = mcpx.ToolName

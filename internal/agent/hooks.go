@@ -264,9 +264,9 @@ func (m *Manager) turnEndHooks(s *Session, w *workspace.Workspace, lastMessage, 
 }
 
 // recordHookRun keeps the hook's last result for its editor (redacted, like
-// what the chat shows).
+// what the chat shows: redacted whole, then cut).
 func (m *Manager) recordHookRun(h Hook, r *runner, tool, outcome, msg string, started time.Time) {
-	m.hookRuns.record(h.Key, HookRun{At: started.UTC(), Outcome: outcome, Message: m.redactor.Redact(truncate(msg, 500)),
+	m.hookRuns.record(h.Key, HookRun{At: started.UTC(), Outcome: outcome, Message: truncate(m.redactor.Redact(msg), 500),
 		DurationMs: time.Since(started).Milliseconds(), Workspace: r.w.Name(), Session: r.s.Info().ID, Tool: tool})
 }
 
@@ -279,7 +279,9 @@ func errText(err error) string {
 
 // hookEvent shows what a hook did on the call's card and records it.
 func (r *runner) hookEvent(callID string, h Hook, outcome, msg string) {
-	msg = r.m.redactor.Redact(truncate(msg, 2000))
+	// redact the whole text first: a cut inside a secret would leave a
+	// part the redactor no longer recognizes
+	msg = truncate(r.m.redactor.Redact(msg), 2000)
 	data := map[string]any{"hook": h.Name, "event": h.Event, "outcome": outcome}
 	if callID != "" {
 		data["callId"] = callID

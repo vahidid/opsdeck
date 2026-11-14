@@ -100,3 +100,36 @@ func TestWorkspaceHookBlocksAndAsksAndRunsAreKept(t *testing.T) {
 		t.Fatalf("runs: %+v %+v %+v", runs[1], runs[2], runs[3])
 	}
 }
+
+// A secret in a hook's message is masked even where the message is cut
+// (the last run keeps 500 characters, the chat event 2000): the whole text
+// is redacted before it is cut.
+func TestHookMessagesRedactBeforeCutting(t *testing.T) {
+	const secret = "Zq9vX2kLmP4tR7wY1nB8cD3fG6hJ0sA5"
+	r, s := testRunner(t, ModeAsk, fakeTool("restart", RiskChange, func(ctx context.Context) (string, error) { return "ok", nil }))
+	r.m.redactor = NewRedactor(func() map[string]string { return map[string]string{secret: "vault://t/db-password"} })
+	dir := t.TempDir()
+	var hooks []Hook
+	r.m.deps.Hooks = func(*workspace.Workspace) []Hook { return hooks }
+	for i, msg := range []string{
+		strings.Repeat("a", 320) + secret + strings.Repeat("b", 400),   // across the 500 cut (last run)
+		strings.Repeat("a", 1320) + secret + strings.Repeat("b", 1000), // across the 2000 cut (chat event)
+	} {
+		f := filepath.Join(dir, "msg"+string(rune('0'+i)))
+		os.WriteFile(f, []byte(msg), 0o600)
+		hooks = []Hook{{Name: "leaky", Event: HookBeforeTool, Command: "cat " + f + " >&2; exit 2", Key: "k-leak"}}
+		r.runCalls(context.Background(), calls("restart"), false)
+		run := r.m.HookRuns([]string{"k-leak"})[0]
+		if run == nil || strings.Contains(run.Message, secret[:6]) {
+			t.Fatalf("message %d: the last run shows part of the secret: %+v", i, run)
+		}
+	}
+	for _, ev := range s.Events() {
+		if ev["type"] != "hook" {
+			continue
+		}
+		if m, _ := ev["message"].(string); strings.Contains(m, secret[:6]) {
+			t.Fatalf("the chat event shows part of the secret: %.200s", m)
+		}
+	}
+}

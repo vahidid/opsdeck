@@ -3,7 +3,9 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
-## [Unreleased]
+## [0.11.0] — 2026-11-14
+
+Chat context, token usage and provider limits, and subagent runs shown under their delegate call.
 
 ### Agent & Chat
 

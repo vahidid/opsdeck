@@ -13,6 +13,7 @@ import (
 
 	"opsdeck/internal/connect"
 	"opsdeck/internal/llm"
+	"opsdeck/internal/mcpx"
 	"opsdeck/internal/workspace"
 )
 
@@ -101,13 +102,17 @@ func (s *Session) beginClientCall(reqCtx context.Context) (context.Context, func
 // ErrClientLocked is the answer to a call while opsdeck is locked.
 const errClientLocked = "opsdeck is locked: unlock it in the opsdeck app, then try again"
 
-// ClientCall runs one tool call of a connected agent.
-func (m *Manager) ClientCall(reqCtx context.Context, w *workspace.Workspace, s *Session, name string, args []byte) (string, bool) {
+// ClientCall runs one tool call of a connected agent. With an elicitor
+// (its client can show a form), approvals are asked there too.
+func (m *Manager) ClientCall(reqCtx context.Context, w *workspace.Workspace, s *Session, name string, args []byte, elicit Elicitor) (string, bool) {
 	if m.deps.Vault != nil && !m.deps.Vault.Unlocked() {
 		return errClientLocked, true
 	}
 	ctx, done := s.beginClientCall(reqCtx)
 	defer done()
+	if elicit != nil {
+		ctx = withElicitor(ctx, elicit)
+	}
 	env := m.sessionEnv(s, w)
 	_, toolMap := m.toolset(w)
 	if len(args) == 0 {
@@ -132,7 +137,7 @@ func (m *Manager) ClientServer(w *workspace.Workspace, s *Session, version strin
 	}
 	instructions := fmt.Sprintf(`Tools of the opsdeck workspace %q (%s): its servers, networks and VPNs, containers, clusters, databases, logs and docs.
 opsdeck holds the credentials and uses them for you; you never see or need a password or key. Read before you change: look at the state first (status, logs, config), then propose the change.
-Mode %q: %s Changes on a protected environment always wait for the user's approval in the opsdeck app, so a call may take until they answer; a denied call returns the reason — do not retry it unchanged.
+Mode %q: %s Changes on a protected environment always wait for the user's approval in the opsdeck app (or in your client, when it can show the request), so a call may take until they answer; a denied call returns the reason — do not retry it unchanged.
 Environments: %s. Start with the inventory tool to see what exists.`,
 		w.Name(), firstNonEmpty(w.Metadata.Title, w.Name()), info.Mode, modeHint(info.Mode), strings.Join(envs, ", "))
 	srv := mcp.NewServer(&mcp.Implementation{Name: "opsdeck", Title: "opsdeck · " + firstNonEmpty(w.Metadata.Title, w.Name()), Version: version}, &mcp.ServerOptions{Instructions: instructions})
@@ -144,12 +149,21 @@ Environments: %s. Start with the inventory tool to see what exists.`,
 		}
 		tool := &mcp.Tool{Name: def.Name, Description: def.Description, InputSchema: def.Schema}
 		srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			cur, err := m.deps.Workspaces.Get(ws)
-			if err != nil {
-				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}, IsError: true}, nil
+			// `opsdeck mcp` marks the calls it relays, so it knows which of
+			// its agent's calls an approval belongs to
+			var meta mcp.Meta
+			if tok, ok := req.Params.Meta[mcpx.RelayCallKey].(string); ok {
+				meta = mcp.Meta{mcpx.RelayCallKey: tok}
 			}
-			out, isErr := m.ClientCall(ctx, cur, s, def.Name, req.Params.Arguments)
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out}}, IsError: isErr}, nil
+			args := req.Params.Arguments
+			return m.clientCalls.Run(ctx, req, func(ctx context.Context, ask mcpx.Ask) *mcp.CallToolResult {
+				cur, err := m.deps.Workspaces.Get(ws)
+				if err != nil {
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}, IsError: true}
+				}
+				out, isErr := m.ClientCall(ctx, cur, s, def.Name, args, askElicitor(ask, meta))
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out}}, IsError: isErr}
+			})
 		})
 	}
 	return srv

@@ -517,7 +517,8 @@ type Event = { id: string; ts: string; type: string; parent?: string; ... }
 // tool_progress     {callId, text}                what a running call is doing (not persisted)
 // approval_request  {approvalId, callId, tool, input, risk, target, environment, reason, preview, hosts?, canary?, stage?, title?}
 //                   preview: diff/command text; hosts: a change over several hosts; stage "next": the rest of a canary rollout
-// approval_resolved {approvalId, decision, note, canary?}
+// approval_resolved {approvalId, decision, note, canary?, by?}
+//                   by: the connected agent (access key label) whose user answered it in its own client (MCP elicitation)
 // question          {questionId, callId, question, options: [{label, description?}], multiple, allowText}
 // question_answered {questionId, choices?, text?, skipped?}
 // todo              {callId, items: [{text, status: "pending"|"in_progress"|"done"|"skipped"}]}

@@ -198,6 +198,27 @@ open (with Approve and Deny, see [harness.md](harness.md#waiting-for-you)), and 
 opsdeck window has the focus it shows a desktop notification: *Claude Code waits for your
 approval — write_doc on docs/runbook.md*.
 
+**Approving in the agent's own window.** When the agent's client can show a form (MCP
+elicitation: Claude Code and others that support it), the approval is sent there too, with the
+same facts as the card: the tool, target, environment, risk, why it asks, the hosts and the
+preview. Choose *approve* or *deny* (with an optional note for the agent); declining the form
+counts as deny, dismissing it leaves the decision to opsdeck. The card in opsdeck stays open
+meanwhile, and the first answer counts; the card then says where it was answered (*Approved
+in Claude Code*), and so does the audit journal.
+
+- opsdeck's policy stays the final say: only what opsdeck itself would ask you about is sent.
+  What the key's mode or the workspace's rules refuse is refused without asking, and the
+  agent's client cannot approve it.
+- A card that asks for a password (an Ansible Vault password) is answered only in opsdeck.
+  "Always allow" and the choice of a canary rollout are only on the card in opsdeck; a
+  canary the agent asked for still runs on the first host first.
+- A client without forms works as before: the approval waits in opsdeck.
+- Both MCP protocol versions work. Before 2026-07-28 opsdeck sends the form while the call
+  runs; from 2026-07-28 the call answers "input required" with the form and continues when
+  the client calls again with the answer. If the client does not come back within 30
+  minutes, the call ends and the approval counts as denied. `opsdeck mcp` passes the form
+  on to the agent behind it either way.
+
 ## What the agent gets
 
 The tools of the workspace, as opsdeck's own agent has them. A workspace only offers the
@@ -238,4 +259,4 @@ agent's own privacy terms apply to what it sends to its model.
 | *opsdeck is not running at …* | open the opsdeck app or run `opsdeck serve` |
 | *opsdeck is locked* | unlock opsdeck; the vault locks itself after idle time (App settings › Security) |
 | *the workspace of this access key no longer exists* | the workspace was removed; make a key for another one |
-| a call seems to hang | it waits for your approval: open the key's session on the Agent page |
+| a call seems to hang | it waits for your approval: answer the form in the agent, or open the key's session on the Agent page |

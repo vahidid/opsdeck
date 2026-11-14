@@ -2,11 +2,14 @@ package mcpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -39,9 +42,37 @@ func ServeAccessKey(url, version string) error {
 }
 
 func relay(url, token, version string) error {
-	ctx := context.Background()
+	return relayOver(context.Background(), url, token, version, &mcp.StdioTransport{})
+}
+
+// RelayCallKey marks a call relayed by `opsdeck mcp` (in _meta), so that
+// opsdeck's approval for it (elicitation, in its _meta too) finds the
+// agent's call it belongs to.
+const RelayCallKey = "io.opsdeck/relay-call"
+
+// relayOver relays opsdeck's MCP server to the agent on transport. An
+// approval opsdeck asks (elicitation) is passed on to the agent when it can
+// show a form, in the way its protocol version wants; otherwise the relay
+// cannot answer and the approval waits in the opsdeck app.
+func relayOver(ctx context.Context, url, token, version string, transport mcp.Transport) error {
+	var calls Calls
+	var mu sync.Mutex
+	asks := map[string]Ask{} // the relayed calls that can ask their agent
 	httpClient := &http.Client{Transport: bearer{token: token, base: http.DefaultTransport}}
-	client := mcp.NewClient(&mcp.Implementation{Name: "opsdeck-stdio", Version: version}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "opsdeck-stdio", Version: version}, &mcp.ClientOptions{
+		ElicitationHandler: func(ctx context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			tok, _ := req.Params.Meta[RelayCallKey].(string)
+			mu.Lock()
+			ask := asks[tok]
+			mu.Unlock()
+			if ask == nil {
+				return nil, errors.New("the agent cannot show this request")
+			}
+			p := *req.Params
+			p.Meta = nil
+			return ask(ctx, &p)
+		},
+	})
 	upstream, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: url, HTTPClient: httpClient}, nil)
 	if err != nil {
 		return fmt.Errorf("connect to opsdeck: %w", err)
@@ -51,14 +82,36 @@ func relay(url, token, version string) error {
 	if err != nil {
 		return err
 	}
-	srv := mcp.NewServer(&mcp.Implementation{Name: "opsdeck", Version: version}, nil)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "opsdeck", Version: version}, &mcp.ServerOptions{Instructions: upstream.InitializeResult().Instructions})
 	for _, t := range tools.Tools {
 		name := t.Name
 		srv.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return upstream.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: req.Params.Arguments})
+			args := req.Params.Arguments
+			return calls.Run(ctx, req, func(ctx context.Context, ask Ask) *mcp.CallToolResult {
+				tok := uuid.NewString()
+				if ask != nil {
+					mu.Lock()
+					asks[tok] = ask
+					mu.Unlock()
+					defer func() {
+						mu.Lock()
+						delete(asks, tok)
+						mu.Unlock()
+					}()
+				}
+				res, err := upstream.CallTool(ctx, &mcp.CallToolParams{Meta: mcp.Meta{RelayCallKey: tok}, Name: name, Arguments: args})
+				if err != nil {
+					return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}
+				}
+				return res
+			})
 		})
 	}
-	return srv.Run(ctx, &mcp.StdioTransport{})
+	ss, err := srv.Connect(ctx, transport, nil)
+	if err != nil {
+		return err
+	}
+	return ss.Wait()
 }
 
 type bearer struct {

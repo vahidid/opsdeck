@@ -93,6 +93,7 @@ type approval struct {
 	note     string
 	secret   string // what the user typed into a password prompt; never stored
 	canary   bool   // run on the first host, then ask again for the rest
+	by       string // where it was answered when not in the app (the connected client)
 }
 
 type pendingApproval struct {
@@ -168,6 +169,9 @@ type Manager struct {
 	pages    pageCache // web pages read recently
 	bg       bgRegistry
 	waiting  waitingRegistry
+	// clientCalls are connected agents' calls that wait for their client
+	// to answer an approval (MCP, protocol 2026-07-28)
+	clientCalls mcpx.Calls
 }
 
 func NewManager(d Deps) *Manager {
@@ -408,6 +412,11 @@ func (s *Session) Interrupt() {
 // Ansible Vault password), approving needs it and it is checked first: a
 // wrong one returns an error and the card stays open.
 func (s *Session) Resolve(approvalID, decision, note, secret string, canary bool) error {
+	return s.resolve(approvalID, approval{decision: decision, note: note, secret: secret, canary: canary})
+}
+
+func (s *Session) resolve(approvalID string, a approval) error {
+	decision, note, secret, canary := a.decision, a.note, a.secret, a.canary
 	if decision != "approve" && decision != "deny" && decision != "always" {
 		return fmt.Errorf("invalid decision %q", decision)
 	}
@@ -435,7 +444,7 @@ func (s *Session) Resolve(approvalID, decision, note, secret string, canary bool
 	}
 	delete(s.pending, approvalID)
 	s.mu.Unlock()
-	p.ch <- approval{decision: decision, note: note, secret: secret, canary: canary}
+	p.ch <- approval{decision: decision, note: note, secret: secret, canary: canary, by: a.by}
 	return nil
 }
 

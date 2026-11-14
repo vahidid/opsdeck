@@ -619,7 +619,8 @@ export type AgentEvent =
       stage?: string;
       title?: string;
     })
-  | (EventBase & { type: "approval_resolved"; approvalId: string; decision: string; note?: string; canary?: boolean })
+  /** by: the connected agent whose user answered it there (MCP), not in the app */
+  | (EventBase & { type: "approval_resolved"; approvalId: string; decision: string; note?: string; canary?: boolean; by?: string })
   | (EventBase & { type: "question"; questionId: string; callId: string; question: string; options: QuestionOption[]; multiple: boolean; allowText: boolean })
   | (EventBase & { type: "question_answered"; questionId: string; choices?: string[]; text?: string; skipped?: boolean })
   | (EventBase & { type: "todo"; callId: string; items: TodoItem[] })

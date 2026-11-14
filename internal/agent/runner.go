@@ -242,6 +242,9 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 			e := auditBase
 			e.Result = "denied"
 			e.Detail["reason"] = "user denied"
+			if a.by != "" {
+				e.Detail["by"] = a.by
+			}
 			if a.note != "" {
 				e.Detail["note"] = a.note
 			}
@@ -271,8 +274,11 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 			m.deps.Audit.Record(e)
 		}
 		approvedBy = "user"
+		if a.by != "" {
+			approvedBy = "user in " + a.by
+		}
 		if a.canary {
-			approvedBy = "user (canary first)"
+			approvedBy += " (canary first)"
 		}
 	}
 
@@ -295,6 +301,9 @@ func (r *runner) execute(ctx context.Context, p *pendingCall) llm.Block {
 			e.Result = "denied"
 		}
 		e.Detail = map[string]any{"step": st.Title, "session": info.ID}
+		if a.by != "" {
+			e.Detail["by"] = a.by
+		}
 		m.deps.Audit.Record(e)
 		return a.decision != "deny", a.note
 	}
@@ -387,6 +396,22 @@ func (r *runner) waitApproval(ctx context.Context, req map[string]any, check fun
 	s.save()
 	r.m.waiting.add(r.waitingFor("approval", id, req))
 	defer r.m.waiting.remove(r.w.Name(), s.Info().ID, id)
+	// a connected client that can show a form gets the request too; a card
+	// that asks for a password stays in the app
+	if elicit := elicitorFrom(ctx); elicit != nil && check == nil {
+		ectx, stop := context.WithCancel(ctx)
+		defer stop()
+		msg, canary := approvalMessage(req), req["canary"] == true
+		by := firstNonEmpty(s.Info().Client, "the connected agent")
+		go func() {
+			d, note, ok := elicit(ectx, msg)
+			if !ok || ectx.Err() != nil {
+				return
+			}
+			// the app may have answered meanwhile: then this finds nothing
+			s.resolve(id, approval{decision: d, note: note, canary: canary && d == "approve", by: by})
+		}()
+	}
 	var a approval
 	var answered bool
 	select {
@@ -402,6 +427,9 @@ func (r *runner) waitApproval(ctx context.Context, req map[string]any, check fun
 	res := map[string]any{"approvalId": id, "decision": a.decision, "note": a.note}
 	if a.canary {
 		res["canary"] = true
+	}
+	if a.by != "" {
+		res["by"] = a.by
 	}
 	r.emit("approval_resolved", res, true)
 	if ctx.Err() == nil {

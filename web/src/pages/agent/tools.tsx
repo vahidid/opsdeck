@@ -493,6 +493,7 @@ function ApprovalBox({ ctx, item }: { ctx: Ctx; item: ApprovalItem }) {
               </span>
             </>
           )}
+          {resolved?.by && <span className="text-muted" data-testid="approval-by">in {resolved.by}</span>}
           {resolved?.note && <span className="text-muted">— {resolved.note}</span>}
         </div>
       ) : (

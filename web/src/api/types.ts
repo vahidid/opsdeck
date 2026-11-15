@@ -565,8 +565,16 @@ export type ToolView =
   | { kind: "dns"; zone: string; records: DNSRecord[] }
   | { kind: "deploy"; platform: string; targets?: DeployTarget[]; detail?: DeployDetail };
 
+/** how a message sent while a turn runs is delivered */
+export type DeliverMode = "queue" | "steer";
+/** a message the user sent during a turn, waiting to be delivered */
+export type PendingMessage = { id: string; text: string; mode: DeliverMode; created: string; attachments?: Attachment[] };
+
 export type AgentEvent =
-  | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string; attachments?: Attachment[] })
+  /** pendingId: it waited during a turn (queued or steering); steered: it joined a running turn */
+  | (EventBase & { type: "user"; text: string; msgIndex?: number; command?: string; prompt?: string; attachments?: Attachment[]; pendingId?: string; steered?: boolean })
+  /** what waits to be delivered (not stored); returned: given back to the composer when the turn was stopped */
+  | (EventBase & { type: "pending"; messages: PendingMessage[]; returned?: PendingMessage[] })
   | (EventBase & { type: "notification"; text: string })
   | (EventBase & { type: "shell"; command: string; target: string; label: string; output: string; exitCode: number; durationMs: number })
   | (EventBase & { type: "recall"; items: RecallItem[]; preloaded?: string })

@@ -37,7 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentEvent, Attachment, HarnessInfo, ModelInfo, RecallItem, SessionInfo, SessionMode, SessionState } from "../api/types";
+import type { AgentEvent, Attachment, DeliverMode, HarnessInfo, ModelInfo, PendingMessage, RecallItem, SessionInfo, SessionMode, SessionState } from "../api/types";
 import { useWs } from "../context/app";
 import { useOpenInTab, useTabTitle, useTabs } from "../context/tabs";
 import { useTerminals } from "../context/terminals";
@@ -51,7 +51,7 @@ import { useAsync, useLocalStorage } from "../hooks";
 import { fmtBytes, fmtTokens, timeAgo } from "../lib/format";
 import { BUILTIN_COMMANDS, Composer, parseShell } from "./agent/composer";
 import type { SlashCommand } from "./agent/composer";
-import { NotificationMsg, ShellMsg, TasksButton, TodoPanel, UserCommand, useTasks } from "./agent/panels";
+import { NotificationMsg, PendingList, ShellMsg, TasksButton, TodoPanel, UserCommand, useTasks } from "./agent/panels";
 import { buildTimeline, callKey, groupBlocks, waiting } from "./agent/timeline";
 import { ToolGroup } from "./agent/tools";
 import { ContextMeter, LimitsButton } from "./agent/usage";
@@ -618,6 +618,10 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
   const [connected, setConnected] = useState(false);
   // bumps on every usage event: the limits popover refreshes while open
   const [usageTick, setUsageTick] = useState(0);
+  // messages sent during a turn that wait (queued or steering), and text a
+  // stopped turn gave back to the composer
+  const [pending, setPending] = useState<PendingMessage[]>([]);
+  const [refill, setRefill] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [menu, setMenu] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [busy, setBusy] = useState("");
@@ -659,6 +663,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     try {
       const r = await api.session(ws, sid);
       setSession(r.session);
+      setPending(r.pending);
       // Merge with events that arrived over the stream meanwhile, by id.
       setEvents((prev) => mergeEvents(prev, r.events.filter((e) => e.type !== "assistant_delta")));
       setLoadErr("");
@@ -697,6 +702,14 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
         setEvents((list) =>
           list.some((x) => (x.type === "assistant" || x.type === "assistant_delta") && x.messageId === ev.messageId) ? list : [...list, { ...ev, text: "" }],
         );
+        return;
+      }
+      if (ev.type === "pending") {
+        setPending(ev.messages ?? []);
+        if (ev.returned?.length) {
+          const text = ev.returned.map((p) => p.text).join("\n\n");
+          setRefill((r) => ({ text, n: r.n + 1 }));
+        }
         return;
       }
       if (ev.type === "usage") {
@@ -868,7 +881,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
   sendRef.current = (text) => void send(text);
   const sendAction = useCallback((text: string) => sendRef.current(text), []);
 
-  async function send(text: string, files: File[] = []) {
+  async function send(text: string, files: File[] = [], mode?: DeliverMode) {
     const sh = parseShell(text);
     if (sh) {
       if (!sh.command) return false;
@@ -888,8 +901,11 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     try {
       stickRef.current = true;
       const ids = await uploadAll(ws, sid, files);
-      await api.sendMessage(ws, sid, text, ids);
-      setSession((s) => (s ? { ...s, state: "running" } : s));
+      const r = await api.sendMessage(ws, sid, text, ids, mode);
+      if (r?.pending) {
+        const p = r.pending;
+        setPending((list) => (list.some((x) => x.id === p.id) ? list : [...list, p]));
+      } else setSession((s) => (s ? { ...s, state: "running" } : s));
       return true;
     } catch (e) {
       toast.error("Send failed", errMsg(e));
@@ -1054,6 +1070,7 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
                     attachments={t.attachments}
                     fileUrl={(aid, dl) => api.attachmentUrl(ws, sid, aid, dl)}
                     onFork={t.forkable && !running ? () => void fork(t.id) : undefined}
+                    delivered={t.steered ? "steered" : t.queued ? "queued" : undefined}
                   />
                 );
               case "notification":
@@ -1105,12 +1122,27 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
                 : `${wait.approvals + wait.questions} item${wait.approvals + wait.questions > 1 ? "s" : ""} waiting for you — click to review`}
             </button>
           )}
+          {pending.length > 0 && (
+            <PendingList
+              items={pending}
+              onCancel={async (id) => {
+                try {
+                  await api.cancelPending(ws, sid, id);
+                  setPending((list) => list.filter((p) => p.id !== id));
+                } catch (e) {
+                  toast.error("Could not cancel", errMsg(e));
+                }
+              }}
+            />
+          )}
           {session?.client ? (
             <ClientNotice session={session} running={running} onStop={stop} onMode={(m) => void updateSession({ mode: m })} />
           ) : (
           <Composer
             onSend={send}
             running={running}
+            deliver
+            refill={refill}
             onStop={stop}
             disabled={!session}
             seed={seed}
@@ -1254,12 +1286,15 @@ function UserMsg({
   attachments,
   fileUrl,
   onFork,
+  delivered,
 }: {
   text: string;
   command?: string;
   attachments?: Attachment[];
   fileUrl: (aid: string, download?: boolean) => string;
   onFork?: () => void;
+  /** sent during a turn: steered into it, or queued for the next */
+  delivered?: "steered" | "queued";
 }) {
   return (
     <div className="group flex gap-3">
@@ -1270,6 +1305,15 @@ function UserMsg({
         dir={textDir(text)}
         className="relative flex-1 min-w-0 rounded-lg bg-panel-2 border border-line px-3.5 py-2.5 whitespace-pre-wrap break-words text-[13.5px] text-start leading-relaxed"
       >
+        {delivered && (
+          <span
+            className="float-end ms-2 text-[10.5px] text-faint"
+            data-testid="delivered"
+            title={delivered === "steered" ? "Sent while the agent worked; it joined the running turn at its next step" : "Sent while the agent worked; it waited for the turn to end"}
+          >
+            {delivered === "steered" ? "steered into the turn" : "sent after the turn"}
+          </span>
+        )}
         {command ? <UserCommand text={text} command={command} /> : text}
         {attachments && attachments.length > 0 && <Attachments list={attachments} url={fileUrl} />}
         {onFork && (

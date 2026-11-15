@@ -161,6 +161,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{ws}/sessions/{id}", u(s.sessDelete))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/messages", u(s.sessMessage))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/interrupt", u(s.sessInterrupt))
+	mux.HandleFunc("DELETE /api/workspaces/{ws}/sessions/{id}/pending/{pid}", u(s.sessPendingCancel))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/approvals/{aid}", u(s.sessApproval))
 	mux.HandleFunc("POST /api/workspaces/{ws}/sessions/{id}/questions/{qid}", u(s.sessAnswer))
 	mux.HandleFunc("GET /api/workspaces/{ws}/sessions/{id}/tasks", u(s.sessTasks))
@@ -1637,7 +1638,7 @@ func (s *Server) sessGet(w http.ResponseWriter, r *http.Request) {
 	if events == nil {
 		events = []agent.Event{}
 	}
-	writeJSON(w, 200, map[string]any{"session": sess.Info(), "events": events})
+	writeJSON(w, 200, map[string]any{"session": sess.Info(), "events": events, "pending": sess.Pending()})
 }
 
 func (s *Server) sessPut(w http.ResponseWriter, r *http.Request) {
@@ -1685,16 +1686,37 @@ func (s *Server) sessMessage(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Text        string
 		Attachments []string
+		Mode        string // while a turn runs: queue | steer ("" = refuse)
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
 		return
 	}
-	if err := s.agents.SendWith(r.PathValue("ws"), r.PathValue("id"), in.Text, in.Attachments); err != nil {
+	p, queued, err := s.agents.SendMode(r.PathValue("ws"), r.PathValue("id"), in.Text, in.Attachments, in.Mode)
+	if err != nil {
 		fail(w, err)
 		return
 	}
+	if queued {
+		writeJSON(w, 202, map[string]any{"ok": true, "pending": p})
+		return
+	}
 	writeJSON(w, 202, map[string]bool{"ok": true})
+}
+
+func (s *Server) sessPendingCancel(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.workspace(w, r); !ok {
+		return
+	}
+	if err := s.agents.CancelPending(r.PathValue("ws"), r.PathValue("id"), r.PathValue("pid")); err != nil {
+		if errors.Is(err, agent.ErrNoSuchPending) {
+			writeErr(w, 404, err.Error())
+			return
+		}
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func (s *Server) sessInterrupt(w http.ResponseWriter, r *http.Request) {

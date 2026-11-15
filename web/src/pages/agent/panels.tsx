@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, ChevronDown, ChevronUp, CircleCheck, CircleX, ListChecks, ListTodo, Loader2, Octagon, SquareTerminal, User } from "lucide-react";
+import { BellRing, ChevronDown, ChevronUp, CircleCheck, CircleX, Clock, ListChecks, ListTodo, Loader2, Octagon, SquareTerminal, User, X } from "lucide-react";
 import { api, errMsg } from "../../api/client";
-import type { TaskInfo, TodoItem } from "../../api/types";
+import type { PendingMessage, TaskInfo, TodoItem } from "../../api/types";
 import { Badge, Button, CodeBlock, cx } from "../../components/ui";
 import { Modal, Popover, useToast } from "../../components/overlay";
 import { fmtMs } from "../../lib/format";
@@ -265,5 +265,27 @@ export function UserCommand({ text, command }: { text: string; command: string }
       <span className="font-mono text-accent">/{command}</span>
       {text.replace(new RegExp(`^/${command}`), "")}
     </span>
+  );
+}
+
+/** PendingList shows the messages sent during the turn that wait to be delivered, each with Cancel. */
+export function PendingList({ items, onCancel }: { items: PendingMessage[]; onCancel: (id: string) => void }) {
+  return (
+    <div className="mb-2 rounded-lg border border-line bg-panel-2 divide-y divide-line" data-testid="pending-messages">
+      {items.map((p) => (
+        <div key={p.id} className="flex items-start gap-2 px-3 py-1.5 text-[12.5px]" data-testid="pending-message">
+          <Clock className="size-3.5 mt-0.5 shrink-0 text-faint" />
+          <span className={cx("shrink-0 text-[10.5px] mt-0.5 rounded px-1.5", p.mode === "steer" ? "bg-info/12 text-info" : "bg-panel-3 text-muted")}>
+            {p.mode === "steer" ? "steer · next step" : "queued · after this turn"}
+          </span>
+          <span dir={textDir(p.text)} className="flex-1 min-w-0 truncate text-start" title={p.text}>
+            {p.text || (p.attachments?.length ? `${p.attachments.length} file(s)` : "")}
+          </span>
+          <button onClick={() => onCancel(p.id)} className="shrink-0 text-faint hover:text-err" title="Cancel: do not send this message" aria-label="Cancel message">
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

@@ -19,7 +19,7 @@ export type ToolItem = {
 };
 
 export type Timeline =
-  | { kind: "user"; id: string; text: string; command?: string; forkable: boolean; attachments?: Attachment[] }
+  | { kind: "user"; id: string; text: string; command?: string; forkable: boolean; attachments?: Attachment[]; steered?: boolean; queued?: boolean }
   | { kind: "notification"; id: string; text: string }
   | { kind: "shell"; id: string; ev: Ev<"shell"> }
   | { kind: "recall"; id: string; items: RecallItem[]; preloaded?: string }
@@ -84,7 +84,7 @@ export function buildTimeline(events: AgentEvent[], deltas: Record<string, strin
     const parent = e.parent;
     switch (e.type) {
       case "user":
-        root.push({ kind: "user", id: e.id, text: e.text, command: e.command, forkable: typeof e.msgIndex === "number", attachments: e.attachments });
+        root.push({ kind: "user", id: e.id, text: e.text, command: e.command, forkable: typeof e.msgIndex === "number", attachments: e.attachments, steered: e.steered, queued: !!e.pendingId && !e.steered });
         break;
       case "notification":
         root.push({ kind: "notification", id: e.id, text: e.text });

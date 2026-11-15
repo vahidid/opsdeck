@@ -30,23 +30,36 @@ func (m *Manager) Send(ws, id, text string) error { return m.SendWith(ws, id, te
 
 // SendWith sends a message with files the user attached (AddAttachment).
 func (m *Manager) SendWith(ws, id, text string, attachments []string) error {
+	_, _, err := m.SendMode(ws, id, text, attachments, "")
+	return err
+}
+
+// SendMode sends a message. While a turn runs, mode decides what happens:
+// "" refuses it (ErrBusy), DeliverQueue keeps it for the next turn,
+// DeliverSteer adds it to the running turn at its next step. queued is true
+// when it waits (see PendingMessage); an idle session starts a turn with it
+// whatever the mode.
+func (m *Manager) SendMode(ws, id, text string, attachments []string, mode string) (p PendingMessage, queued bool, err error) {
+	if mode != "" && mode != DeliverQueue && mode != DeliverSteer {
+		return p, false, fmt.Errorf("invalid mode %q (queue or steer)", mode)
+	}
 	text = strings.TrimSpace(text)
 	if text == "" && len(attachments) == 0 {
-		return errNoMessage
+		return p, false, errNoMessage
 	}
 	s, err := m.Get(ws, id)
 	if err != nil {
-		return err
+		return p, false, err
 	}
 	if s.Info().Client != "" {
-		return ErrClientSession
+		return p, false, ErrClientSession
 	}
 	w, err := m.deps.Workspaces.Get(ws)
 	if err != nil {
-		return err
+		return p, false, err
 	}
 	if err := checkModel(w, s.Info().Model); err != nil {
-		return err
+		return p, false, err
 	}
 	in := turnInput{Text: text, Display: text}
 	if prompt, name, ok := expandCommand(w, text); ok {
@@ -54,10 +67,24 @@ func (m *Manager) SendWith(ws, id, text string, attachments []string) error {
 	}
 	if len(attachments) > 0 {
 		if in.Blocks, in.Files, err = m.attachmentBlocks(s, attachments); err != nil {
-			return err
+			return p, false, err
 		}
 	}
-	return m.start(s, w, in)
+	for try := 0; try < 2; try++ {
+		if mode != "" {
+			// it may wait in memory and show in the chat: redact it now
+			q := in
+			q.Text, q.Display = m.redactor.Redact(in.Text), m.redactor.Redact(in.Display)
+			if p, ok := s.enqueue(mode, q, q.Display); ok {
+				return p, true, nil
+			}
+		}
+		if err = m.start(s, w, in); !errors.Is(err, ErrBusy) || mode == "" {
+			return p, false, err
+		}
+		// a turn started in between: wait for it like a queued message
+	}
+	return p, false, err
 }
 
 // turnInput is what starts a turn.
@@ -66,6 +93,9 @@ type turnInput struct {
 	Display      string // shown in the chat (the command as typed)
 	Command      string // the workspace command it came from
 	Notification bool   // from opsdeck (a background task), not the user
+	// Delivered are the queued messages this turn sends, each shown on its
+	// own; Text joins them.
+	Delivered []PendingMessage
 	// Blocks are the attached files as content for the model; Files
 	// describe them for the chat.
 	Blocks []llm.Block
@@ -148,10 +178,14 @@ func (m *Manager) local() *LocalPolicy {
 func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, in turnInput) {
 	text, notification := in.Text, in.Notification
 	display := m.redactor.Redact(firstNonEmpty(in.Display, in.Text))
+	if len(in.Delivered) > 0 {
+		display = in.Delivered[0].Text
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			s.emit("error", map[string]any{"message": fmt.Sprintf("internal error: %v", r)}, true)
 		}
+		interrupted := ctx.Err() != nil
 		s.mu.Lock()
 		if s.cancel != nil {
 			s.cancel()
@@ -161,12 +195,23 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 			close(p.ch)
 			delete(s.pending, id)
 		}
+		queued := s.takeQueued()
 		s.mu.Unlock()
 		s.setState("idle")
 		s.save()
 		msg, errMsg := s.lastOutcome()
 		m.turnEndHooks(s, w, msg, errMsg)
-		go m.deliverInbox(s, w)
+		if interrupted && len(queued) > 0 {
+			// the user stopped the turn: what waited goes back to them
+			// instead of starting another one
+			s.emitPending(queued)
+			queued = nil
+		}
+		go func() {
+			if !m.deliverQueued(s, w, queued) {
+				m.deliverInbox(s, w)
+			}
+		}()
 	}()
 
 	text = m.redactor.Redact(text)
@@ -204,6 +249,22 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 	s.mu.Unlock()
 	if notification {
 		s.emit("notification", map[string]any{"text": text}, true)
+	} else if len(in.Delivered) > 0 {
+		// the messages that waited for this turn, each as it was sent
+		for i, p := range in.Delivered {
+			ev := map[string]any{"text": p.Text, "pendingId": p.ID}
+			if i == 0 {
+				ev["msgIndex"] = msgIndex
+			}
+			if len(p.Attachments) > 0 {
+				ev["attachments"] = p.Attachments
+			}
+			if p.in.Command != "" {
+				ev["command"], ev["prompt"] = p.in.Command, p.in.Text
+			}
+			s.emit("user", ev, true)
+		}
+		s.emitPending(nil)
 	} else {
 		ev := map[string]any{"text": display, "msgIndex": msgIndex}
 		if len(in.Files) > 0 {
@@ -249,6 +310,8 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 			return
 		}
 		m.deps.Vault.Touch()
+		// a step boundary: what the user sent to steer joins here
+		m.steer(s)
 		s.mu.Lock()
 		mode = s.info.Mode // the user may switch mode mid-run
 		history := append([]llm.Message(nil), s.messages...)

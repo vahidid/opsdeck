@@ -5,6 +5,10 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Agent & Chat
+
+- **Queue and steer messages while the agent works (#33).** The message box stays open during a turn: **After this turn** (Enter) queues a message for when the turn ends (several go together, in order), **Steer now** (Ctrl/⌘+Enter) adds it to the running turn at its next step, after the current tool calls and their approvals. Waiting messages are listed above the box and can be cancelled; sent ones are marked in the chat; Stop puts them back into the box. Steering answers no approval and the text is redacted like any message.
+
 ### Agent access (MCP)
 
 - **Approve in the connected agent (#30).** When an agent connected through MCP (Claude Code and other clients that support MCP elicitation) waits for an approval, the request is shown in the agent's own window too, with the same facts as the card in opsdeck; the first answer, there or in opsdeck, counts, and the card and the audit journal say where it was answered. opsdeck's policy stays final: only what opsdeck would ask about is sent, never what the mode or rules refuse, and password prompts stay in opsdeck. Clients without forms keep approving in opsdeck. Works with MCP protocol 2026-07-28 (multi round-trip) and earlier versions, directly and through `opsdeck mcp`, which now also passes on the server's instructions.

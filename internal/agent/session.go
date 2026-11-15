@@ -171,6 +171,7 @@ type Manager struct {
 	pages    pageCache // web pages read recently
 	bg       bgRegistry
 	waiting  waitingRegistry
+	hookRuns hookRuns
 	// clientCalls are connected agents' calls that wait for their client
 	// to answer an approval (MCP, protocol 2026-07-28)
 	clientCalls mcpx.Calls

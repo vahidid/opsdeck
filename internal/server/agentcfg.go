@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -172,26 +175,47 @@ func (s *Server) agentHooks(w *workspace.Workspace) []agent.Hook {
 			continue
 		}
 		out = append(out, agent.Hook{Name: h.Name, Event: h.Event, Command: h.Command, Tool: h.Tool, Risk: h.Risk,
-			Environment: h.Environment, Timeout: time.Duration(h.TimeoutSec) * time.Second})
+			Environment: h.Environment, Timeout: time.Duration(h.TimeoutSec) * time.Second, Key: appHookKey(h)})
 	}
 	for _, h := range w.Hooks {
 		if h.Disabled || !s.cfg.MCPTrusted(agent.HookHash(w.Name(), h)) {
 			continue
 		}
 		out = append(out, agent.Hook{Name: h.Name, Event: h.Event, Command: h.Command, Tool: h.Tool, Risk: h.Risk,
-			Environment: h.Environment, Timeout: time.Duration(h.TimeoutSec) * time.Second, FromWorkspace: true})
+			Environment: h.Environment, Timeout: time.Duration(h.TimeoutSec) * time.Second, FromWorkspace: true, Key: agent.HookHash(w.Name(), h)})
 	}
 	return out
+}
+
+// appHookKey identifies an App settings hook's definition (its last result
+// belongs to it until it is edited).
+func appHookKey(h config.Hook) string {
+	b, _ := json.Marshal(h)
+	sum := sha256.Sum256(append([]byte("app-hook\x00"), b...))
+	return hex.EncodeToString(sum[:])
+}
+
+// appHookRuns are the last results of the App settings hooks, by index.
+func (s *Server) appHookRuns() []*agent.HookRun {
+	var keys []string
+	for _, h := range s.cfg.Settings().Agent.Hooks {
+		keys = append(keys, appHookKey(h))
+	}
+	return s.agents.HookRuns(keys)
 }
 
 // fullWS is a workspace with the trust state of its hooks.
 func (s *Server) fullWS(w *workspace.Workspace) wsFull {
 	f := full(w)
+	var keys []string
 	for i, h := range w.Hooks {
-		if !s.cfg.MCPTrusted(agent.HookHash(w.Name(), h)) {
+		k := agent.HookHash(w.Name(), h)
+		keys = append(keys, k)
+		if !s.cfg.MCPTrusted(k) {
 			f.UntrustedHooks = append(f.UntrustedHooks, i)
 		}
 	}
+	f.HookRuns = s.agents.HookRuns(keys)
 	return f
 }
 

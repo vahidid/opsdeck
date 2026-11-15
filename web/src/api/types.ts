@@ -62,6 +62,8 @@ export type Settings = {
   git: { name: string; email: string };
   updates?: { noCheck: boolean };
 };
+/** a hook's last run since opsdeck started (null: not run yet) */
+export type HookRun = { at: string; outcome: "ok" | "deny" | "ask" | "allow" | "error"; message?: string; durationMs: number; workspace: string; session?: string; tool?: string };
 export type HookDef = {
   name: string;
   event: "before_tool" | "after_tool" | "turn_end";
@@ -140,6 +142,8 @@ export type Workspace = WorkspaceSummary & {
   hooks?: HookDef[];
   /** indexes of hooks that came from the folder and wait for trust */
   untrustedHooks?: number[];
+  /** each hook's last run, by index */
+  hookRuns?: (HookRun | null)[];
 };
 
 export type Resource = {

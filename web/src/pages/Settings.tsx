@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Cpu, Globe, KeyRound, Laptop, MessageSquareText, Moon, Plug, Plus, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Webhook } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentKind, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes, WebSettings } from "../api/types";
+import type { AgentKind, HookRun, InstalledAgent, Item, ProviderConfig, Settings, VpnCodes, WebSettings } from "../api/types";
 import { isAgentKind } from "../api/types";
 import { useApp } from "../context/app";
 import { useAppearance } from "../context/appearance";
@@ -85,6 +85,11 @@ export function AppSettingsPage() {
   const [newKeyFor, setNewKeyFor] = useState<number | "web" | null>(null);
   const [installed, setInstalled] = useState<InstalledAgent[] | null>(null);
   const [os, setOs] = useState("");
+  // the hooks' last results (refreshed after a save: an edited hook starts over)
+  const [hookRuns, setHookRuns] = useState<(HookRun | null)[]>([]);
+  useEffect(() => {
+    api.hookRuns().then(setHookRuns).catch(() => {});
+  }, [orig]);
   // providers added in this visit whose models are fetched right away
   const autoLoad = useRef(new Set<string>());
   const { theme, setTheme, workspaces } = useApp();
@@ -492,7 +497,13 @@ export function AppSettingsPage() {
                 Commands on this computer that run around the agent&apos;s work, with the event as JSON on stdin — a policy check before tool calls, an audit log, a chat
                 message when a turn ends. Workspaces can bring their own hooks; those run only after you trust them in the workspace&apos;s settings.
               </div>
-              <HooksEditor hooks={s.agent?.hooks ?? []} onChange={(hooks) => setS({ ...s, agent: { ...s.agent!, hooks } })} canAllow workspaces={workspaces.map((w) => w.name)} />
+              <HooksEditor
+                hooks={s.agent?.hooks ?? []}
+                onChange={(hooks) => setS({ ...s, agent: { ...s.agent!, hooks } })}
+                canAllow
+                runs={hookRuns}
+                workspaces={workspaces.map((w) => w.name)}
+              />
             </div>
           </div>
         </Card>

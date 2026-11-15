@@ -367,9 +367,11 @@ investigators); local agent CLIs cannot run subagents, so then the first API mod
 ## Hooks
 
 Hooks are commands on this computer that run around the agent's work, with the event as JSON on
-stdin (`event`, `workspace`, `session`, `mode`, `model`, `subagent`, `tool`, `callId`, `input`,
-`risk`, `target`, `environment`, and for later events `decision`, `output`, `isError`,
-`durationMs`, `message`):
+stdin (`event`, `workspace`, `session`, `title`, `mode`, `model`, `subagent`, `tool`, `callId`,
+`input`, `risk`, `target`, `environment`; `before_tool` adds the permission `decision` and
+`reason`; `after_tool` adds `output`, `isError` and `durationMs`; `turn_end` adds the agent's last
+`message` and `state` — `done`, or `error` with the error as `reason`). Inputs, outputs and
+messages are redacted like everything else:
 
 | Event | When | Can |
 |---|---|---|
@@ -395,8 +397,15 @@ hooks:
 
 Workspace hooks (in `workspace.yaml`) travel with the workspace, so — like MCP servers — hooks
 that came with the folder (a clone, a pull, an edit on disk) run only after the user trusts them
-on this machine (Workspace settings → Agent); the ones added in the UI are trusted. A workspace
-hook can block or ask, never allow.
+on this machine (Workspace settings → Agent); the ones added in the UI are trusted. Until then
+they do not run at all, whatever they match. A workspace hook can block or ask, never allow
+(`{"decision":"allow"}` from it is ignored).
+
+The hook editors (App settings → Agent, Workspace settings → Agent) show for each workspace hook
+whether it is trusted, and for every hook its last run since opsdeck started: when, in which
+workspace and for which tool, what it did (ran, blocked the call, made it ask, let it run,
+failed) and its message. Editing a hook makes it a new hook: it starts without a last run (and a
+workspace hook edited on disk needs trust again).
 
 ## Background tasks
 

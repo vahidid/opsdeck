@@ -109,6 +109,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/mcp", u(s.mcpStatus))
 	mux.HandleFunc("POST /api/workspaces/{ws}/mcp/{name}/trust", u(s.mcpTrust))
 	mux.HandleFunc("POST /api/workspaces/{ws}/hooks/trust", u(s.hooksTrust))
+	mux.HandleFunc("GET /api/agent/hook-runs", u(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.appHookRuns()) }))
 
 	// networks & hosts
 	mux.HandleFunc("GET /api/workspaces/{ws}/networks", u(s.netList))
@@ -695,6 +696,9 @@ type wsFull struct {
 	// UntrustedHooks are the indexes of hooks that do not run until the
 	// user trusts them on this machine (they came from the folder).
 	UntrustedHooks []int `json:"untrustedHooks"`
+	// HookRuns are the hooks' last results, by index (null: not run since
+	// opsdeck started).
+	HookRuns []*agent.HookRun `json:"hookRuns"`
 }
 
 func summary(w *workspace.Workspace) wsSummary {

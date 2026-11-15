@@ -291,7 +291,14 @@ export function WorkspaceSettingsPage() {
                 </Button>
               </div>
             )}
-            <HooksEditor hooks={w.hooks ?? []} onChange={(hooks) => setW({ ...w, hooks })} untrusted={w.untrustedHooks} environments={w.environments.map((e) => e.name)} />
+            <HooksEditor
+              hooks={w.hooks ?? []}
+              onChange={(hooks) => setW({ ...w, hooks })}
+              untrusted={w.untrustedHooks}
+              runs={workspace?.hookRuns ?? undefined}
+              trust
+              environments={w.environments.map((e) => e.name)}
+            />
           </div>
         </Card>
 

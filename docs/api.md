@@ -470,6 +470,14 @@ on the rest, deny stops).
 | POST | `/api/workspaces/{ws}/sessions/{id}/compact` | summarize the conversation now |
 | GET | `/api/workspaces/{ws}/harness` | → `{commands, subagents, web, search, local, models}` for the chat |
 | POST | `/api/workspaces/{ws}/hooks/trust` | trust the workspace's hooks on this machine → `Workspace` |
+| GET | `/api/agent/hook-runs` | → `[HookRun \| null]` the last run of each App settings hook, by index (null: not run since opsdeck started) |
+
+The workspace (`GET /api/workspaces/{ws}`) carries `untrustedHooks` (indexes of hooks that wait for
+trust and do not run) and `hookRuns` (each hook's last run, by index).
+
+```ts
+type HookRun = { at; outcome: "ok"|"deny"|"ask"|"allow"|"error"; message?; durationMs; workspace; session?; tool? }
+```
 
 What agents wait for, across workspaces and sessions, and agent access keys:
 

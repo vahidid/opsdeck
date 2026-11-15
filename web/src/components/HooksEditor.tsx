@@ -1,5 +1,6 @@
 import { Plus, Trash2, Webhook } from "lucide-react";
-import type { HookDef } from "../api/types";
+import type { HookDef, HookRun } from "../api/types";
+import { timeAgo } from "../lib/format";
 import { Badge, Button, ChipInput, FormField, IconButton, Input, Select, Toggle, cx } from "./ui";
 
 const EVENTS: { id: HookDef["event"]; label: string; help: string }[] = [
@@ -19,6 +20,8 @@ export function HooksEditor({
   canAllow,
   environments = [],
   workspaces,
+  runs,
+  trust,
 }: {
   hooks: HookDef[];
   onChange: (h: HookDef[]) => void;
@@ -27,6 +30,10 @@ export function HooksEditor({
   canAllow?: boolean;
   environments?: string[];
   workspaces?: string[];
+  /** each hook's last run, by index */
+  runs?: (HookRun | null)[];
+  /** show each hook's trust state (workspace hooks) */
+  trust?: boolean;
 }) {
   const set = (i: number, h: Partial<HookDef>) => onChange(hooks.map((x, j) => (j === i ? { ...x, ...h } : x)));
   return (
@@ -47,13 +54,24 @@ export function HooksEditor({
                   </option>
                 ))}
               </Select>
-              {bad && <Badge tone="warn">not trusted on this machine</Badge>}
+              {trust &&
+                (bad ? (
+                  <Badge tone="warn" title="It came with the workspace files: it does not run until you trust the workspace's hooks">
+                    not trusted · does not run
+                  </Badge>
+                ) : (
+                  <Badge tone="ok" title="Trusted on this machine: it runs">
+                    trusted
+                  </Badge>
+                ))}
+              {!trust && bad && <Badge tone="warn">not trusted on this machine</Badge>}
               <div className="flex-1" />
               <Toggle checked={!h.disabled} onChange={(v) => set(i, { disabled: !v })} label="on" />
               <IconButton title="Remove hook" onClick={() => onChange(hooks.filter((_, j) => j !== i))}>
                 <Trash2 className="size-3.5" />
               </IconButton>
             </div>
+            <LastRun run={runs?.[i]} untrusted={bad} />
             <FormField label="Command" help={ev.help + (canAllow && h.event === "before_tool" ? " {\"decision\":\"allow\"} lets a call that would ask run." : "")}>
               <Input mono value={h.command} onChange={(e) => set(i, { command: e.target.value })} placeholder={h.event === "turn_end" ? "curl -sS -d @- https://hooks.slack.com/…" : "~/bin/opsdeck-policy"} />
             </FormField>
@@ -93,6 +111,35 @@ export function HooksEditor({
       <Button size="xs" variant="ghost" icon={<Plus className="size-3" />} onClick={() => onChange([...hooks, { name: "", event: "before_tool", command: "" }])}>
         Add hook
       </Button>
+    </div>
+  );
+}
+
+const OUTCOME: Record<HookRun["outcome"], { label: string; tone: "ok" | "warn" | "err" | "info" }> = {
+  ok: { label: "ran", tone: "ok" },
+  deny: { label: "blocked the call", tone: "warn" },
+  ask: { label: "made the call ask", tone: "info" },
+  allow: { label: "let the call run", tone: "info" },
+  error: { label: "failed", tone: "err" },
+};
+
+/** LastRun is a hook's last result since opsdeck started. */
+function LastRun({ run, untrusted }: { run?: HookRun | null; untrusted?: boolean }) {
+  if (!run)
+    return (
+      <div className="text-[11.5px] text-faint" data-testid="hook-last-run">
+        {untrusted ? "Not run: waits for trust." : "Not run since opsdeck started."}
+      </div>
+    );
+  const o = OUTCOME[run.outcome] ?? OUTCOME.ok;
+  return (
+    <div className="flex items-center gap-1.5 text-[11.5px] text-muted min-w-0" data-testid="hook-last-run" title={new Date(run.at).toLocaleString()}>
+      <span>Last run {timeAgo(run.at)}</span>
+      <Badge tone={o.tone}>{o.label}</Badge>
+      <span className="text-faint truncate">
+        {run.workspace}
+        {run.tool ? ` · ${run.tool}` : ""} · {run.durationMs} ms{run.message ? ` — ${run.message}` : ""}
+      </span>
     </div>
   );
 }

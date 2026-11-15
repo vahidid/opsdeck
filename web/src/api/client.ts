@@ -101,6 +101,7 @@ import type {
   ValidationIssue,
   VaultStatus,
   UpdateStatus,
+  HookRun,
   Workspace,
   WorkspaceSummary,
   InstalledAgent,
@@ -631,6 +632,7 @@ export const api = {
   shell: (ws: string, id: string, command: string, target?: string) => post<AgentEvent>(`${S(ws, id)}/shell`, { command, target }),
   compactSession: (ws: string, id: string) => post(`${S(ws, id)}/compact`),
   trustHooks: (ws: string) => post<Workspace>(`${W(ws)}/hooks/trust`),
+  hookRuns: () => get<(HookRun | null)[] | null>("/api/agent/hook-runs").then((r) => r ?? []),
   sessionStreamUrl: (ws: string, id: string) => `${S(ws, id)}/stream`,
 
   // audit

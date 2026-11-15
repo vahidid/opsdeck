@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"testing"
 
 	"opsdeck/internal/testutil/fakellm"
@@ -52,6 +53,28 @@ func TestSessionContextUsageAndProviderLimits(t *testing.T) {
 	// the fake lists model "scripted", not "m1": its window is not reported
 	if _, ok := ctx["window"]; ok {
 		t.Fatalf("a window the provider did not report: %v", ctx)
+	}
+
+	// the snapshot says how recent it is: not older than any event the
+	// stream sent, so the chat can tell a stale reload from a fresh one
+	var snap struct {
+		Seq int `json:"seq"`
+	}
+	c.must("GET", "/api/workspaces/acme/sessions/"+sid, nil, &snap)
+	maxID := 0
+	st.mu.Lock()
+	for _, ev := range st.all {
+		var n int
+		if id, _ := ev["id"].(string); len(id) > 1 {
+			fmt.Sscanf(id[1:], "%d", &n)
+		}
+		if n > maxID {
+			maxID = n
+		}
+	}
+	st.mu.Unlock()
+	if maxID == 0 || snap.Seq < maxID {
+		t.Fatalf("seq %d is older than the stream's last event e%d", snap.Seq, maxID)
 	}
 
 	c.must("GET", "/api/providers/limits", nil, &limits)

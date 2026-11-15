@@ -449,7 +449,7 @@ on the rest, deny stops).
 |---|---|---|
 | GET | `/api/workspaces/{ws}/sessions` | → `[SessionInfo]` |
 | POST | `/api/workspaces/{ws}/sessions` | `{model?, mode?}` → `SessionInfo` |
-| GET | `/api/workspaces/{ws}/sessions/{id}` | → `{session: SessionInfo, events: [Event], pending: [PendingMessage]}` |
+| GET | `/api/workspaces/{ws}/sessions/{id}` | → `{session: SessionInfo, seq, events: [Event], pending: [PendingMessage]}` — `seq`: the number of the last event emitted (stored or not) when the snapshot was taken; a live event with a higher number (`id` `e<n>`) is newer than the snapshot |
 | PUT | `/api/workspaces/{ws}/sessions/{id}` | `{title?, model?, mode?}` |
 | DELETE | `/api/workspaces/{ws}/sessions/{id}` | |
 | POST | `/api/workspaces/{ws}/sessions/{id}/messages` | `{text, attachments?: [id], mode?: "queue"\|"steer"}` → 202 (text may be empty when files are attached). While a turn runs: no `mode` → 409; `queue` waits for the turn to end, `steer` joins it at its next step; both → 202 `{ok, pending: PendingMessage}` |

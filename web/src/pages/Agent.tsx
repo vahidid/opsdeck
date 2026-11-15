@@ -37,7 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { AgentEvent, Attachment, DeliverMode, HarnessInfo, ModelInfo, PendingMessage, RecallItem, SessionInfo, SessionMode, SessionState } from "../api/types";
+import type { AgentEvent, Attachment, ContextUse, DeliverMode, HarnessInfo, ModelInfo, PendingMessage, RecallItem, SessionInfo, SessionMode, SessionState, Usage } from "../api/types";
 import { useWs } from "../context/app";
 import { useOpenInTab, useTabTitle, useTabs } from "../context/tabs";
 import { useTerminals } from "../context/terminals";
@@ -659,10 +659,21 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
     }
   }, [params, setParams]);
 
+  // The newest state, tokens and context the stream sent, with the id
+  // number of their event. A reload whose snapshot is older (it was taken
+  // before, or arrives after them) must not undo them; events that arrive
+  // before the first load are kept here too.
+  const live = useRef<{ seq: number; state?: SessionState; usage?: Usage; context?: ContextUse }>({ seq: 0 });
   const load = useCallback(async () => {
     try {
       const r = await api.session(ws, sid);
-      setSession(r.session);
+      const l = live.current;
+      const stale = r.seq !== undefined && r.seq < l.seq;
+      setSession(
+        stale
+          ? { ...r.session, state: l.state ?? r.session.state, usage: l.usage ?? r.session.usage, context: l.context ?? r.session.context }
+          : r.session,
+      );
       setPending(r.pending);
       // Merge with events that arrived over the stream meanwhile, by id.
       setEvents((prev) => mergeEvents(prev, r.events.filter((e) => e.type !== "assistant_delta")));
@@ -711,6 +722,18 @@ function SessionView({ ws, sid, models, onChanged }: { ws: string; sid: string; 
           setRefill((r) => ({ text, n: r.n + 1 }));
         }
         return;
+      }
+      if (ev.type === "usage" || ev.type === "status") {
+        const n = Number(ev.id?.slice(1)) || 0;
+        const l = live.current;
+        if (n >= l.seq) {
+          live.current = {
+            seq: n,
+            state: ev.type === "status" ? ev.state : l.state,
+            usage: ev.usage ?? l.usage,
+            context: ev.context ?? l.context,
+          };
+        }
       }
       if (ev.type === "usage") {
         setSession((s) => (s ? { ...s, usage: ev.usage, context: ev.context ?? s.context } : s));

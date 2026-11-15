@@ -401,6 +401,15 @@ func (s *Session) setState(state string) {
 	s.emit("status", ev, false)
 }
 
+// InfoSeq returns the session's info with the id number of the last event
+// emitted (stored or not) when it was read, so a client can tell whether
+// this snapshot is older than live events it already has.
+func (s *Session) InfoSeq() (Info, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.info, s.nextID
+}
+
 // Interrupt cancels the running turn.
 func (s *Session) Interrupt() {
 	s.mu.Lock()

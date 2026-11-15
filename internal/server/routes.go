@@ -1642,7 +1642,9 @@ func (s *Server) sessGet(w http.ResponseWriter, r *http.Request) {
 	if events == nil {
 		events = []agent.Event{}
 	}
-	writeJSON(w, 200, map[string]any{"session": sess.Info(), "events": events, "pending": sess.Pending()})
+	// seq: how recent the snapshot is (the last event id when it was taken)
+	info, seq := sess.InfoSeq()
+	writeJSON(w, 200, map[string]any{"session": info, "seq": seq, "events": events, "pending": sess.Pending()})
 }
 
 func (s *Server) sessPut(w http.ResponseWriter, r *http.Request) {

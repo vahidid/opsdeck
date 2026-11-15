@@ -609,7 +609,7 @@ export const api = {
   createSession: (ws: string, b: { model?: string; mode?: SessionMode }) => post<SessionInfo>(`${W(ws)}/sessions`, b),
   harness: (ws: string) => get<HarnessInfo>(`${W(ws)}/harness`),
   session: (ws: string, id: string) =>
-    get<{ session: SessionInfo; events: AgentEvent[] | null; pending?: PendingMessage[] }>(S(ws, id)).then((r) => ({ ...r, events: r.events ?? [], pending: r.pending ?? [] })),
+    get<{ session: SessionInfo; seq?: number; events: AgentEvent[] | null; pending?: PendingMessage[] }>(S(ws, id)).then((r) => ({ ...r, events: r.events ?? [], pending: r.pending ?? [] })),
   updateSession: (ws: string, id: string, b: { title?: string; model?: string; mode?: SessionMode }) =>
     put<SessionInfo>(S(ws, id), b),
   deleteSession: (ws: string, id: string) => del(S(ws, id)),

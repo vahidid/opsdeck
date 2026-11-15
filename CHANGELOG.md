@@ -3,6 +3,12 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
+## [Unreleased]
+
+### Fixes
+
+- **The chat header no longer shows stale state or tokens after a reload (#35).** A session reload that answered after newer live updates (a slow network) could put back an older state ("Working…" while the agent waited for approval) and older token counts. The session's snapshot now says how recent it is, and the chat keeps what newer live updates said.
+
 ## [1.0.0] — 2026-11-15
 
 Approvals in the connected agent, message queueing and steering while the agent works, and hook trust state with last results.

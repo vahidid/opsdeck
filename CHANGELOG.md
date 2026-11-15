@@ -3,7 +3,9 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
-## [Unreleased]
+## [1.0.1] — 2026-11-15
+
+The chat header no longer shows stale state or tokens after a reload.
 
 ### Fixes
 

@@ -3,7 +3,9 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
-## [Unreleased]
+## [1.0.0] — 2026-11-15
+
+Approvals in the connected agent, message queueing and steering while the agent works, and hook trust state with last results.
 
 ### Agent & Chat
 

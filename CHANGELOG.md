@@ -3,7 +3,9 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
-## [Unreleased]
+## [1.0.2] — 2026-11-16
+
+Approvals of connected agents are no longer denied at once by clients that decline the form.
 
 ### Fixes
 

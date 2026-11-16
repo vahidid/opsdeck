@@ -122,12 +122,7 @@ func TestHarnessApprovesThroughElicitation(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ws.Path, "docs", "denied.md")); err == nil {
 		t.Fatal("a denied change ran")
 	}
-	// declining the form is a denial too
-	answer.Store(&mcp.ElicitResult{Action: "decline"})
-	if res, _ := writeDoc(sess, "declined.md"); !res.IsError {
-		t.Fatal("a declined change ran")
-	}
-	if ev := resolvedEvents(c, keyID); len(ev) != 3 || ev[1]["decision"] != "deny" || ev[2]["decision"] != "deny" {
+	if ev := resolvedEvents(c, keyID); len(ev) != 2 || ev[1]["decision"] != "deny" || ev[1]["by"] != "Claude Code" {
 		t.Fatalf("resolved: %v", ev)
 	}
 }
@@ -160,6 +155,16 @@ func TestHarnessWithoutAnswerLeavesApprovalToTheApp(t *testing.T) {
 	}{
 		{"cancelled", func(t *testing.T, url, secret string) *mcp.ClientSession {
 			return connectAnswering(t, url, secret, func(*mcp.ElicitRequest) *mcp.ElicitResult { return &mcp.ElicitResult{Action: "cancel"} })
+		}},
+		// a client that cannot show the form and declines at once (the
+		// Claude Code extension in VS Code): not a denial
+		{"declined at once", func(t *testing.T, url, secret string) *mcp.ClientSession {
+			return connectAnswering(t, url, secret, func(*mcp.ElicitRequest) *mcp.ElicitResult { return &mcp.ElicitResult{Action: "decline"} })
+		}},
+		{"accepted without a choice", func(t *testing.T, url, secret string) *mcp.ClientSession {
+			return connectAnswering(t, url, secret, func(*mcp.ElicitRequest) *mcp.ElicitResult {
+				return &mcp.ElicitResult{Action: "accept", Content: map[string]any{}}
+			})
 		}},
 		{"unsupported", func(t *testing.T, url, secret string) *mcp.ClientSession {
 			sess, err := connectExt(t, url, secret)

@@ -3,6 +3,12 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
+## [Unreleased]
+
+### Fixes
+
+- **Approvals of connected agents are no longer denied at once (#42).** Some MCP clients (the Claude Code extension in VS Code) declare form support but cannot show the form and decline it immediately; since 1.0.0 that counted as a denial, so every call that needed approval was denied before the card in opsdeck could be seen. Now only an explicit approve or deny in the form decides; declining or dismissing it leaves the approval to opsdeck.
+
 ## [1.0.1] — 2026-11-15
 
 The chat header no longer shows stale state or tokens after a reload.

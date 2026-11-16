@@ -64,10 +64,11 @@ func askElicitor(ask mcpx.Ask, meta mcp.Meta) Elicitor {
 				return "", "", false
 			}
 			return d, strings.TrimSpace(note), true
-		case "decline":
-			return "deny", "", true
 		}
-		return "", "", false // cancel: the user did not choose
+		// decline, cancel: no choice was made in the form. Some clients
+		// that cannot show it decline at once; that must not deny the
+		// call, so the card in opsdeck decides.
+		return "", "", false
 	}
 }
 

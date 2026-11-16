@@ -201,8 +201,9 @@ approval — write_doc on docs/runbook.md*.
 **Approving in the agent's own window.** When the agent's client can show a form (MCP
 elicitation: Claude Code and others that support it), the approval is sent there too, with the
 same facts as the card: the tool, target, environment, risk, why it asks, the hosts and the
-preview. Choose *approve* or *deny* (with an optional note for the agent); declining the form
-counts as deny, dismissing it leaves the decision to opsdeck. The card in opsdeck stays open
+preview. Choose *approve* or *deny* (with an optional note for the agent). Only that choice
+decides: declining or dismissing the form leaves the decision to opsdeck (some clients that
+cannot show the form decline it at once). The card in opsdeck stays open
 meanwhile, and the first answer counts; the card then says where it was answered (*Approved
 in Claude Code*), and so does the audit journal.
 

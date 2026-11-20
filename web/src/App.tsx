@@ -16,7 +16,7 @@ import { VPNCodePrompts } from "./components/VPNCode";
 import { OverviewPage } from "./pages/Overview";
 import { ResourcesPage } from "./pages/Resources";
 import { VPNPage } from "./pages/VPN";
-import { GitPage } from "./pages/Git";
+import { GitPage } from "./pages/git";
 import { SkillsPage } from "./pages/Skills";
 import { ScriptsPage } from "./pages/Scripts";
 import { TerminalPage } from "./pages/Terminal";

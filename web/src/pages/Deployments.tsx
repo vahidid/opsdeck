@@ -11,7 +11,7 @@ import { Drawer, Modal, useToast } from "../components/overlay";
 import { useAsync, useInterval, useLocalStorage } from "../hooks";
 import { healthTone, shortRev } from "../lib/deploy";
 import { timeAgo } from "../lib/format";
-import { DiffView } from "./Git";
+import { DiffView } from "../components/DiffView";
 import { ResourceDrawer } from "./Resources";
 
 // Deployments of the workspace: its deployment platforms (DeployPlatform

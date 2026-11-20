@@ -4,7 +4,7 @@ import { api, errMsg } from "../../api/client";
 import type { KubeApplyResult } from "../../api/types";
 import { Badge, Button, FormField, Input, Textarea } from "../../components/ui";
 import { Modal } from "../../components/overlay";
-import { DiffView } from "../Git";
+import { DiffView } from "../../components/DiffView";
 import { useKube } from "./shared";
 
 const ACTION_TONE = { created: "ok", configured: "accent", unchanged: "neutral", failed: "err" } as const;

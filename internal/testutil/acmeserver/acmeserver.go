@@ -46,12 +46,11 @@ type Server struct {
 }
 
 type order struct {
-	id         string
-	idents     []ident
-	authzIDs   []string
-	status     string
-	certID     string
-	finalizeOK bool
+	id       string
+	idents   []ident
+	authzIDs []string
+	status   string
+	certID   string
 }
 
 type ident struct {

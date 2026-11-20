@@ -998,7 +998,7 @@ func toolLogsQuery() Tool {
 							return lokiLabels(ctx, env, r, in.Label, from, to)
 						}
 						if strings.TrimSpace(in.Query) == "" {
-							return "", errors.New("Loki needs a LogQL query with a stream selector, e.g. {job=\"nginx\"}")
+							return "", errors.New("a LogQL query with a stream selector is required, e.g. {job=\"nginx\"}")
 						}
 						lines, err := lokiQuery(ctx, env, r, in.Query, from, to, limit)
 						if err != nil {

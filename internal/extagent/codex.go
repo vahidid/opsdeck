@@ -129,7 +129,7 @@ func runCodex(ctx context.Context, req Request, emit func(Event)) (Result, error
 		if strings.Contains(strings.ToLower(failure), "401") || strings.Contains(strings.ToLower(failure), "login") {
 			failure += " — sign in with `codex login`"
 		}
-		return res, fmt.Errorf("Codex: %s", failure)
+		return res, fmt.Errorf("the Codex CLI: %s", failure)
 	}
 	return res, err
 }

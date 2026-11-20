@@ -404,7 +404,7 @@ func (p *portainer) Run(ctx context.Context, d *Detail, a Action) (*Result, erro
 		}
 		return r, nil
 	}
-	return nil, fmt.Errorf("Portainer has no action %q", a.ID)
+	return nil, fmt.Errorf("the Portainer platform has no action %q", a.ID)
 }
 
 // update replaces a stack's file (and redeploys it). Env is sent back as

@@ -23,7 +23,7 @@ import (
 // treated like any local folder: reads ask, writes always ask.
 func (e *Env) ansibleProject(name string) (*ansible.Project, error) {
 	if e.Ansible == nil {
-		return nil, errors.New("Ansible is not available")
+		return nil, errors.New("the Ansible command is not available")
 	}
 	if name = strings.TrimSpace(name); name == "" {
 		if list := ansible.Resources(e.WS); len(list) == 1 {
@@ -42,14 +42,14 @@ func (e *Env) ansibleProject(name string) (*ansible.Project, error) {
 	}
 	if p.External() {
 		if e.Local == nil {
-			return nil, fmt.Errorf("Ansible project %s is a folder outside the workspace (%s) and the agent's access to this computer is turned off (Settings → This computer)", p.Name(), p.Root)
+			return nil, fmt.Errorf("the Ansible project %s is a folder outside the workspace (%s) and the agent's access to this computer is turned off (Settings → This computer)", p.Name(), p.Root)
 		}
 		root, err := e.Local.Resolve(p.Root)
 		if err != nil {
 			return nil, err
 		}
 		if root == filepath.Clean(e.Local.Home) || root == string(filepath.Separator) || e.Local.Sensitive(root) {
-			return nil, fmt.Errorf("Ansible project %s points at %s, which the agent may not use as a project folder", p.Name(), root)
+			return nil, fmt.Errorf("the Ansible project %s points at %s, which the agent may not use as a project folder", p.Name(), root)
 		}
 	}
 	return p, nil
@@ -236,7 +236,7 @@ func toolAnsible() Tool {
 				return nil, err
 			}
 			if env.Ansible == nil {
-				return nil, errors.New("Ansible is not available")
+				return nil, errors.New("the Ansible command is not available")
 			}
 			if in.Action == "projects" || in.Action == "" {
 				return &Call{Risk: RiskRead, Target: "ansible", Run: func(ctx context.Context) (string, error) {

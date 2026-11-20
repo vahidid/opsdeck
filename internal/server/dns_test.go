@@ -118,7 +118,7 @@ func TestDNSConnectors(t *testing.T) {
 	if rec["id"] == "" || rec["fqdn"] != "blog.example.com" || rec["proxied"] != true || rec["ttl"] != 300.0 {
 		t.Fatalf("created: %v", rec)
 	}
-	if code := c.do("POST", "/api/workspaces/acme/domains/shop/records", map[string]any{"type": "TXT", "name": "x", "content": "y", "proxied": true}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/domains/shop/records", map[string]any{"type": "TXT", "name": "x", "content": "y", "proxied": true}, nil); code != http.StatusBadRequest {
 		t.Fatalf("proxied TXT: %d", code)
 	}
 	id := rec["id"].(string)
@@ -127,7 +127,7 @@ func TestDNSConnectors(t *testing.T) {
 		t.Fatalf("updated: %v", rec)
 	}
 	c.must("DELETE", "/api/workspaces/acme/domains/shop/records/"+id, nil, nil)
-	if code := c.do("DELETE", "/api/workspaces/acme/domains/shop/records/"+id, nil, nil); code < 400 {
+	if code := c.do("DELETE", "/api/workspaces/acme/domains/shop/records/"+id, nil, nil); code < http.StatusBadRequest {
 		t.Fatalf("second delete: %d", code)
 	}
 	// ArvanCloud records through the auto-found connector
@@ -168,7 +168,7 @@ func TestDNSConnectors(t *testing.T) {
 			t.Fatalf("shop after disconnect: %v", d)
 		}
 	}
-	if code := c.do("GET", "/api/workspaces/acme/domains/shop/records", nil, nil); code != 502 {
+	if code := c.do("GET", "/api/workspaces/acme/domains/shop/records", nil, nil); code != http.StatusBadGateway {
 		t.Fatalf("records without connector: %d", code)
 	}
 }

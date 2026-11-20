@@ -177,12 +177,12 @@ func runClaude(ctx context.Context, req Request, emit func(Event)) (Result, erro
 	}
 	if err := p.wait(ctx); err != nil {
 		if resultErr != "" {
-			return res, fmt.Errorf("Claude Code: %s", resultErr)
+			return res, fmt.Errorf("the Claude Code CLI: %s", resultErr)
 		}
 		return res, err
 	}
 	if resultErr != "" {
-		return res, fmt.Errorf("Claude Code: %s", resultErr)
+		return res, fmt.Errorf("the Claude Code CLI: %s", resultErr)
 	}
 	return res, nil
 }

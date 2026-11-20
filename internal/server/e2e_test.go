@@ -54,7 +54,7 @@ func (c *client) do(method, path string, body any, out any) int {
 			c.t.Fatalf("%s %s: decode %q: %v", method, path, b, err)
 		}
 	}
-	if res.StatusCode >= 400 && out == nil {
+	if res.StatusCode >= http.StatusBadRequest && out == nil {
 		c.t.Logf("%s %s -> %d %s", method, path, res.StatusCode, b)
 	}
 	return res.StatusCode
@@ -64,7 +64,7 @@ func (c *client) must(method, path string, body any, out any) {
 	c.t.Helper()
 	var raw json.RawMessage
 	code := c.do(method, path, body, &raw)
-	if code >= 300 {
+	if code >= http.StatusMultipleChoices {
 		c.t.Fatalf("%s %s -> %d %s", method, path, code, raw)
 	}
 	if out != nil {
@@ -87,10 +87,10 @@ func TestEndToEnd(t *testing.T) {
 	c := &client{t: t, base: ts.URL, http: &http.Client{Jar: jar, Timeout: 60 * time.Second}}
 
 	// --- auth
-	if code := c.do("GET", "/api/vault/status", nil, nil); code != 401 {
+	if code := c.do("GET", "/api/vault/status", nil, nil); code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 before login, got %d", code)
 	}
-	if code := c.do("POST", "/api/auth/login", map[string]string{"token": "nope"}, nil); code != 401 {
+	if code := c.do("POST", "/api/auth/login", map[string]string{"token": "nope"}, nil); code != http.StatusUnauthorized {
 		t.Fatalf("bad token accepted: %d", code)
 	}
 	c.must("POST", "/api/auth/login", map[string]string{"token": srv.token}, nil)
@@ -98,13 +98,13 @@ func TestEndToEnd(t *testing.T) {
 	// cross-origin request is refused
 	req, _ := http.NewRequest("GET", ts.URL+"/api/vault/status", nil)
 	req.Header.Set("Origin", "https://evil.example")
-	if res, _ := c.http.Do(req); res.StatusCode != 403 {
+	if res, _ := c.http.Do(req); res.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-origin allowed: %d", res.StatusCode)
 	}
 
 	// --- vault
 	var st map[string]any
-	if code := c.do("GET", "/api/workspaces", nil, &st); code != 423 {
+	if code := c.do("GET", "/api/workspaces", nil, &st); code != http.StatusLocked {
 		t.Fatalf("expected 423 before init, got %d", code)
 	}
 	c.must("POST", "/api/vault/init", map[string]string{"password": "correct horse battery"}, &st)
@@ -175,7 +175,7 @@ esac
 
 	// literal secrets are refused
 	if code := c.do("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "Panel", "name": "grafana",
-		"spec": map[string]any{"url": "http://x", "password": "hunter2"}}, nil); code != 400 {
+		"spec": map[string]any{"url": "http://x", "password": "hunter2"}}, nil); code != http.StatusBadRequest {
 		t.Fatalf("literal secret accepted: %d", code)
 	}
 
@@ -238,20 +238,20 @@ esac
 		return res.StatusCode
 	}
 	blob := strings.Repeat("opsdeck-transfer\n", 20000)
-	if code := uploadFile(workdir, "../upload.bin", blob); code != 200 {
+	if code := uploadFile(workdir, "../upload.bin", blob); code != http.StatusOK {
 		t.Fatalf("upload: %d", code)
 	}
 	if b, err := os.ReadFile(filepath.Join(workdir, "upload.bin")); err != nil || string(b) != blob {
 		t.Fatalf("uploaded content: %v (%d bytes)", err, len(b))
 	}
 	os.Chmod(filepath.Join(workdir, "upload.bin"), 0o640)
-	if code := uploadFile(workdir, "upload.bin", "v2\n"); code != 200 {
+	if code := uploadFile(workdir, "upload.bin", "v2\n"); code != http.StatusOK {
 		t.Fatalf("replace: %d", code)
 	}
 	if st, _ := os.Stat(filepath.Join(workdir, "upload.bin")); st.Mode().Perm() != 0o640 {
 		t.Fatalf("replace changed the mode: %v", st.Mode())
 	}
-	if code := uploadFile(filepath.Dir(workdir), filepath.Base(workdir), "x"); code < 400 {
+	if code := uploadFile(filepath.Dir(workdir), filepath.Base(workdir), "x"); code < http.StatusBadRequest {
 		t.Fatal("upload over a directory accepted")
 	}
 	dres, err := c.http.Get(ts.URL + "/api/workspaces/acme/hosts/app-1/files/download?path=" + url.QueryEscape(target))
@@ -260,10 +260,10 @@ esac
 	}
 	dl, _ := io.ReadAll(dres.Body)
 	dres.Body.Close()
-	if dres.StatusCode != 200 || string(dl) != "port=80\n" || !strings.Contains(dres.Header.Get("Content-Disposition"), "app.conf") {
+	if dres.StatusCode != http.StatusOK || string(dl) != "port=80\n" || !strings.Contains(dres.Header.Get("Content-Disposition"), "app.conf") {
 		t.Fatalf("download: %d %q %q", dres.StatusCode, dl, dres.Header.Get("Content-Disposition"))
 	}
-	if code := c.do("GET", "/api/workspaces/acme/hosts/app-1/files/download?path="+url.QueryEscape(workdir), nil, nil); code < 400 {
+	if code := c.do("GET", "/api/workspaces/acme/hosts/app-1/files/download?path="+url.QueryEscape(workdir), nil, nil); code < http.StatusBadRequest {
 		t.Fatal("download of a directory accepted")
 	}
 
@@ -280,7 +280,7 @@ esac
 		t.Fatalf("images/stats: %v %v", images, dstats)
 	}
 	c.must("POST", "/api/workspaces/acme/hosts/app-1/docker/containers/web/restart", nil, nil)
-	if code := c.do("POST", "/api/workspaces/acme/hosts/app-1/docker/containers/web;rm%20-rf/restart", nil, nil); code < 400 {
+	if code := c.do("POST", "/api/workspaces/acme/hosts/app-1/docker/containers/web;rm%20-rf/restart", nil, nil); code < http.StatusBadRequest {
 		t.Fatal("unsafe container id accepted")
 	}
 
@@ -620,7 +620,7 @@ esac
 		t.Fatalf("external reply/session: %q %v", reply, s3full.Session["external"])
 	}
 	// The bridge token only works while a turn runs.
-	if res, err := http.Post(ts.URL+"/mcp/"+strings.Repeat("a", 48), "application/json", strings.NewReader("{}")); err != nil || res.StatusCode != 401 {
+	if res, err := http.Post(ts.URL+"/mcp/"+strings.Repeat("a", 48), "application/json", strings.NewReader("{}")); err != nil || res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bridge without a valid token must be refused: %v %v", err, res.StatusCode)
 	}
 
@@ -644,10 +644,10 @@ esac
 
 	// --- lock
 	c.must("POST", "/api/vault/lock", nil, nil)
-	if code := c.do("GET", "/api/vault/items?scope=acme", nil, &st); code != 423 {
+	if code := c.do("GET", "/api/vault/items?scope=acme", nil, &st); code != http.StatusLocked {
 		t.Fatalf("expected 423 when locked, got %d", code)
 	}
-	if code := c.do("POST", "/api/vault/unlock", map[string]string{"password": "wrong"}, &st); code != 401 {
+	if code := c.do("POST", "/api/vault/unlock", map[string]string{"password": "wrong"}, &st); code != http.StatusUnauthorized {
 		t.Fatalf("wrong password: %d", code)
 	}
 	c.must("POST", "/api/vault/unlock", map[string]string{"password": "correct horse battery"}, nil)

@@ -63,7 +63,7 @@ func TestExternalMCP(t *testing.T) {
 	c.must("POST", "/api/workspaces", map[string]string{"name": "acme", "title": "ACME"}, nil)
 	c.must("PUT", "/api/workspaces/acme", map[string]any{"title": "ACME", "environments": []map[string]any{{"name": "prod", "protected": true}}}, nil)
 
-	if code := c.do("POST", "/api/access-keys", map[string]any{"label": "x", "workspace": "nope", "mode": "ask"}, nil); code < 400 {
+	if code := c.do("POST", "/api/access-keys", map[string]any{"label": "x", "workspace": "nope", "mode": "ask"}, nil); code < http.StatusBadRequest {
 		t.Fatalf("a key for a missing workspace was made: %d", code)
 	}
 	var made struct {
@@ -88,7 +88,7 @@ func TestExternalMCP(t *testing.T) {
 	req, _ := http.NewRequest("POST", url, strings.NewReader("{}"))
 	req.Header.Set("Authorization", "Bearer "+made.Secret)
 	req.Header.Set("Origin", "https://evil.example")
-	if res, _ := http.DefaultClient.Do(req); res.StatusCode != 403 {
+	if res, _ := http.DefaultClient.Do(req); res.StatusCode != http.StatusForbidden {
 		t.Fatalf("a request with Origin got %d", res.StatusCode)
 	}
 
@@ -187,7 +187,7 @@ func TestExternalMCP(t *testing.T) {
 	}
 
 	// nobody chats in a client session
-	if code := c.do("POST", "/api/workspaces/acme/sessions/"+sid+"/messages", map[string]any{"text": "hi"}, nil); code < 400 {
+	if code := c.do("POST", "/api/workspaces/acme/sessions/"+sid+"/messages", map[string]any{"text": "hi"}, nil); code < http.StatusBadRequest {
 		t.Fatalf("a message to a client session was accepted: %d", code)
 	}
 

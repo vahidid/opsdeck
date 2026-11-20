@@ -74,7 +74,7 @@ func TestScripts(t *testing.T) {
 		t.Fatal("user script not in the data folder")
 	}
 	if code := c.do("PUT", "/api/workspaces/acme/scripts/user/x", map[string]any{"description": "d", "body": "echo",
-		"params": []map[string]any{{"name": "K", "type": "secret", "default": "hunter2"}}}, nil); code != 400 {
+		"params": []map[string]any{{"name": "K", "type": "secret", "default": "hunter2"}}}, nil); code != http.StatusBadRequest {
 		t.Fatalf("literal secret default accepted: %d", code)
 	}
 
@@ -102,7 +102,7 @@ func TestScripts(t *testing.T) {
 		t.Fatalf("second run not skipped: %v", run.Results[0])
 	}
 	if code := c.do("POST", "/api/workspaces/acme/scripts/user/server-bootstrap/run", map[string]any{"target": "app-1",
-		"params": map[string]string{"DB_PASSWORD": "vault://acme/db"}, "hash": "stale"}, nil); code != 409 {
+		"params": map[string]string{"DB_PASSWORD": "vault://acme/db"}, "hash": "stale"}, nil); code != http.StatusConflict {
 		t.Fatalf("stale hash accepted: %d", code)
 	}
 	var runs []map[string]any

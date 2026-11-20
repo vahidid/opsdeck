@@ -2,7 +2,6 @@ package acmex
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -186,5 +185,3 @@ func hasTXT(ctx context.Context, server, fqdn, value string) bool {
 	}
 	return false
 }
-
-var errNoZone = errors.New("no zone")

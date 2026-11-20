@@ -147,24 +147,6 @@ func isType(typ string) func(map[string]any) bool {
 
 func idle(ev map[string]any) bool { return ev["type"] == "status" && ev["state"] == "idle" }
 
-func lastUserText(fake *fakellm.Server) string {
-	fake.Mu.Lock()
-	defer fake.Mu.Unlock()
-	req := fake.Requests[len(fake.Requests)-1]
-	msgs, _ := req["messages"].([]any)
-	for i := len(msgs) - 1; i >= 0; i-- {
-		m, _ := msgs[i].(map[string]any)
-		if m["role"] == "user" {
-			if s, ok := m["content"].(string); ok {
-				return s
-			}
-			b, _ := json.Marshal(m["content"])
-			return string(b)
-		}
-	}
-	return ""
-}
-
 func TestHarnessHeadlessShellAndCommands(t *testing.T) {
 	h := newHarness(t)
 	c := h.c
@@ -248,10 +230,10 @@ func TestHarnessHeadlessShellAndCommands(t *testing.T) {
 	c.must("GET", "/api/workspaces/acme", nil, &ws)
 	ws["settings"].(map[string]any)["models"] = []string{"ollama/*"}
 	c.must("PUT", "/api/workspaces/acme", ws, nil)
-	if code := c.do("POST", "/api/workspaces/acme/sessions", map[string]any{"model": "fake/m1"}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/sessions", map[string]any{"model": "fake/m1"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("a model the workspace does not allow: %d", code)
 	}
-	if code := c.do("POST", base+"/messages", map[string]string{"text": "hello"}, nil); code != 400 {
+	if code := c.do("POST", base+"/messages", map[string]string{"text": "hello"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("a message with a model the workspace does not allow: %d", code)
 	}
 	// a new session starts with a model the workspace allows, not the app default
@@ -294,7 +276,7 @@ func TestHarnessQuestionsBackgroundAndCanary(t *testing.T) {
 	if q["question"] != "Which first?" {
 		t.Fatalf("question: %v", q)
 	}
-	if code := c.do("POST", base+"/questions/"+q["questionId"].(string), map[string]any{"choices": []string{"app-3"}}, nil); code != 400 {
+	if code := c.do("POST", base+"/questions/"+q["questionId"].(string), map[string]any{"choices": []string{"app-3"}}, nil); code != http.StatusBadRequest {
 		t.Fatalf("an answer that is not an option: %d", code)
 	}
 	c.must("POST", base+"/questions/"+q["questionId"].(string), map[string]any{"choices": []string{"app-2"}}, nil)
@@ -402,7 +384,7 @@ func TestHarnessSettingsValidation(t *testing.T) {
 		for k, v := range bad {
 			s[k] = v
 		}
-		if code := c.do("PUT", "/api/settings", s, nil); code != 400 {
+		if code := c.do("PUT", "/api/settings", s, nil); code != http.StatusBadRequest {
 			t.Errorf("accepted %v: %d", bad, code)
 		}
 	}

@@ -64,11 +64,3 @@ func confirmStep(ctx context.Context, st Step) (bool, string, error) {
 	ok, note := sc.confirm(ctx, st)
 	return ok, note, nil
 }
-
-// currentCallID is the id of the tool call running in ctx ("" outside one).
-func currentCallID(ctx context.Context) string {
-	if sc := callScopeFrom(ctx); sc != nil {
-		return sc.callID
-	}
-	return ""
-}

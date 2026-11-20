@@ -614,5 +614,5 @@ func (a *argocd) Run(ctx context.Context, d *Detail, act Action) (*Result, error
 		}
 		return res, nil
 	}
-	return nil, fmt.Errorf("Argo CD has no action %q", act.ID)
+	return nil, fmt.Errorf("the Argo CD platform has no action %q", act.ID)
 }

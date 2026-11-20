@@ -3,6 +3,12 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
+## [Unreleased]
+
+### Changed
+
+- **Cleaner lint baseline.** Sources are gofmt-clean, staticcheck findings dropped from 59 to one documented exception (a deprecated Kubernetes API that client-go itself still uses), and several agent error messages now read as sentences ("the Ansible command is not available").
+
 ## [1.0.2] — 2026-11-16
 
 Approvals of connected agents are no longer denied at once by clients that decline the form.

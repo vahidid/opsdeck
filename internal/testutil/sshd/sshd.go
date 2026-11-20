@@ -13,7 +13,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -28,7 +27,6 @@ type Server struct {
 	Dir      string        // working directory for commands
 	HostKey  ssh.PublicKey // the server's host key
 	forward  func(string) string
-	wg       sync.WaitGroup
 }
 
 // Options select accepted credentials.

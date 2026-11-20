@@ -58,7 +58,7 @@ func Open(w *workspace.Workspace, name string) (*Project, error) {
 		if len(names) == 0 {
 			return nil, errors.New("this workspace has no Ansible projects yet: add one on the Ansible page (a folder or a Git repository)")
 		}
-		return nil, fmt.Errorf("Ansible project %q not found; projects: %s", name, strings.Join(names, ", "))
+		return nil, fmt.Errorf("the Ansible project %q was not found; projects: %s", name, strings.Join(names, ", "))
 	}
 	p := &Project{W: w, R: r, Source: r.Str("source"), Repo: r.Str("repo")}
 	if p.Source == "" {

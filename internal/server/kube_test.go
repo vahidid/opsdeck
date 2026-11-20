@@ -56,7 +56,7 @@ func TestKubeLive(t *testing.T) {
 		"spec": map[string]any{"kubeconfig": "vault://acme/k3s", "namespace": ns}}, nil)
 	K := "/api/workspaces/acme/clusters/k3s"
 	var overview map[string]any
-	if code := c.do("GET", K+"/overview", nil, &overview); code != 200 {
+	if code := c.do("GET", K+"/overview", nil, &overview); code != http.StatusOK {
 		t.Skipf("test cluster not reachable: %v", overview)
 	}
 	defer c.do("DELETE", K+"/object/namespaces/_/"+ns, nil, nil)
@@ -115,7 +115,7 @@ spec:
 	if strings.Contains(res[3]["diff"].(string), "S3cr3t") {
 		t.Fatal("secret value in the dry-run diff")
 	}
-	if code := c.do("GET", K+"/object/deployments/"+ns+"/web", nil, nil); code != 404 {
+	if code := c.do("GET", K+"/object/deployments/"+ns+"/web", nil, nil); code != http.StatusNotFound {
 		t.Fatalf("dry run created the deployment (%d)", code)
 	}
 	c.must("POST", K+"/apply", map[string]any{"manifest": manifest, "namespace": ns}, &res)
@@ -330,7 +330,7 @@ spec:
 
 	// delete
 	c.must("DELETE", K+"/object/deployments/"+ns+"/web", nil, nil)
-	if code := c.do("GET", K+"/object/deployments/"+ns+"/web", nil, nil); code != 404 {
+	if code := c.do("GET", K+"/object/deployments/"+ns+"/web", nil, nil); code != http.StatusNotFound {
 		t.Fatalf("deleted deployment still there (%d)", code)
 	}
 }

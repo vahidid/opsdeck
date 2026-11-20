@@ -158,10 +158,10 @@ func TestCertificates(t *testing.T) {
 	if !strings.Contains(string(bundle), "BEGIN CERTIFICATE") || !strings.Contains(string(bundle), "PRIVATE KEY") {
 		t.Fatal("bundle lacks chain or key")
 	}
-	if code := c.do("POST", "/api/workspaces/acme/certificates/web/deploy", map[string]any{"host": "web-1", "certPath": "relative.pem"}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/certificates/web/deploy", map[string]any{"host": "web-1", "certPath": "relative.pem"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("relative path: %d", code)
 	}
-	if code := c.do("POST", "/api/workspaces/acme/certificates/web/deploy", map[string]any{"host": "web-1", "certPath": dir + "/x.pem", "command": "exit 3"}, &dep); code != 502 || dep["exitCode"] != 3.0 {
+	if code := c.do("POST", "/api/workspaces/acme/certificates/web/deploy", map[string]any{"host": "web-1", "certPath": dir + "/x.pem", "command": "exit 3"}, &dep); code != http.StatusBadGateway || dep["exitCode"] != 3.0 {
 		t.Fatalf("failing command: %d %v", code, dep)
 	}
 

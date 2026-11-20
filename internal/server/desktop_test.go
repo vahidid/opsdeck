@@ -40,14 +40,14 @@ func TestDesktopEndpoints(t *testing.T) {
 	}
 
 	// not served outside the desktop app
-	if code := start(false).do("POST", "/api/desktop/open", map[string]string{"url": "https://example.com"}, nil); code != 404 {
+	if code := start(false).do("POST", "/api/desktop/open", map[string]string{"url": "https://example.com"}, nil); code != http.StatusNotFound {
 		t.Fatalf("desktop endpoint served by the plain server: %d", code)
 	}
 
 	c := start(true)
 	c.must("POST", "/api/desktop/open", map[string]string{"url": "https://example.com/a?b=c"}, nil)
 	for _, bad := range []string{"file:///etc/passwd", "javascript:alert(1)", "/relative", "calc.exe"} {
-		if code := c.do("POST", "/api/desktop/open", map[string]string{"url": bad}, nil); code != 400 {
+		if code := c.do("POST", "/api/desktop/open", map[string]string{"url": bad}, nil); code != http.StatusBadRequest {
 			t.Fatalf("opened %q: %d", bad, code)
 		}
 	}
@@ -61,7 +61,7 @@ func TestDesktopEndpoints(t *testing.T) {
 			t.Fatal(err)
 		}
 		res.Body.Close()
-		if res.StatusCode != 200 {
+		if res.StatusCode != http.StatusOK {
 			t.Fatalf("save %q: %d", name, res.StatusCode)
 		}
 		return revealed[len(revealed)-1]

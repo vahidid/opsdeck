@@ -303,10 +303,6 @@ var adminFunctions = map[string]bool{
 	"LOAD_FILE": true, "GET_LOCK": true, "RELEASE_LOCK": true, "RELEASE_ALL_LOCKS": true, "SYS_EXEC": true, "SYS_EVAL": true,
 }
 
-// First words of statements that only read (or only change the session).
-var readStatements = map[string]bool{"SELECT": true, "WITH": true, "VALUES": true, "TABLE": true, "SHOW": true,
-	"DESCRIBE": true, "DESC": true, "EXPLAIN": true, "USE": true, "SET": true, "RESET": true, "CHECK": true, "CHECKSUM": true, "HELP": true}
-
 var dmlWords = map[string]string{"INSERT": RiskChange, "UPDATE": RiskChange, "DELETE": RiskChange, "MERGE": RiskChange, "REPLACE": RiskChange}
 
 func classifyStatement(engine string, st rawStatement) Statement {

@@ -40,7 +40,7 @@ func TestDeployments(t *testing.T) {
 	c.must("POST", "/api/vault/items", map[string]any{"scope": "acme", "name": "komodo-key", "type": "login", "fields": []map[string]any{{"name": "username", "value": deployserver.Key}, {"name": "password", "value": deployserver.Secret}}}, nil)
 	c.must("POST", "/api/vault/items", map[string]any{"scope": "acme", "name": "stale", "type": "token", "fields": []map[string]any{{"name": "token", "value": "revoked"}}}, nil)
 	// a literal token in the spec is refused
-	if code := c.do("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "DeployPlatform", "name": "x", "spec": map[string]any{"platform": "argocd", "url": argo.URL, "token": "abc"}}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "DeployPlatform", "name": "x", "spec": map[string]any{"platform": "argocd", "url": argo.URL, "token": "abc"}}, nil); code != http.StatusBadRequest {
 		t.Fatalf("literal token: %d", code)
 	}
 	c.must("POST", "/api/workspaces/acme/resources", map[string]any{"kind": "DeployPlatform", "name": "argo", "environment": "prod", "spec": map[string]any{"platform": "argocd", "url": argo.URL, "token": "vault://acme/argo-token"}}, nil)
@@ -91,12 +91,12 @@ func TestDeployments(t *testing.T) {
 	if !strings.Contains(logs["text"], "ready") {
 		t.Fatalf("logs: %v", logs)
 	}
-	if code := c.do("GET", "/api/workspaces/acme/deploy/nope/targets", nil, nil); code != 404 {
+	if code := c.do("GET", "/api/workspaces/acme/deploy/nope/targets", nil, nil); code != http.StatusNotFound {
 		t.Fatalf("unknown platform: %d", code)
 	}
 
 	// actions: checked first, then run and audited
-	if code := c.do("POST", "/api/workspaces/acme/deploy/argo/action", map[string]any{"id": "web", "action": "rollback", "history": "7"}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/deploy/argo/action", map[string]any{"id": "web", "action": "rollback", "history": "7"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("rollback under auto-sync: %d", code)
 	}
 	var res map[string]any

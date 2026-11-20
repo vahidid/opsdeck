@@ -24,7 +24,7 @@ func strArray(desc string) map[string]any {
 // left out.
 func (e *Env) repo(name string) (*gitx.Repo, error) {
 	if e.Git == nil {
-		return nil, errors.New("Git is not available")
+		return nil, errors.New("the Git command is not available")
 	}
 	name = strings.TrimPrefix(strings.TrimPrefix(name, "git/"), "GitRemote/")
 	var names []string

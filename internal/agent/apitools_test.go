@@ -74,7 +74,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/grafana/api/health":
 		if r.Header.Get("Authorization") != "Bearer glsa_secret123" {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		fmt.Fprint(w, `{"database":"ok","version":"11.2.0"}`)
@@ -82,10 +82,10 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		fmt.Fprint(w, `{"status":"deleted"}`)
 	case "/grafana/login":
-		http.Redirect(w, r, "https://evil.example/steal", 302)
+		http.Redirect(w, r, "https://evil.example/steal", http.StatusFound)
 	case "/api/v1/query":
 		if u, p, _ := r.BasicAuth(); u != "ops" || p != "pr0m-pass" {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[
@@ -102,7 +102,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"status":"success","data":{"alerts":[{"labels":{"alertname":"DiskFull","severity":"critical","instance":"db-1"},"annotations":{"summary":"disk 95% full"},"state":"firing","activeAt":"2026-10-24T08:00:00Z"}]}}`)
 	case "/loki/api/v1/query_range":
 		if r.Header.Get("X-Scope-OrgID") != "acme" {
-			http.Error(w, "no org id", 401)
+			http.Error(w, "no org id", http.StatusUnauthorized)
 			return
 		}
 		n := time.Now().UnixNano()
@@ -111,7 +111,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 			{"stream":{"app":"api"},"values":[["%d","warn: slow query"]]}]}}`, n-1e9, n-5e9, n-2e9)
 	case "/logs-*/_search":
 		if r.Header.Get("Authorization") != "ApiKey ZXMta2V5" {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		fmt.Fprint(w, `{"hits":{"hits":[{"_index":"logs-2026","_source":{"@timestamp":"2026-10-24T10:00:00Z","message":"connection refused","log":{"level":"ERROR"},"service":{"name":"shop"}}}]}}`)
@@ -238,7 +238,7 @@ func TestSoftwareLookup(t *testing.T) {
 		case "/v1/query":
 			b, _ := io.ReadAll(r.Body)
 			if !strings.Contains(string(b), `"ecosystem":"Debian:12"`) {
-				http.Error(w, string(b), 400)
+				http.Error(w, string(b), http.StatusBadRequest)
 				return
 			}
 			fmt.Fprint(w, `{"vulns":[{"id":"DSA-1","aliases":["CVE-2026-1"],"summary":"heap overflow","published":"2026-01-01","affected":[{"ranges":[{"events":[{"introduced":"0"},{"fixed":"3.0.15-1"}]}]}]}]}`)

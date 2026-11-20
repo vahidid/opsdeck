@@ -87,7 +87,7 @@ func TestAnsible(t *testing.T) {
 
 	// --- encrypting asks for the password first
 	var e map[string]any
-	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/vault/encrypt", map[string]any{"path": "vault.yml"}, &e); code != 409 || e["code"] != "ansible_password" || e["vaultId"] != "default" {
+	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/vault/encrypt", map[string]any{"path": "vault.yml"}, &e); code != http.StatusConflict || e["code"] != "ansible_password" || e["vaultId"] != "default" {
 		t.Fatalf("encrypt without a password: %d %v", code, e)
 	}
 	c.must("POST", "/api/workspaces/acme/ansible/p/infra/unlock", map[string]any{"vaultId": "default", "password": "open-sesame"}, nil)
@@ -97,14 +97,14 @@ func TestAnsible(t *testing.T) {
 	if fc["encrypted"] != true || strings.Contains(fc["text"].(string), "hello") {
 		t.Fatalf("not encrypted: %v", fc)
 	}
-	if code := c.do("PUT", "/api/workspaces/acme/ansible/p/infra/file", map[string]any{"path": "vault.yml", "content": "plain: text\n"}, nil); code != 409 {
+	if code := c.do("PUT", "/api/workspaces/acme/ansible/p/infra/file", map[string]any{"path": "vault.yml", "content": "plain: text\n"}, nil); code != http.StatusConflict {
 		t.Fatalf("plain text written over a vault file: %d", code)
 	}
 	c.must("DELETE", "/api/workspaces/acme/ansible/p/infra/unlock", nil, nil)
-	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/vault/view", map[string]any{"path": "vault.yml"}, nil); code != 409 {
+	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/vault/view", map[string]any{"path": "vault.yml"}, nil); code != http.StatusConflict {
 		t.Fatalf("viewed after lock: %d", code)
 	}
-	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/vault/view", map[string]any{"path": "vault.yml", "password": "nope"}, &e); code != 422 {
+	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/vault/view", map[string]any{"path": "vault.yml", "password": "nope"}, &e); code != http.StatusUnprocessableEntity {
 		t.Fatalf("wrong password: %d %v", code, e)
 	}
 	var view map[string]string
@@ -127,7 +127,7 @@ func TestAnsible(t *testing.T) {
 
 	// --- a run from the page, through the bastion, with the password given once
 	var run map[string]any
-	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/runs", map[string]any{"playbook": "deploy.yml"}, &run); code != 409 {
+	if code := c.do("POST", "/api/workspaces/acme/ansible/p/infra/runs", map[string]any{"playbook": "deploy.yml"}, &run); code != http.StatusConflict {
 		t.Fatalf("run without a password: %d %v", code, run)
 	}
 	c.must("POST", "/api/workspaces/acme/ansible/p/infra/runs", map[string]any{"playbook": "deploy.yml", "password": "open-sesame"}, &run)
@@ -187,10 +187,10 @@ func TestAnsible(t *testing.T) {
 				if ev["secret"] == nil || ev["tool"] != "ansible_vault" {
 					t.Fatalf("view card without a password field: %v", ev)
 				}
-				if code := c.do("POST", url, map[string]string{"decision": "approve"}, nil); code != 422 {
+				if code := c.do("POST", url, map[string]string{"decision": "approve"}, nil); code != http.StatusUnprocessableEntity {
 					t.Fatalf("approved without the password: %d", code)
 				}
-				if code := c.do("POST", url, map[string]string{"decision": "approve", "secret": "nope"}, nil); code != 422 {
+				if code := c.do("POST", url, map[string]string{"decision": "approve", "secret": "nope"}, nil); code != http.StatusUnprocessableEntity {
 					t.Fatalf("wrong password accepted: %d", code)
 				}
 				c.must("POST", url, map[string]string{"decision": "approve", "secret": "open-sesame"}, nil)

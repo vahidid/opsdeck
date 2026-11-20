@@ -84,13 +84,13 @@ func runAntigravity(ctx context.Context, req Request, emit func(Event)) (Result,
 		case strings.Contains(low, "permission") || strings.Contains(low, "denied"):
 			failure += " — check that " + agySettingsPath() + " allows \"" + agyRule + "\""
 		}
-		return res, fmt.Errorf("Antigravity: %s", failure)
+		return res, fmt.Errorf("the Antigravity CLI: %s", failure)
 	}
 	if werr != nil {
 		return res, werr
 	}
 	if text == "" {
-		return res, errors.New("Antigravity returned no answer")
+		return res, errors.New("the Antigravity CLI returned no answer")
 	}
 	return res, nil
 }

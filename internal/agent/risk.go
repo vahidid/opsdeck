@@ -131,7 +131,7 @@ func classifyScript(cmd string, depth int, parts *[]CommandPart) (risk string, r
 			if x.Word != nil {
 				target := wordLit(x.Word)
 				switch x.Op {
-				case syntax.RdrOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll, syntax.ClbOut, syntax.RdrInOut:
+				case syntax.RdrOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll, syntax.RdrClob, syntax.RdrInOut:
 					if target != "/dev/null" && target != "/dev/stderr" && target != "/dev/stdout" {
 						other(printNode(x), RiskChange, "writes to file "+target)
 					}

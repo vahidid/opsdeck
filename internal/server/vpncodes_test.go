@@ -148,7 +148,7 @@ func TestFortiGateSMS(t *testing.T) {
 	if st := status(); st["status"] != "auth" || st["code"] == nil {
 		t.Fatalf("status %v", st)
 	}
-	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": " "}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": " "}, nil); code != http.StatusBadRequest {
 		t.Fatalf("an empty code: %d", code)
 	}
 	// a wrong code is asked for again, with the gateway's new message
@@ -170,7 +170,7 @@ func TestFortiGateSMS(t *testing.T) {
 	if strings.Contains(string(b), "482913") || strings.Contains(string(b), "s3cret") || strings.Contains(string(b), "session-1") {
 		t.Fatalf("the log shows a secret: %s", b)
 	}
-	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": "1234"}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": "1234"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("a code nobody waits for: %d", code)
 	}
 
@@ -196,7 +196,7 @@ func TestFortiGateSMS(t *testing.T) {
 	var settings map[string]any
 	c.must("GET", "/api/settings", nil, &settings)
 	settings["vpn"] = map[string]any{"codes": map[string]any{"ntfyUrl": "ftp://ntfy.example.com/x"}}
-	if code := c.do("PUT", "/api/settings", settings, nil); code != 400 {
+	if code := c.do("PUT", "/api/settings", settings, nil); code != http.StatusBadRequest {
 		t.Fatalf("an invalid topic URL was saved: %d", code)
 	}
 	settings["vpn"] = map[string]any{"codes": map[string]any{"ntfyUrl": ntfy.URL + "/opsdeck-k3y/"}}
@@ -321,7 +321,7 @@ func TestAnyConnectGroupAndCode(t *testing.T) {
 	if fmt.Sprint(p["choices"]) != "[3rd-Party IT-Opration Simotech]" || p["label"] != "GROUP" || p["sources"] != nil {
 		t.Fatalf("prompt %v", p)
 	}
-	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": "Sales"}, nil); code != 400 {
+	if code := c.do("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": "Sales"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("a group the gateway does not offer: %d", code)
 	}
 	c.must("POST", "/api/workspaces/acme/networks/office/code", map[string]string{"code": " 3rd-party"}, nil)

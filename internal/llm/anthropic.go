@@ -206,13 +206,13 @@ func describeAnthropicError(err error) error {
 	if errors.As(err, &apiErr) {
 		switch apiErr.StatusCode {
 		case 401:
-			return fmt.Errorf("Anthropic API: invalid API key (check the provider's key in Settings)")
+			return fmt.Errorf("the Anthropic API rejected the key (check the provider's key in Settings)")
 		case 404:
-			return fmt.Errorf("Anthropic API: model not found: %v", apiErr)
+			return fmt.Errorf("the Anthropic API does not have this model: %v", apiErr)
 		case 429:
-			return fmt.Errorf("Anthropic API: rate limited, try again shortly")
+			return fmt.Errorf("the Anthropic API is rate limited; try again shortly")
 		}
-		return fmt.Errorf("Anthropic API error %d: %v", apiErr.StatusCode, apiErr)
+		return fmt.Errorf("the Anthropic API returned error %d: %v", apiErr.StatusCode, apiErr)
 	}
 	return err
 }

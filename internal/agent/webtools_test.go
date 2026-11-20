@@ -184,7 +184,7 @@ func TestSearchBackends(t *testing.T) {
 		case "/ddg":
 			r.ParseForm()
 			if r.Form.Get("q") != "nginx 502" {
-				http.Error(w, "bad query", 400)
+				http.Error(w, "bad query", http.StatusBadRequest)
 				return
 			}
 			fmt.Fprint(w, `<html><body>
@@ -201,7 +201,7 @@ func TestSearchBackends(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"results": []map[string]string{{"url": "https://nginx.org/", "title": "nginx", "content": "web server"}}})
 		case "/searx/search":
 			if r.URL.Query().Get("format") != "json" {
-				http.Error(w, "json off", 403)
+				http.Error(w, "json off", http.StatusForbidden)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{"results": []map[string]string{{"url": "https://nginx.org/", "title": "nginx", "content": "web server"}, {"url": "javascript:alert(1)", "title": "x"}}})

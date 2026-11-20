@@ -558,7 +558,7 @@ func (c *webClient) search(ctx context.Context, query string, n int) ([]searchRe
 			}
 		}
 		if err := getJSON(ctx, hc, "GET", u, map[string]string{"X-Subscription-Token": k}, nil, &r); err != nil {
-			return nil, fmt.Errorf("Brave Search: %w", err)
+			return nil, fmt.Errorf("the Brave Search API: %w", err)
 		}
 		for _, x := range r.Web.Results {
 			out = append(out, searchResult{Title: x.Title, URL: x.URL, Snippet: stripTags(x.Description)})
@@ -573,7 +573,7 @@ func (c *webClient) search(ctx context.Context, query string, n int) ([]searchRe
 		}
 		body := map[string]any{"query": query, "max_results": min(n, 20), "search_depth": "basic"}
 		if err := getJSON(ctx, hc, "POST", c.cfg.endpoint("tavily", "https://api.tavily.com/search"), map[string]string{"Authorization": "Bearer " + k}, body, &r); err != nil {
-			return nil, fmt.Errorf("Tavily: %w", err)
+			return nil, fmt.Errorf("the Tavily API: %w", err)
 		}
 		for _, x := range r.Results {
 			out = append(out, searchResult{Title: x.Title, URL: x.URL, Snippet: x.Content})

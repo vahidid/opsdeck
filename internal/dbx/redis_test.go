@@ -131,7 +131,7 @@ func TestRedisLive(t *testing.T) {
 		t.Fatalf("info/scan: %+v %+v", r[7], r[8])
 	}
 	// SELECT lasts for the script only
-	r = run("SELECT 0\nDBSIZE", false)
+	run("SELECT 0\nDBSIZE", false)
 	if r2 := run("DBSIZE", false); r2[0].Rows[0][0] != int64(7) {
 		t.Fatalf("SELECT leaked: %+v", r2)
 	}

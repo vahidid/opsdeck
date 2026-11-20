@@ -156,7 +156,7 @@ func (c *hcloudClient) do(ctx context.Context, method, path string, body any) ([
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("Hetzner API %d: %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("the Hetzner API returned %d: %s", resp.StatusCode, string(data))
 	}
 	return data, nil
 }

@@ -12,7 +12,6 @@ import (
 	"opsdeck/internal/connect"
 	"opsdeck/internal/extagent"
 	"opsdeck/internal/llm"
-	"opsdeck/internal/mcpx"
 	"opsdeck/internal/workspace"
 )
 
@@ -244,7 +243,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		}
 		s.info.Title = title
 	}
-	mode, modelID := s.info.Mode, s.info.Model
+	modelID := s.info.Model
 	msgIndex := len(s.messages) - 1
 	s.mu.Unlock()
 	if notification {
@@ -313,7 +312,7 @@ func (m *Manager) run(ctx context.Context, s *Session, w *workspace.Workspace, i
 		// a step boundary: what the user sent to steer joins here
 		m.steer(s)
 		s.mu.Lock()
-		mode = s.info.Mode // the user may switch mode mid-run
+		mode := s.info.Mode // the user may switch mode mid-run
 		history := append([]llm.Message(nil), s.messages...)
 		s.mu.Unlock()
 		// per step: a resource added by the agent brings its tools along
@@ -550,6 +549,3 @@ func cleanSessionTitle(s string) string {
 	}
 	return cleaned
 }
-
-// ensure mcpx import is used for type references in toolset closures.
-var _ = mcpx.ToolName

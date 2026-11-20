@@ -37,9 +37,8 @@ type Manager struct {
 }
 
 type versionInfo struct {
-	v   Version
-	at  time.Time
-	err error
+	v  Version
+	at time.Time
 }
 
 // New returns a manager.

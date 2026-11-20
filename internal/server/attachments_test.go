@@ -61,14 +61,14 @@ func TestAttachments(t *testing.T) {
 		return out, res.StatusCode
 	}
 	img, code := upload("screen.png", tinyPNG)
-	if code != 200 || img["kind"] != "image" || img["mime"] != "image/png" {
+	if code != http.StatusOK || img["kind"] != "image" || img["mime"] != "image/png" {
 		t.Fatalf("%d %v", code, img)
 	}
 	txt, _ := upload("app.log", []byte("ERROR db timeout\npassword=hunter2hunter2\n"))
 	if txt["kind"] != "text" {
 		t.Fatalf("%v", txt)
 	}
-	if _, code := upload("empty.txt", nil); code < 400 {
+	if _, code := upload("empty.txt", nil); code < http.StatusBadRequest {
 		t.Fatal("an empty file was accepted")
 	}
 
@@ -135,10 +135,10 @@ func TestAttachments(t *testing.T) {
 	if res.Header.Get("Content-Type") != "image/png" || !bytes.Equal(got, tinyPNG) || !strings.HasPrefix(res.Header.Get("Content-Disposition"), "inline") {
 		t.Fatalf("%v %d", res.Header, len(got))
 	}
-	if code := c.do("GET", base+"/attachments/a-0000000000", nil, nil); code != 404 {
+	if code := c.do("GET", base+"/attachments/a-0000000000", nil, nil); code != http.StatusNotFound {
 		t.Fatalf("missing attachment: %d", code)
 	}
-	if code := c.do("GET", base+"/attachments/..%2f"+sid, nil, nil); code < 400 {
+	if code := c.do("GET", base+"/attachments/..%2f"+sid, nil, nil); code < http.StatusBadRequest {
 		t.Fatalf("path in an attachment id: %d", code)
 	}
 }

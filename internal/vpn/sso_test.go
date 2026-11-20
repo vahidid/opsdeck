@@ -105,7 +105,7 @@ func (f *fakeASA) handle(w http.ResponseWriter, r *http.Request) {
 <form><input type="sso" name="sso-token"></input></form></auth></config-auth>`, f.URL, mode)
 		case strings.Contains(body, `type="auth-reply"`):
 			if !strings.Contains(body, "<auth-handle>42</auth-handle>") {
-				http.Error(w, "opaque data missing", 400)
+				http.Error(w, "opaque data missing", http.StatusBadRequest)
 				return
 			}
 			tok := between(body, "<sso-token>", "</sso-token>")
@@ -344,7 +344,7 @@ func TestSSOFortinet(t *testing.T) {
 					http.Redirect(w, r, "http://127.0.0.1:8020/?id=AUTH1D", http.StatusFound)
 				case "/remote/saml/auth_id":
 					if r.URL.Query().Get("id") != "AUTH1D" {
-						http.Error(w, "bad id", 403)
+						http.Error(w, "bad id", http.StatusForbidden)
 						return
 					}
 					http.SetCookie(w, &http.Cookie{Name: "SVPNCOOKIE", Value: "F0RTI-SESSION", Path: "/"})

@@ -240,7 +240,7 @@ func (c *cloudflare) body(z *Zone, in RecordInput) (map[string]any, error) {
 	case "A", "AAAA":
 		ips := strings.FieldsFunc(in.Content, func(r rune) bool { return r == ',' || r == ' ' })
 		if len(ips) != 1 {
-			return nil, errors.New("Cloudflare takes one address per record: add one record per address")
+			return nil, errors.New("the Cloudflare API takes one address per record: add one record per address")
 		}
 		b["content"] = ips[0]
 	default:

@@ -392,7 +392,7 @@ func (k *komodo) Run(ctx context.Context, d *Detail, a Action) (*Result, error) 
 		req = map[string]string{"deploy": "Deploy", "pull": "PullDeployment", "restart": "RestartDeployment", "start": "StartDeployment", "stop": "StopDeployment"}[a.ID]
 	}
 	if req == "" {
-		return nil, fmt.Errorf("Komodo has no action %q", a.ID)
+		return nil, fmt.Errorf("the Komodo platform has no action %q", a.ID)
 	}
 	var u kmUpdate
 	if err := k.call(ctx, "execute", req, params, &u); err != nil {

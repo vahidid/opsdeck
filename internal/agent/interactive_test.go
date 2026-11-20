@@ -43,7 +43,7 @@ func TestWaitForTCPAndHTTP(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if hits.Add(1) < 3 {
-			http.Error(w, "starting", 503)
+			http.Error(w, "starting", http.StatusServiceUnavailable)
 			return
 		}
 		fmt.Fprint(w, `{"status":"UP"}`)

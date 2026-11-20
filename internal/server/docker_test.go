@@ -83,7 +83,7 @@ func TestDockerLive(t *testing.T) {
 volumes:
   data:
 `
-	if code := c.do("POST", D+"/compose", map[string]any{"name": project, "dir": dir, "content": "services: [", "start": true}, nil); code != 400 {
+	if code := c.do("POST", D+"/compose", map[string]any{"name": project, "dir": dir, "content": "services: [", "start": true}, nil); code != http.StatusBadRequest {
 		t.Fatalf("invalid compose accepted: %d", code)
 	}
 	c.must("POST", D+"/compose", map[string]any{"name": project, "dir": dir, "content": compose, "start": true}, nil)
@@ -98,7 +98,7 @@ volumes:
 		t.Fatalf("files: %v", files)
 	}
 	// an invalid edit is refused and leaves the file alone
-	if code := c.do("PUT", D+"/compose/"+project+"/file", map[string]any{"path": files[0]["path"], "content": "services:\n  web:\n    image: [\n"}, nil); code != 400 {
+	if code := c.do("PUT", D+"/compose/"+project+"/file", map[string]any{"path": files[0]["path"], "content": "services:\n  web:\n    image: [\n"}, nil); code != http.StatusBadRequest {
 		t.Fatal("invalid edit accepted")
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "compose.yaml")); string(b) != compose {
@@ -151,7 +151,7 @@ volumes:
 	mw.Close()
 	req, _ := http.NewRequest("POST", ts.URL+D+"/volumes/"+vol+"/upload?path=/", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if res, err := c.http.Do(req); err != nil || res.StatusCode != 200 {
+	if res, err := c.http.Do(req); err != nil || res.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(res.Body)
 		t.Fatalf("upload: %v %s", err, b)
 	}
@@ -185,10 +185,10 @@ volumes:
 	}
 	// nothing outside the volume is reachable, also through a symlink
 	exec.Command("docker", "exec", ctName, "ln", "-s", "/etc", "/data/escape").Run()
-	if code := c.do("GET", D+"/volumes/"+vol+"/files?path=/escape", nil, nil); code < 400 {
+	if code := c.do("GET", D+"/volumes/"+vol+"/files?path=/escape", nil, nil); code < http.StatusBadRequest {
 		t.Fatal("listed through a symlink out of the volume")
 	}
-	if code := c.do("GET", D+"/volumes/"+vol+"/file?path=/../../../../etc/hostname", nil, nil); code < 400 {
+	if code := c.do("GET", D+"/volumes/"+vol+"/file?path=/../../../../etc/hostname", nil, nil); code < http.StatusBadRequest {
 		t.Fatal("read outside the volume")
 	}
 	c.must("DELETE", D+"/volumes/"+vol+"/file?path=/escape", nil, nil)
@@ -196,7 +196,7 @@ volumes:
 		t.Fatal(err)
 	}
 	c.must("DELETE", D+"/volumes/"+vol+"/file?path=/conf", nil, nil)
-	if code := c.do("DELETE", D+"/volumes/"+vol+"/file?path=/", nil, nil); code < 400 {
+	if code := c.do("DELETE", D+"/volumes/"+vol+"/file?path=/", nil, nil); code < http.StatusBadRequest {
 		t.Fatal("deleted the volume root")
 	}
 
@@ -297,7 +297,7 @@ func sse(t *testing.T, c *client, path string) []map[string]any {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode != 200 {
+	if res.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(res.Body)
 		t.Fatalf("GET %s: %d %s", path, res.StatusCode, b)
 	}

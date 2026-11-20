@@ -131,7 +131,7 @@ func listClaudeModels(ctx context.Context, spec Spec, dir string) ([]Model, erro
 			continue
 		}
 		if ev.Response.Subtype != "success" {
-			return nil, fmt.Errorf("Claude Code: %s", ev.Response.Error)
+			return nil, fmt.Errorf("the Claude Code CLI: %s", ev.Response.Error)
 		}
 		var out []Model
 		for _, m := range ev.Response.Response.Models {

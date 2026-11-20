@@ -20,7 +20,7 @@ func TestFindCode(t *testing.T) {
 		"Your FortiToken code is: 482913":                                      "482913",
 		"From: 10004346\nYour code is 482913":                                  "482913",
 		`{"from":"10004346","text":"Token: 482913","sentStamp":1729760000000}`: "482913",
-		"کد ورود شما: ۴۸۲۹۱۳ ‏":                                                "482913",
+		"کد ورود شما: ۴۸۲۹۱۳ \u200f":                                           "482913",
 		"رمز یکبار مصرف ٤٨٢٩١٣":                                                "482913",
 		"482913 is your verification code, valid for 300 seconds":              "482913",
 		"Call +98912345678 if this was not you":                                "",
@@ -35,7 +35,7 @@ func TestFindCode(t *testing.T) {
 	if got := FindCode("your token AB12CD, not 123456", re); got != "AB12CD" {
 		t.Errorf("custom pattern: %q", got)
 	}
-	if got := NormalizeCode(" ۱۲۳-۴۵۶‎"); got != "123456" {
+	if got := NormalizeCode(" ۱۲۳-۴۵۶\u200e"); got != "123456" {
 		t.Errorf("NormalizeCode = %q", got)
 	}
 	if _, err := CompileCodePattern("("); err == nil {

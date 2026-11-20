@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,7 @@ func TestQueuedMessagesWaitForTheTurn(t *testing.T) {
 	appr := st.wait(approvalReq, "approval")
 
 	// without a mode a message during a turn is refused, as before
-	if code := c.do("POST", base+"/messages", map[string]string{"text": "hello?"}, nil); code != 409 && code < 400 {
+	if code := c.do("POST", base+"/messages", map[string]string{"text": "hello?"}, nil); code != http.StatusConflict && code < http.StatusBadRequest {
 		t.Fatalf("a message without a mode was accepted during a turn: %d", code)
 	}
 	var sent struct{ Pending map[string]any }
@@ -58,7 +59,7 @@ func TestQueuedMessagesWaitForTheTurn(t *testing.T) {
 	c.must("POST", base+"/messages", map[string]string{"text": "and memory", "mode": "queue"}, &sent)
 	third := sent.Pending["id"].(string)
 	c.must("DELETE", base+"/pending/"+dropped, nil, nil)
-	if code := c.do("DELETE", base+"/pending/"+dropped, nil, nil); code != 404 {
+	if code := c.do("DELETE", base+"/pending/"+dropped, nil, nil); code != http.StatusNotFound {
 		t.Fatalf("cancelling twice: %d", code)
 	}
 	var got struct{ Pending []map[string]any }

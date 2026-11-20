@@ -458,7 +458,7 @@ func TestGitHubAPI(t *testing.T) {
 	var merged, deleted bool
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer ghp_tok" {
-			http.Error(w, `{"message":"Bad credentials"}`, 401)
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -482,7 +482,7 @@ func TestGitHubAPI(t *testing.T) {
 			var in map[string]any
 			json.NewDecoder(r.Body).Decode(&in)
 			if in["head"] != "bump" || in["base"] != "main" {
-				http.Error(w, `{"message":"Validation Failed"}`, 422)
+				http.Error(w, `{"message":"Validation Failed"}`, http.StatusUnprocessableEntity)
 				return
 			}
 			fmt.Fprint(w, pr())
@@ -503,7 +503,7 @@ func TestGitHubAPI(t *testing.T) {
 		case p == "/api/v3/user":
 			fmt.Fprint(w, `{"login":"bot","id":42}`)
 		default:
-			http.Error(w, `{"message":"Not Found"}`, 404)
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 		}
 	}))
 	defer ts.Close()

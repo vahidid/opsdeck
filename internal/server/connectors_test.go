@@ -141,7 +141,7 @@ func TestGitConnectors(t *testing.T) {
 func failure(c *client, method, path string, body any) string {
 	c.t.Helper()
 	var e struct{ Error string }
-	if code := c.do(method, path, body, &e); code < 400 {
+	if code := c.do(method, path, body, &e); code < http.StatusBadRequest {
 		c.t.Fatalf("%s %s should fail, got %d", method, path, code)
 	}
 	return e.Error

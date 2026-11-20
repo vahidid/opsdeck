@@ -49,12 +49,12 @@ Runs on a host (host parameter) or on this computer if host is omitted.`,
 			}, "action", "dir")},
 		Prepare: func(ctx context.Context, env *Env, input json.RawMessage) (*Call, error) {
 			var in struct {
-				Action   string
-				Dir      string
-				Host     string
-				Binary   string
-				Target   string
-				VarFile  string `json:"var_file"`
+				Action  string
+				Dir     string
+				Host    string
+				Binary  string
+				Target  string
+				VarFile string `json:"var_file"`
 			}
 			if err := decode(input, &in); err != nil {
 				return nil, err

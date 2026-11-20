@@ -39,14 +39,14 @@ func TestWorkspaceExportImport(t *testing.T) {
 		"spec": map[string]any{"address": "10.0.0.5", "auth": "vault://acme/deploy-key"}}, nil)
 	a.must("POST", "/api/vault/items", map[string]any{"scope": "acme", "type": "login", "name": "deploy-key",
 		"fields": []map[string]any{{"name": "username", "value": "deploy"}, {"name": "password", "value": "s3cret-pass"}}}, nil)
-	if code := a.do("POST", "/api/workspaces/acme/export", map[string]string{"password": "short"}, nil); code != 400 {
+	if code := a.do("POST", "/api/workspaces/acme/export", map[string]string{"password": "short"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("short password: %d", code)
 	}
 	var file json.RawMessage
 	a.must("POST", "/api/workspaces/acme/export", map[string]string{"password": "share password"}, &file)
 
 	b := newMachine(t, "bob master pw")
-	if code := b.do("POST", "/api/workspaces/import-file", map[string]any{"bundle": file, "password": "wrong password"}, nil); code != 400 {
+	if code := b.do("POST", "/api/workspaces/import-file", map[string]any{"bundle": file, "password": "wrong password"}, nil); code != http.StatusBadRequest {
 		t.Fatalf("wrong password: %d (401 would sign the UI out)", code)
 	}
 	var res struct {

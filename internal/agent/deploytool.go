@@ -13,9 +13,6 @@ import (
 	"opsdeck/internal/workspace"
 )
 
-// deployReads are the deploy tool's actions that only read.
-var deployReads = map[string]bool{"platforms": true, "targets": true, "status": true, "logs": true, "diff": true, "file": true}
-
 // toolDeploy reads and drives the workspace's deployment platforms
 // (DeployPlatform resources: Portainer, Argo CD, Komodo) with the
 // platform's vault credential. Reads are free; deploys, restarts and

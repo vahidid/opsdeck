@@ -106,7 +106,7 @@ func (g *Server) Handler(t testing.TB) http.Handler {
 		}
 		if _, pass, ok := r.BasicAuth(); !ok || pass != Token {
 			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
-			http.Error(w, "HTTP Basic: Access denied", 401)
+			http.Error(w, "HTTP Basic: Access denied", http.StatusUnauthorized)
 			return
 		}
 		backend.ServeHTTP(w, r)
@@ -124,7 +124,7 @@ func (g *Server) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("PRIVATE-TOKEN") != Token {
-		http.Error(w, `{"message":"401 Unauthorized"}`, 401)
+		http.Error(w, `{"message":"401 Unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 	g.mu.Lock()
@@ -171,7 +171,7 @@ func (g *Server) api(w http.ResponseWriter, r *http.Request) {
 	case path == proj+"/repository/branches/main":
 		fmt.Fprint(w, `{"name":"main","protected":true}`)
 	case strings.HasPrefix(path, proj+"/repository/branches/"):
-		http.Error(w, `{"message":"404 Branch Not Found"}`, 404)
+		http.Error(w, `{"message":"404 Branch Not Found"}`, http.StatusNotFound)
 	case path == proj+"/merge_requests" && r.Method == "POST":
 		var in map[string]any
 		json.NewDecoder(r.Body).Decode(&in)
@@ -204,7 +204,7 @@ func (g *Server) api(w http.ResponseWriter, r *http.Request) {
 	case isMR && mr(rest) != nil:
 		json.NewEncoder(w).Encode(mr(rest))
 	default:
-		http.Error(w, `{"message":"404 Not Found"}`, 404)
+		http.Error(w, `{"message":"404 Not Found"}`, http.StatusNotFound)
 	}
 }
 

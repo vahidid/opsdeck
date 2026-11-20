@@ -1,7 +1,7 @@
 # Coding conventions
 
 This is the baseline that new code and reviews are held to. It writes down what the
-code already does (counts measured on `main` at 0.10.0), and makes a call where two
+code already does (counts measured on `main` at 1.0.2), and makes a call where two
 styles coexist. Existing code is not rewritten to match; code you touch should.
 
 Rules are marked **must** (a review blocks on it) or **should** (a review asks why
@@ -12,12 +12,12 @@ not). Everything else: match the code around your change, as
 
 | Check | Command | Status on `main` |
 |---|---|---|
-| Go format | `gofmt -l cmd internal tools` prints nothing | **must** — 2 files fail today, CI does not check it |
+| Go format | `gofmt -l cmd internal tools` prints nothing | **must** — clean (CI does not check it) |
 | Go vet | `go vet ./...` | **must** — clean, CI runs it |
 | Go tests | `go test ./...` | **must** — CI runs it |
 | TypeScript | `cd web && npm run typecheck` | **must** — clean, CI runs it |
 | Browser tests | `cd e2e && npx playwright test` | **must** for UI changes — CI runs it |
-| staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` | **should** — 59 findings today; add none |
+| staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` | **should** — one documented exception (known debt); add none |
 
 ## Go
 
@@ -37,7 +37,8 @@ not). Everything else: match the code around your change, as
 ### Errors
 
 - **must** Error strings start lowercase (except proper nouns: "Anthropic", "Ansible")
-  and have no trailing period. staticcheck ST1005 flags 24 places that break this.
+  and have no trailing period. staticcheck ST1005 enforces the capitalisation, so a
+  message may not even begin with a proper noun — rephrase it ("the Anthropic API …").
 - **must** Wrap an underlying error with `%w`, not `%v`/`%s`, so `errors.Is`/`As` work:
   `fmt.Errorf("parse docker compose ls: %w", err)`. Today only 117 of 782 `Errorf`
   calls do; new code always does.
@@ -104,8 +105,7 @@ not). Everything else: match the code around your change, as
 - Exported identifiers have a doc comment that starts with the name: "New returns a
   manager." Plain full sentences, `// -----` section dividers. No TODO/FIXME, no
   `nolint`, no `/* */`.
-- **must** No unused code. staticcheck U1000 flags 8 today, and
-  `var _ = mcpx.ToolName` in `agent/loop.go` is a placeholder to drop.
+- **must** No unused code (staticcheck U1000 is clean on `main`).
 - Dependencies: stdlib first; a maintained native Go library before shelling out
   ([decisions.md](decisions.md)); plain `net/http` for small REST APIs.
 
@@ -213,8 +213,8 @@ trailing commas on multi-line lists. Imports roughly: react, router, lucide,
 
 Fix these when you touch the file; don't open a pull request just for them.
 
-- `gofmt`: `internal/agent/loop.go`, `internal/agent/terraformtool.go`.
-- staticcheck: 24× ST1005 (capitalised errors), 12× ST1013 (numeric status in
-  tests), 8× U1000 (unused code), 5× ST1018, 2× SA4006 (dead assignment, incl.
-  `agent/loop.go:202`), 2× SA1019 (deprecated `syntax.ClbOut` in `agent/risk.go`).
-- No CI check for `gofmt` or staticcheck, so the two above drift.
+- staticcheck: 1× SA1019 (deprecated `k8s.io/apimachinery/pkg/util/httpstream` in
+  `kube/exec.go`). `client-go`'s `spdy` dialer and `portforward` still speak the
+  old types, so the move to `k8s.io/streaming/pkg/httpstream` waits for client-go;
+  revisit on the next client-go bump.
+- No CI check for `gofmt` or staticcheck, so lint debt drifts.

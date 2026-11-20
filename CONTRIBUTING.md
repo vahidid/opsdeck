@@ -13,7 +13,8 @@ opening a public issue.
 
 ## Working on the code
 
-Requirements: Go 1.24+ (the toolchain downloads the version in `go.mod`) and Node 20+.
+Requirements: Go 1.27.3+ (the toolchain downloads the version in `go.mod` if yours is
+older) and Node 20+.
 
 ```bash
 make build                                     # web UI + bin/opsdeck

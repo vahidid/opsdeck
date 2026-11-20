@@ -12,3 +12,4 @@ web/node_modules/
 release-key.txt
 *.key
 .DS_Store
+.zcode/

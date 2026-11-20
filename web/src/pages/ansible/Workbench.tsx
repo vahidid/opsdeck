@@ -30,7 +30,7 @@ import { Modal, useConfirm, useToast } from "../../components/overlay";
 import { Badge, Button, CodeBlock, EmptyState, ErrorBox, IconButton, Loading, SearchInput, Segmented, cx } from "../../components/ui";
 import { useAsync, useLocalStorage } from "../../hooks";
 import { fmtBytes } from "../../lib/format";
-import { CodeView } from "../Git";
+import { CodeView } from "../../components/CodeView";
 import { EncryptModal, EncryptStringModal, NewFileModal, RekeyModal, RenameModal, SearchModal, SetVarModal } from "./dialogs";
 import { FileIcon, TYPE_LABEL, useAnsible } from "./shared";
 import { EditorContext } from "./editor/context";

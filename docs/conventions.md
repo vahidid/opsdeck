@@ -136,8 +136,8 @@ not). Everything else: match the code around your change, as
   lowercase for a module with many exports (`ui.tsx`, `shared.tsx`, all of `lib/`
   and `context/`). No kebab-case.
 - **should** Keep new files under ~600 lines; split a page into a feature folder
-  before it grows past that. (`Git.tsx` 1883, `Topology.tsx` 1499 and `Agent.tsx`
-  1405 are the ones to split when next touched.)
+  before it grows past that (`pages/git/`, `pages/topology/` and the agent feature
+  folder show the pattern).
 
 ### TypeScript and components
 

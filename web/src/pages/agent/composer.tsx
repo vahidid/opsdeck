@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, FileText, Loader2, Paperclip, Server, Slash, Square, SquareTerminal, X } from "lucide-react";
-import { Button, cx } from "../../components/ui";
+import { Button, Select, cx } from "../../components/ui";
 import { useToast } from "../../components/overlay";
 import { fmtBytes } from "../../lib/format";
+import { api } from "../../api/client";
 import type { DeliverMode } from "../../api/types";
+import { AlertTriangle, Check, ChevronDown, Eye, Hand, Rocket, ShieldCheck, Sparkles, Wrench, Zap } from "lucide-react";
+import { useAsync } from "../../hooks";
+import { Popover } from "../../components/overlay";
+import type { SessionMode } from "../../api/types";
+import type { HarnessInfo, ModelInfo } from "../../api/types";
 
 /** a file picked for the next message, not uploaded yet */
 type Pending = { key: string; file: File; url?: string };
@@ -386,3 +392,136 @@ export function Composer({
     </div>
   );
 }
+
+// ---------------------------------------------------------------- pickers
+
+// ---------------------------------------------------------------- mode/model controls
+
+export const MODES: { id: SessionMode; label: string; icon: React.ReactNode; desc: (servers: boolean) => string }[] = [
+  { id: "plan", label: "Plan", icon: <Eye className="size-3.5" />, desc: () => "Read-only investigation. The agent proposes a plan; nothing is changed." },
+  { id: "ask", label: "Ask", icon: <Hand className="size-3.5" />, desc: () => "Reads run freely; every change asks for your approval (per workspace rules)." },
+  {
+    id: "auto",
+    label: "Auto",
+    icon: <Zap className="size-3.5" />,
+    desc: (servers) =>
+      "Everything on this computer runs without asking — files anywhere, local commands, the workspace. Destructive commands, credential files and the vault still ask. " +
+      (servers ? "Server changes run too, except destructive ones and protected environments." : "Every change on a server asks."),
+  },
+  {
+    id: "full",
+    label: "Full",
+    icon: <Rocket className="size-3.5" />,
+    desc: (servers) =>
+      "No questions on this computer, destructive commands and credential files included. " +
+      (servers ? "Server changes run without asking too — destructive ones and protected environments included." : "Every change on a server still asks."),
+  },
+];
+
+export function ModePicker({ value, onChange }: { value: SessionMode; onChange: (m: SessionMode) => void }) {
+  const [open, setOpen] = useState(false);
+  const settings = useAsync(() => api.settings(), [open]);
+  const servers = !!settings.data?.agent?.autoServerChanges;
+  const cur = MODES.find((m) => m.id === value) ?? MODES[1];
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={cx(
+          "flex items-center gap-1.5 h-7 px-2 rounded-md border text-xs font-medium",
+          value === "full" ? "border-err/40 bg-err/10 text-err" : value === "auto" ? "border-warn/40 bg-warn/10 text-warn" : value === "plan" ? "border-info/40 bg-info/10 text-info" : "border-line bg-panel-2 text-fg",
+        )}
+      >
+        {cur.icon}
+        {cur.label}
+        <ChevronDown className="size-3 opacity-60" />
+      </button>
+      <Popover open={open} onClose={() => setOpen(false)} className="bottom-full mb-1 left-0 w-96 p-1">
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => {
+              onChange(m.id);
+              setOpen(false);
+            }}
+            className={cx("w-full text-left rounded-md px-2.5 py-2 hover:bg-panel-3 flex gap-2.5", m.id === value && "bg-panel-2")}
+          >
+            <span className="mt-0.5 text-muted">{m.icon}</span>
+            <span className="flex-1">
+              <span className="flex items-center gap-2 text-[13px] font-medium">
+                {m.label}
+                {m.id === value && <Check className="size-3.5 text-accent" />}
+              </span>
+              <span className="block text-[11.5px] text-muted mt-0.5">{m.desc(servers)}</span>
+              {(m.id === "auto" || m.id === "full") && (
+                <span className={cx("flex items-center gap-1 text-[11px] mt-1", m.id === "full" ? "text-err" : "text-warn")}>
+                  <AlertTriangle className="size-3" /> {m.id === "full" ? "Only for work you would let it do unattended." : "Use with care on shared infrastructure."}
+                </span>
+              )}
+            </span>
+          </button>
+        ))}
+        <div className="border-t border-line mt-1 px-2.5 py-1.5 text-[11px] text-faint">
+          Server changes in Auto and Full: <b>{servers ? "run without asking" : "always ask"}</b> — App settings → Agent.
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+export function ModelPicker({ models, value, onChange }: { models: ModelInfo[]; value: string; onChange: (m: string) => void }) {
+  // one group per provider when there are several
+  const groups: { provider: string; name: string; models: ModelInfo[] }[] = [];
+  for (const m of models) {
+    const g = groups.find((x) => x.provider === m.provider);
+    if (g) g.models.push(m);
+    else groups.push({ provider: m.provider, name: m.providerName || m.provider, models: [m] });
+  }
+  // the full label: the closed picker shows only the selected option
+  const option = (m: ModelInfo) => (
+    <option key={m.id} value={m.id} title={m.id}>
+      {m.label || m.id}
+    </option>
+  );
+  return (
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className="h-7 text-xs w-auto max-w-72 py-0" title={value}>
+      {!models.some((m) => m.id === value) && value && <option value={value}>{value}</option>}
+      {groups.length > 1
+        ? groups.map((g) => (
+            <optgroup key={g.provider} label={g.name}>
+              {g.models.map(option)}
+            </optgroup>
+          ))
+        : models.map(option)}
+    </Select>
+  );
+}
+
+export function parseModeCommand(t: string): SessionMode | null {
+  const m = /^\/(plan|ask|auto|full)\s*$/i.exec(t.trim());
+  return m ? (m[1].toLowerCase() as SessionMode) : null;
+}
+
+/** the chat's commands: built-in ones and the workspace's commands/*.md */
+export function useCommands(harness?: HarnessInfo, builtin: SlashCommand[] = BUILTIN_COMMANDS): SlashCommand[] {
+  return useMemo(
+    () => [
+      ...builtin,
+      ...(harness?.commands ?? [])
+        .filter((c) => !builtin.some((b) => b.name === c.name))
+        .map((c) => ({ name: c.name, args: c.argumentHint, description: c.description, workspace: true })),
+    ],
+    [harness, builtin],
+  );
+}
+
+// ---------------------------------------------------------------- new session
+
+export const EXAMPLES = [
+  { icon: <ShieldCheck className="size-4" />, text: "Check disk, memory and load on all prod hosts and summarize anything above 80%." },
+  { icon: <AlertTriangle className="size-4" />, text: "nginx on app-1 returns 502. Investigate the logs, upstream and config, and tell me the root cause." },
+  { icon: <Wrench className="size-4" />, text: "List containers on every docker host and flag the ones that are restarting or unhealthy." },
+  { icon: <Sparkles className="size-4" />, text: "Check which of our hosts run an OS or database version that is out of support, and list known CVEs for them." },
+];
+
+export const NEW_COMMANDS = BUILTIN_COMMANDS.filter((c) => ["plan", "ask", "auto", "full"].includes(c.name));

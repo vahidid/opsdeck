@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, ChevronDown, ChevronUp, CircleCheck, CircleX, Clock, ListChecks, ListTodo, Loader2, Octagon, SquareTerminal, User, X } from "lucide-react";
+import { BellRing, ChevronDown, ChevronUp, CircleCheck, CircleX, Clock, ListChecks, ListTodo, Loader2, Octagon, SquareTerminal, User, X, Cpu } from "lucide-react";
 import { api, errMsg } from "../../api/client";
-import type { PendingMessage, TaskInfo, TodoItem } from "../../api/types";
+import type { PendingMessage, TaskInfo, TodoItem, SessionInfo } from "../../api/types";
 import { Badge, Button, CodeBlock, cx } from "../../components/ui";
 import { Modal, Popover, useToast } from "../../components/overlay";
 import { fmtMs } from "../../lib/format";
 import { textDir } from "../../lib/rtl";
 import { TodoList } from "./tools";
 import type { Ev } from "./timeline";
+import { Link } from "react-router-dom";
+import { EmptyState, Input, StatusDot } from "../../components/ui";
+import type { SessionState } from "../../api/types";
 
 // ---------------------------------------------------------------- checklist
 
@@ -287,5 +290,54 @@ export function PendingList({ items, onCancel }: { items: PendingMessage[]; onCa
         </div>
       ))}
     </div>
+  );
+}
+
+export function StateDot({ state }: { state: SessionState }) {
+  if (state === "running") return <StatusDot tone="info" pulse />;
+  if (state === "waiting_approval" || state === "waiting_input") return <StatusDot tone="warn" pulse />;
+  return <StatusDot tone="neutral" />;
+}
+
+export function NoModels() {
+  return (
+    <EmptyState
+      icon={<Cpu />}
+      title="Connect a model to use the agent"
+      className="flex-1"
+      action={
+        <Link to="/settings">
+          <Button variant="primary">Open settings</Button>
+        </Link>
+      }
+    >
+      Add an Anthropic or OpenAI-compatible provider (OpenAI, OpenRouter, Ollama, LM Studio…), or use Claude Code, Codex or another agent you already have: connect it under
+      App settings › Agent access. API keys are stored in your vault. Everything else in opsdeck works without a model.
+    </EmptyState>
+  );
+}
+
+export function RenameModal({ session, onClose, onSave }: { session: SessionInfo | null; onClose: () => void; onSave: (t: string) => Promise<void> }) {
+  const [t, setT] = useState("");
+  useEffect(() => setT(session?.title ?? ""), [session]);
+  return (
+    <Modal
+      open={!!session}
+      onClose={onClose}
+      title="Rename session"
+      width={420}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void onSave(t.trim())} disabled={!t.trim()}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Input dir="auto" autoFocus value={t} onChange={(e) => setT(e.target.value)} onKeyDown={(e) => e.key === "Enter" && t.trim() && void onSave(t.trim())} />
+    </Modal>
   );
 }

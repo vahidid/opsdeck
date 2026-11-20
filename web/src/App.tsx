@@ -29,7 +29,7 @@ import { DeploymentsPage } from "./pages/Deployments";
 // the Ansible editor (CodeMirror, YAML) is loaded when it is opened
 const AnsiblePage = lazy(() => import("./pages/ansible").then((m) => ({ default: m.AnsiblePage })));
 // the topology map (elkjs, ~1 MB) is loaded when it is opened
-const TopologyPage = lazy(() => import("./pages/Topology").then((m) => ({ default: m.TopologyPage })));
+const TopologyPage = lazy(() => import("./pages/topology").then((m) => ({ default: m.TopologyPage })));
 import { LogsPage } from "./pages/Logs";
 import { DocsPage } from "./pages/Docs";
 import { VaultPage } from "./pages/Vault";

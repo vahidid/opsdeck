@@ -923,6 +923,15 @@ func toolNetCheck() Tool {
 	}
 }
 
+// checkClient probes a URL the resource is reached with: redirects are not
+// followed and TLS verification is off (the address is user-entered and may
+// serve its own certificate).
+func checkClient(dial connect.DialFunc, timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout,
+		Transport:     &http.Transport{DialContext: dial, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
 // checkDialer is where a check dials from: a host (its SSH connection), the
 // way a workspace resource is reached, or this computer.
 func checkDialer(ctx context.Context, env *Env, from, res *workspace.Resource) (connect.DialFunc, error) {
@@ -976,12 +985,7 @@ func netCheck(ctx context.Context, env *Env, typ, target string, from, res *work
 		if err != nil {
 			return "", err
 		}
-		client := &http.Client{
-			Timeout: 20 * time.Second,
-			Transport: &http.Transport{DialContext: func(ctx context.Context, n, a string) (net.Conn, error) { return dial(ctx, n, a) },
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}
+		client := checkClient(dial, 20*time.Second)
 		req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 		start := time.Now()
 		resp, err := client.Do(req)

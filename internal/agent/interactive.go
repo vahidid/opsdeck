@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -125,10 +124,7 @@ func toolWaitFor() Tool {
 						if err != nil {
 							return false, err.Error()
 						}
-						hc := &http.Client{Timeout: 15 * time.Second,
-							Transport: &http.Transport{DialContext: func(ctx context.Context, n, a string) (net.Conn, error) { return dial(ctx, n, a) },
-								TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-							CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+						hc := checkClient(dial, 15*time.Second)
 						req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 						if err != nil {
 							return false, err.Error()

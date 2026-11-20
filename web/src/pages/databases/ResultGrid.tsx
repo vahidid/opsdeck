@@ -5,7 +5,7 @@ import type { DbResult } from "../../api/types";
 import { Button, IconButton, SearchInput, Segmented, cx, writeClipboard } from "../../components/ui";
 import { MenuItem, Popover, useToast } from "../../components/overlay";
 import { useLocalStorage } from "../../hooks";
-import CodeEditor from "../ansible/editor/CodeEditor";
+import { Code } from "../ansible/editor/LazyCode";
 
 const ROW_H = 28;
 const INDEX_W = 52;
@@ -268,7 +268,7 @@ export function ResultGrid({ r }: { r: DbResult }) {
       <div className="flex-1 min-h-0 flex">
         {mode === "json" ? (
           <div className="flex-1 min-w-0">
-            <CodeEditor value={JSON.stringify(objects().slice(0, 2000), null, 2)} language="json" readOnly wrap />
+            <Code value={JSON.stringify(objects().slice(0, 2000), null, 2)} language="json" readOnly wrap />
           </div>
         ) : (
           <div
@@ -509,7 +509,7 @@ function Viewer({
             {v === null || v === undefined ? (
               <div className="p-4 text-faint italic text-[12.5px]">NULL</div>
             ) : (
-              <CodeEditor key={`${rowNumber}/${col}`} value={text} language={format && pretty.json ? "json" : "text"} readOnly wrap={wrapText} />
+              <Code key={`${rowNumber}/${col}`} value={text} language={format && pretty.json ? "json" : "text"} readOnly wrap={wrapText} />
             )}
           </div>
         </>

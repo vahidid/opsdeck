@@ -10,7 +10,7 @@ import { useTabTitle } from "../context/tabs";
 import { Badge, Button, EmptyState, ErrorBox, IconButton, Input, Kbd, Loading, PageHeader, SearchInput, Select, cx, riskTone } from "../components/ui";
 import { Drawer, Modal, useToast } from "../components/overlay";
 import { useAsync, useLocalStorage } from "../hooks";
-import CodeEditor from "./ansible/editor/CodeEditor";
+import { Code } from "./ansible/editor/LazyCode";
 import type { Language } from "./ansible/editor/CodeEditor";
 import { ResultGrid } from "./databases/ResultGrid";
 
@@ -311,7 +311,7 @@ function Workbench({
             </Select>
           </div>
           <div className="flex-1 min-h-0">
-            <CodeEditor value={sql} onChange={setSql} language={E.language} onRun={() => void run(sqlRef.current)} words={words} autoFocus />
+            <Code value={sql} onChange={setSql} language={E.language} onRun={() => void run(sqlRef.current)} words={words} autoFocus />
           </div>
         </div>
         <div className="h-1.5 -my-[3px] z-10 cursor-row-resize border-b border-line hover:bg-accent/30 shrink-0" onPointerDown={drag} title="Drag to resize" />

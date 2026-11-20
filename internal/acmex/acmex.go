@@ -14,7 +14,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -31,6 +30,7 @@ import (
 
 	"golang.org/x/crypto/acme"
 
+	"opsdeck/internal/connect"
 	"opsdeck/internal/dnsx"
 	"opsdeck/internal/vault"
 	"opsdeck/internal/workspace"
@@ -459,18 +459,7 @@ func accountKey(spec *Spec) string {
 }
 
 func caClient(caCert string) (*http.Client, error) {
-	tr := &http.Transport{Proxy: http.ProxyFromEnvironment, TLSHandshakeTimeout: 20 * time.Second, ResponseHeaderTimeout: 60 * time.Second, ForceAttemptHTTP2: true}
-	if ca := strings.TrimSpace(caCert); ca != "" {
-		pool, err := x509.SystemCertPool()
-		if err != nil || pool == nil {
-			pool = x509.NewCertPool()
-		}
-		if !pool.AppendCertsFromPEM([]byte(ca)) {
-			return nil, errors.New("the CA's TLS certificate is not valid PEM")
-		}
-		tr.TLSClientConfig = &tls.Config{RootCAs: pool}
-	}
-	return &http.Client{Transport: tr, Timeout: 90 * time.Second}, nil
+	return connect.APIClient(nil, caCert, "the CA's TLS certificate", 90*time.Second, 60*time.Second)
 }
 
 // store writes the certificate into the vault (replacing the previous one,

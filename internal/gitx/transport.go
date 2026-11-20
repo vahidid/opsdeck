@@ -15,8 +15,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -597,27 +595,14 @@ func exitCode(err error) int {
 
 // httpClient reaches the hosting API the way git reaches the server.
 func (r *Repo) httpClient(ctx context.Context) (*http.Client, error) {
-	tr := &http.Transport{TLSHandshakeTimeout: 20 * time.Second, ForceAttemptHTTP2: true, IdleConnTimeout: 30 * time.Second}
+	var dial connect.DialFunc
 	if r.R.Via != "" {
-		dial, err := r.m.Hub.Dialer(ctx, r.W, r.R)
-		if err != nil {
+		var err error
+		if dial, err = r.m.Hub.Dialer(ctx, r.W, r.R); err != nil {
 			return nil, err
 		}
-		tr.DialContext = dial
-	} else {
-		tr.Proxy = http.ProxyFromEnvironment
 	}
-	if ca := r.caCert(); ca != "" {
-		pool, err := x509.SystemCertPool()
-		if err != nil || pool == nil {
-			pool = x509.NewCertPool()
-		}
-		if !pool.AppendCertsFromPEM([]byte(ca)) {
-			return nil, errors.New("the repository's CA certificate is not valid PEM")
-		}
-		tr.TLSClientConfig = &tls.Config{RootCAs: pool}
-	}
-	return &http.Client{Transport: tr, Timeout: 60 * time.Second}, nil
+	return connect.APIClient(dial, r.caCert(), "the repository's CA certificate", 60*time.Second, 0)
 }
 
 // Provider returns the hosting API client of the repository.

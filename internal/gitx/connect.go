@@ -3,8 +3,6 @@ package gitx
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,18 +86,7 @@ func (m *Manager) connection(r *workspace.Resource, rem Remote) (*config.GitConn
 }
 
 func connClient(c config.GitConnection) (*http.Client, error) {
-	tr := &http.Transport{Proxy: http.ProxyFromEnvironment, TLSHandshakeTimeout: 20 * time.Second, ForceAttemptHTTP2: true}
-	if ca := strings.TrimSpace(c.CACert); ca != "" {
-		pool, err := x509.SystemCertPool()
-		if err != nil || pool == nil {
-			pool = x509.NewCertPool()
-		}
-		if !pool.AppendCertsFromPEM([]byte(ca)) {
-			return nil, errors.New("the connector's CA certificate is not valid PEM")
-		}
-		tr.TLSClientConfig = &tls.Config{RootCAs: pool}
-	}
-	return &http.Client{Transport: tr, Timeout: 60 * time.Second}, nil
+	return connect.APIClient(nil, c.CACert, "the connector's CA certificate", 60*time.Second, 0)
 }
 
 // basicUser is the user name git sends with a token.

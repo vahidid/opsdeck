@@ -111,58 +111,19 @@ func (h *Hub) Exec(ctx context.Context, w *workspace.Workspace, host *workspace.
 	return res, nil
 }
 
-// ExecStream runs a command and calls onLine for every output line until it
-// exits or ctx is cancelled.
-func (h *Hub) ExecStream(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(string)) error {
-	client, err := h.SSH(ctx, w, host)
-	if err != nil {
-		return err
-	}
-	sess, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-	defer sess.Close()
-	pr, pw := io.Pipe()
-	sess.Stdout, sess.Stderr = pw, pw
-	if err := sess.Start(cmd); err != nil {
-		return err
-	}
-	go func() {
-		err := sess.Wait()
-		pw.CloseWithError(err)
-	}()
-	go func() {
-		<-ctx.Done()
-		sess.Signal(ssh.SIGTERM)
-		sess.Close()
-		pw.Close()
-	}()
-	sc := bufio.NewScanner(pr)
-	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
-		onLine(sc.Text())
-	}
-	if ctx.Err() != nil {
-		return nil
-	}
-	var exitErr *ssh.ExitError
-	if err := sc.Err(); err != nil && !errors.As(err, &exitErr) && !errors.Is(err, io.EOF) {
-		return err
-	}
-	return nil
-}
-
-// ExecWatch runs cmd, passes every line it prints (stdout and stderr
-// together) to onLine as it comes, and returns its exit code (-1 when ctx
-// stopped it).
-func (h *Hub) ExecWatch(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(string)) (int, error) {
+// execLines runs cmd and feeds every line it prints to feed as it comes,
+// returning its exit code (-1 when ctx stopped the command). With split set,
+// stdout and stderr are scanned apart and feed gets stderr=true for lines the
+// command wrote to standard error; otherwise both go through one scanner with
+// stderr=false. A dead pooled connection is retried once.
+func (h *Hub) execLines(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, split bool, feed func(stderr bool, line string)) (int, error) {
 	client, err := h.SSH(ctx, w, host)
 	if err != nil {
 		return -1, err
 	}
 	sess, err := client.NewSession()
 	if err != nil {
+		// The pooled connection may be dead; retry once with a fresh one.
 		h.Disconnect(w.Name(), host.Name)
 		if client, err = h.SSH(ctx, w, host); err != nil {
 			return -1, err
@@ -172,16 +133,59 @@ func (h *Hub) ExecWatch(ctx context.Context, w *workspace.Workspace, host *works
 		}
 	}
 	defer sess.Close()
-	pr, pw := io.Pipe()
-	sess.Stdout, sess.Stderr = pw, pw
+
+	// endPipes ends the output pipes, so the scanners finish and the exit
+	// code comes from waited; CloseWithError is idempotent, so the ctx path
+	// and the wait path can both call it.
+	var endPipes func(error)
+	var scan func()
+	if split {
+		or, ow := io.Pipe()
+		er, ew := io.Pipe()
+		sess.Stdout, sess.Stderr = ow, ew
+		endPipes = func(err error) {
+			ow.CloseWithError(err)
+			ew.CloseWithError(err)
+		}
+		// feed is serialized: stderr lines can overtake stdout ones.
+		var mu sync.Mutex
+		scanned := make(chan struct{}, 2)
+		scanOne := func(r io.Reader, stderr bool) {
+			sc := bufio.NewScanner(r)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				mu.Lock()
+				feed(stderr, sc.Text())
+				mu.Unlock()
+			}
+			scanned <- struct{}{}
+		}
+		go scanOne(er, true)
+		scan = func() {
+			scanOne(or, false)
+			<-scanned
+			<-scanned
+		}
+	} else {
+		pr, pw := io.Pipe()
+		sess.Stdout, sess.Stderr = pw, pw
+		endPipes = func(err error) { pw.CloseWithError(err) }
+		scan = func() {
+			sc := bufio.NewScanner(pr)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				feed(false, sc.Text())
+			}
+		}
+	}
 	if err := sess.Start(cmd); err != nil {
 		return -1, err
 	}
 	waited := make(chan error, 1)
 	go func() {
 		err := sess.Wait()
+		endPipes(io.EOF)
 		waited <- err
-		pw.CloseWithError(io.EOF)
 	}()
 	stop := make(chan struct{})
 	defer close(stop)
@@ -190,84 +194,44 @@ func (h *Hub) ExecWatch(ctx context.Context, w *workspace.Workspace, host *works
 		case <-ctx.Done():
 			sess.Signal(ssh.SIGTERM)
 			sess.Close()
-			pw.Close()
+			endPipes(io.EOF)
 		case <-stop:
 		}
 	}()
-	sc := bufio.NewScanner(pr)
-	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
-		onLine(sc.Text())
-	}
+	scan()
 	if ctx.Err() != nil {
 		return -1, nil
 	}
-	err = <-waited
+	waitErr := <-waited
 	var exitErr *ssh.ExitError
 	switch {
-	case err == nil:
+	case waitErr == nil:
 		return 0, nil
-	case errors.As(err, &exitErr):
+	case errors.As(waitErr, &exitErr):
 		return exitErr.ExitStatus(), nil
 	}
-	return -1, err
+	return -1, waitErr
+}
+
+// ExecStream runs a command and calls onLine for every output line (stdout
+// and stderr interleaved) until it exits or ctx is cancelled.
+func (h *Hub) ExecStream(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(string)) error {
+	_, err := h.execLines(ctx, w, host, cmd, false, func(_ bool, line string) { onLine(line) })
+	return err
+}
+
+// ExecWatch runs cmd, passes every line it prints (stdout and stderr
+// together) to onLine as it comes, and returns its exit code (-1 when ctx
+// stopped it).
+func (h *Hub) ExecWatch(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(string)) (int, error) {
+	return h.execLines(ctx, w, host, cmd, false, func(_ bool, line string) { onLine(line) })
 }
 
 // ExecStreams is ExecStream with stdout and stderr kept apart: onLine gets
 // stderr=true for lines the command wrote to standard error.
 func (h *Hub) ExecStreams(ctx context.Context, w *workspace.Workspace, host *workspace.Resource, cmd string, onLine func(stderr bool, line string)) error {
-	client, err := h.SSH(ctx, w, host)
-	if err != nil {
-		return err
-	}
-	sess, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-	defer sess.Close()
-	or, ow := io.Pipe()
-	er, ew := io.Pipe()
-	sess.Stdout, sess.Stderr = ow, ew
-	if err := sess.Start(cmd); err != nil {
-		return err
-	}
-	go func() {
-		err := sess.Wait()
-		ow.CloseWithError(err)
-		ew.CloseWithError(err)
-	}()
-	go func() {
-		<-ctx.Done()
-		sess.Signal(ssh.SIGTERM)
-		sess.Close()
-		ow.Close()
-		ew.Close()
-	}()
-	var mu sync.Mutex
-	scan := func(r io.Reader, stderr bool, done chan<- error) {
-		sc := bufio.NewScanner(r)
-		sc.Buffer(make([]byte, 64*1024), 1024*1024)
-		for sc.Scan() {
-			mu.Lock()
-			onLine(stderr, sc.Text())
-			mu.Unlock()
-		}
-		done <- sc.Err()
-	}
-	d1, d2 := make(chan error, 1), make(chan error, 1)
-	go scan(er, true, d2)
-	scan(or, false, d1)
-	errs := []error{<-d1, <-d2}
-	if ctx.Err() != nil {
-		return nil
-	}
-	var exitErr *ssh.ExitError
-	for _, err := range errs {
-		if err != nil && !errors.As(err, &exitErr) && !errors.Is(err, io.EOF) {
-			return err
-		}
-	}
-	return nil
+	_, err := h.execLines(ctx, w, host, cmd, true, onLine)
+	return err
 }
 
 // ExecIO runs a command with stdin and stdout streamed (for uploads and

@@ -19,7 +19,6 @@ import { VPNPage } from "./pages/VPN";
 import { GitPage } from "./pages/Git";
 import { SkillsPage } from "./pages/Skills";
 import { ScriptsPage } from "./pages/Scripts";
-import { TopologyPage } from "./pages/Topology";
 import { TerminalPage } from "./pages/Terminal";
 import { DockerPage } from "./pages/docker";
 import { KubernetesPage } from "./pages/kubernetes";
@@ -29,6 +28,8 @@ import { CertificatesPage } from "./pages/Certificates";
 import { DeploymentsPage } from "./pages/Deployments";
 // the Ansible editor (CodeMirror, YAML) is loaded when it is opened
 const AnsiblePage = lazy(() => import("./pages/ansible").then((m) => ({ default: m.AnsiblePage })));
+// the topology map (elkjs, ~1 MB) is loaded when it is opened
+const TopologyPage = lazy(() => import("./pages/Topology").then((m) => ({ default: m.TopologyPage })));
 import { LogsPage } from "./pages/Logs";
 import { DocsPage } from "./pages/Docs";
 import { VaultPage } from "./pages/Vault";
@@ -139,7 +140,14 @@ function workspaceRoutes(active: boolean) {
       <Route path="agent" element={<AgentPage />} />
       <Route path="agent/:sid" element={<AgentPage />} />
       <Route path="resources" element={<ResourcesPage />} />
-      <Route path="topology" element={<TopologyPage />} />
+      <Route
+        path="topology"
+        element={
+          <Suspense fallback={<Loading />}>
+            <TopologyPage />
+          </Suspense>
+        }
+      />
       <Route path="vpn" element={<VPNPage />} />
       <Route path="git" element={<GitPage />} />
       <Route path="git/:repo" element={<GitPage />} />

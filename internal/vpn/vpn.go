@@ -24,7 +24,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -175,7 +174,7 @@ func Missing(d *Driver, r *workspace.Resource, mode string, elevate []string) st
 	var miss []string
 	if d.Needs != nil {
 		for _, bin := range d.Needs(r, mode) {
-			if _, err := exec.LookPath(bin); err != nil {
+			if _, err := lookPath(bin); err != nil {
 				miss = append(miss, bin)
 			}
 		}
@@ -190,7 +189,7 @@ func Missing(d *Driver, r *workspace.Resource, mode string, elevate []string) st
 		if len(elevate) == 0 {
 			return "needs root: set \"Run system VPNs with\" to sudo or pkexec in App settings"
 		}
-		if _, err := exec.LookPath(elevate[0]); err != nil {
+		if _, err := lookPath(elevate[0]); err != nil {
 			return "install " + elevate[0]
 		}
 	}

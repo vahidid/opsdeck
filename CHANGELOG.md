@@ -3,7 +3,9 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
 each release's section becomes its notes on GitHub.
 
-## [Unreleased]
+## [1.1.0] — 2026-11-21
+
+The VPN page installs its missing clients for you, and the app ships a much smaller bundle.
 
 ### Added
 

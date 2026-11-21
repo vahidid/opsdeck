@@ -173,6 +173,24 @@ func (w *Workspace) ReadArtifact(rel string, max int64) (string, bool, error) {
 	return string(b), false, nil
 }
 
+// OpenArtifact opens an artifact for full, untruncated reading (downloads).
+func (w *Workspace) OpenArtifact(rel string) (*os.File, int64, error) {
+	abs, err := w.artifactAbs(rel)
+	if err != nil {
+		return nil, 0, err
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, err
+	}
+	return f, info.Size(), nil
+}
+
 // DeleteArtifact removes one artifact file.
 func (w *Workspace) DeleteArtifact(rel string) error {
 	abs, err := w.artifactAbs(rel)

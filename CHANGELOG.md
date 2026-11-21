@@ -1,7 +1,13 @@
 # Changelog
 
-All notable changes to opsdeck. Versions follow [semantic versioning](https://semver.org);
+All notable changes to opsdeck. Versions follow [semantic versioning](https://semantic-version.org);
 each release's section becomes its notes on GitHub.
+
+## Unreleased
+
+### Added
+
+- **Download button for artifacts.** Evidence files saved by the agent (`artifacts/`) can now be saved to your machine from the Docs page — as a browser download, or into the Downloads folder in the desktop app. The whole file is downloaded (the viewer truncates large artifacts at 2 MB for display; downloads are complete).
 
 ## [1.1.0] — 2026-11-21
 

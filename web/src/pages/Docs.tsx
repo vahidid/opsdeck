@@ -221,6 +221,13 @@ export function DocsPage() {
                   <GitBranch className="size-3.5" /> Edit in repository {repoDoc.repo}
                 </Link>
               )}
+              {isArtifact && (
+                <a href={api.artifactDownloadUrl(ws, sel)} title={`Download ${sel.split("/").pop()}`}>
+                  <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />}>
+                    Download
+                  </Button>
+                </a>
+              )}
               {sel !== MEMORY && sel !== "OPSDECK.md" && !repoDoc && (
                 <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={remove}>
                   Delete

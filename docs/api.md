@@ -107,6 +107,7 @@ the MCP bridge at `/mcp/` (streamable HTTP, `Authorization: Bearer <per-turn tok
 | GET/PUT | `/api/workspaces/{ws}/memory` | `{content}` (agent memory, markdown) |
 | GET | `/api/workspaces/{ws}/artifacts` | → `[{path, size, updated}]` newest first (`artifacts/INDEX.md` first) |
 | GET | `/api/workspaces/{ws}/artifacts/file?path=` | → `{path, content, truncated}` |
+| GET | `/api/workspaces/{ws}/artifacts/download?path=` | streams the whole artifact (`Content-Disposition: attachment`) |
 | DELETE | `/api/workspaces/{ws}/artifacts/file?path=` | |
 | GET | `/api/workspaces/{ws}/skills` | → `[{name, description, path}]` |
 | GET | `/api/workspaces/{ws}/mcp` | → `[{name, status, error, tools: [{name, description, readOnly}]}]` |

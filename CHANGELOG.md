@@ -3,7 +3,7 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semantic-version.org);
 each release's section becomes its notes on GitHub.
 
-## Unreleased
+## [1.2.0] — 2026-11-21
 
 ### Added
 

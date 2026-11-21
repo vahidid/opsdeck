@@ -3,6 +3,12 @@
 All notable changes to opsdeck. Versions follow [semantic versioning](https://semantic-version.org);
 each release's section becomes its notes on GitHub.
 
+## Unreleased
+
+### Changed
+
+- **Redesigned the vault gate.** The screen shown when the vault is locked, on first run, without sign-in, or when the server is unreachable now reads as one coherent place instead of a generic card: state badge, clearer hierarchy, a larger password field with a show/hide toggle, properly wired error states, and a faint accent glow behind the card. All flows and copy semantics are unchanged.
+
 ## [1.2.0] — 2026-11-21
 
 ### Added

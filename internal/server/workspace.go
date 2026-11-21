@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +45,7 @@ func (s *Server) workspaceRoutes(mux *http.ServeMux, u func(http.HandlerFunc) ht
 	mux.HandleFunc("DELETE /api/workspaces/{ws}/docs/file", u(s.docDelete))
 	mux.HandleFunc("GET /api/workspaces/{ws}/artifacts", u(s.artifactsList))
 	mux.HandleFunc("GET /api/workspaces/{ws}/artifacts/file", u(s.artifactGet))
+	mux.HandleFunc("GET /api/workspaces/{ws}/artifacts/download", u(s.artifactDownload))
 	mux.HandleFunc("DELETE /api/workspaces/{ws}/artifacts/file", u(s.artifactDelete))
 	mux.HandleFunc("GET /api/workspaces/{ws}/memory", u(s.memoryGet))
 	mux.HandleFunc("PUT /api/workspaces/{ws}/memory", u(s.memoryPut))
@@ -510,6 +514,28 @@ func (s *Server) artifactDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.record(r, ws.Name(), "artifact.delete", p, nil, nil)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// artifactDownload streams a whole artifact to the browser; the file API
+// truncates at 2 MB for display, a download must be complete.
+func (s *Server) artifactDownload(w http.ResponseWriter, r *http.Request) {
+	ws, ok := s.workspace(w, r)
+	if !ok {
+		return
+	}
+	p := r.URL.Query().Get("path")
+	f, size, err := ws.OpenArtifact(p)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base("/" + p)}))
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	n, copyErr := io.Copy(w, f)
+	s.record(r, ws.Name(), "artifact.download", p, map[string]any{"bytes": n}, copyErr)
 }
 
 func (s *Server) memoryGet(w http.ResponseWriter, r *http.Request) {

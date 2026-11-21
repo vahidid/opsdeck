@@ -316,6 +316,7 @@ export const api = {
   deleteDoc: (ws: string, path: string) => del(`${W(ws)}/docs/file${qs({ path })}`),
   artifacts: (ws: string) => arr(get<{ path: string; size: number; updated: string }[]>(`${W(ws)}/artifacts`)),
   artifact: (ws: string, path: string) => get<{ path: string; content: string; truncated: boolean }>(`${W(ws)}/artifacts/file${qs({ path })}`),
+  artifactDownloadUrl: (ws: string, path: string) => `${W(ws)}/artifacts/download${qs({ path })}`,
   deleteArtifact: (ws: string, path: string) => del(`${W(ws)}/artifacts/file${qs({ path })}`),
   memory: (ws: string) => get<{ content: string }>(`${W(ws)}/memory`),
   saveMemory: (ws: string, content: string) => put(`${W(ws)}/memory`, { content }),

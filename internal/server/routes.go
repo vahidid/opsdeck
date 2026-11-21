@@ -66,6 +66,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{ws}/networks/{name}/log", u(s.netLog))
 	mux.HandleFunc("POST /api/workspaces/{ws}/networks/{name}/code", u(s.netCode))
 	mux.HandleFunc("GET /api/vpn/drivers", s.vpnDrivers)
+	mux.HandleFunc("GET /api/vpn/install", s.vpnInstallStatus)
+	mux.HandleFunc("POST /api/vpn/install", s.vpnInstallStart)
 	// polled by every page: does not count as activity for the auto-lock
 	mux.HandleFunc("GET /api/vpn/codes", s.vpnCodes)
 	mux.HandleFunc("POST /api/vpn/codes/test", u(s.vpnCodesTest))

@@ -323,7 +323,7 @@ Without any model configured everything except the Agent page works.
 ### Build from source
 
 Requirements: Go 1.24+ (the toolchain auto-downloads 1.27) and Node 20+. For VPNs, these
-are optional: openvpn, openconnect (+ ocproxy), openfortivpn, wireguard-tools.
+are optional: openvpn, openconnect (+ ocproxy), openfortivpn, wireguard-tools. The VPN page can install them for you (Homebrew, apt, dnf, pacman, zypper or winget).
 
 ```bash
 make build          # builds the web UI and bin/opsdeck

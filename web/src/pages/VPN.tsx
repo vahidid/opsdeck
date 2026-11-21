@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { AskAgentButton } from "../components/AskAgent";
 import { Link } from "react-router-dom";
-import { CircleCheck, CircleX, ExternalLink, Pencil, Plus, Power, PowerOff, ScrollText, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CircleCheck, CircleX, ExternalLink, Loader2, Pencil, Plus, Power, PowerOff, ScrollText, ShieldCheck, TriangleAlert } from "lucide-react";
 import { api, errMsg } from "../api/client";
-import type { LogLine, NetworkStatus, Resource } from "../api/types";
+import type { InstallStatus, LogLine, NetworkStatus, Resource } from "../api/types";
 import { useApp, useWs } from "../context/app";
 import { KindIcon } from "../components/icons";
 import { Badge, Button, Card, CopyButton, EmptyState, IconButton, PageHeader, StatusDot, cx } from "../components/ui";
 import type { Tone } from "../components/ui";
-import { MenuItem, Popover, useConfirm, useToast } from "../components/overlay";
+import { MenuItem, Modal, Popover, useConfirm, useToast } from "../components/overlay";
 import { useAsync, useInterval } from "../hooks";
 import { fmtBytes, timeAgo } from "../lib/format";
 import { ResourceDrawer } from "./Resources";
@@ -86,8 +86,53 @@ export function VPNPage() {
   const [menu, setMenu] = useState(false);
   const [edit, setEdit] = useState<{ resource: Resource | null; preset?: Preset; kind: string } | null>(null);
   const [logOpen, setLogOpen] = useState<string | null>(null);
+  const [install, setInstall] = useState<InstallStatus | null>(null);
   const anyActive = (nets.data ?? []).some((n) => n.status === "connecting" || n.status === "auth");
   useInterval(() => void nets.reload(), anyActive ? 1500 : 5000);
+  // poll a running client install; refresh the driver table when it ends
+  useInterval(
+    () => {
+      void api
+        .vpnInstallStatus()
+        .then((st) => {
+          setInstall((prev) => {
+            if (prev?.running && !st.running) {
+              void drivers.reload();
+              if (st.err) toast.error(`Install of ${st.kind} failed`, st.err);
+              else toast.success(`Installed ${st.kind}`, "the table below shows what is ready now");
+            }
+            return st;
+          });
+        })
+        .catch(() => {});
+    },
+    install?.running ? 1200 : null,
+  );
+
+  async function installDriver(kind: string, mode: string) {
+    try {
+      const plan = await api.vpnInstallPlan(kind, mode);
+      if (!plan.installable) {
+        toast.error("Cannot install automatically", plan.note ?? "");
+        return;
+      }
+      const cmds = (plan.commands ?? []).map((c) => (c.elevate ? "(root) " : "") + c.argv.join(" ")).join("\n");
+      const ok = await confirm({
+        title: `Install ${kind} (${mode} mode)?`,
+        message: (
+          <div className="space-y-2">
+            <pre className="font-mono text-[11.5px] bg-panel-2 rounded-md p-2.5 whitespace-pre-wrap text-fg">{cmds}</pre>
+            {plan.note && <div className="text-muted">{plan.note}</div>}
+          </div>
+        ),
+        confirmLabel: "Install",
+      });
+      if (!ok) return;
+      setInstall(await api.vpnInstallStart(kind, mode));
+    } catch (e) {
+      toast.error("Install failed", errMsg(e));
+    }
+  }
 
   const resOf = (name: string) => resources.find((r) => r.name === name && (r.kind === "SocksProxy" || kindMap[r.kind]?.category === "network"));
 
@@ -274,8 +319,17 @@ export function VPNPage() {
                         {!d.modes.includes(m) ? (
                           <span className="text-faint">not available for this type</span>
                         ) : d.missing[m] ? (
-                          <span className="inline-flex items-center gap-1 text-warn">
+                          <span className="inline-flex items-center gap-1.5 text-warn flex-wrap">
                             <CircleX className="size-3.5 shrink-0" /> {d.missing[m]}
+                            {install?.running && install.kind === d.kind && install.mode === m ? (
+                              <span className="inline-flex items-center gap-1 text-info">
+                                <Loader2 className="size-3.5 animate-spin" /> installing…
+                              </span>
+                            ) : (
+                              <Button size="xs" variant="ghost" disabled={!!install?.running} onClick={() => void installDriver(d.kind, m)}>
+                                Install
+                              </Button>
+                            )}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-ok">
@@ -288,10 +342,44 @@ export function VPNPage() {
                 ))}
               </tbody>
             </table>
+            {install && (install.running || install.done) && (
+              <div className="mt-3 text-xs flex items-center gap-2 flex-wrap">
+                {install.running ? (
+                  <span className="inline-flex items-center gap-1.5 text-info">
+                    <Loader2 className="size-3.5 animate-spin" /> installing {install.kind} ({install.mode} mode)…
+                  </span>
+                ) : install.err ? (
+                  <span className="text-err">{install.err}</span>
+                ) : (
+                  <span className="text-ok">Installed {install.kind} — the table above is refreshed</span>
+                )}
+                <Button size="xs" variant="ghost" icon={<ScrollText className="size-3" />} onClick={() => setLogOpen("install")}>
+                  Log
+                </Button>
+                {install.done && (
+                  <Button size="xs" variant="ghost" onClick={() => setInstall(null)}>
+                    Dismiss
+                  </Button>
+                )}
+              </div>
+            )}
           </Card>
         )}
       </div>
 
+      {logOpen === "install" && install && (
+        <Modal
+          open
+          onClose={() => setLogOpen(null)}
+          title={`Install log · ${install.kind} (${install.mode} mode)`}
+          width={720}
+        >
+          <pre className="font-mono text-[11.5px] leading-relaxed max-h-[60vh] overflow-y-auto whitespace-pre-wrap text-fg">
+            {(install.log ?? []).join("\n") || "starting…"}
+          </pre>
+          {install.err && <div className="text-err text-xs mt-2">{install.err}</div>}
+        </Modal>
+      )}
       {edit && kindMap[edit.kind] && (
         <ResourceDrawer
           schema={kindMap[edit.kind]}

@@ -290,6 +290,9 @@ export type VpnCodes = { ntfyUrl: string; ntfyTokenRef: string; command: string;
 export const NETWORK_KINDS = ["WireGuard", "Tailscale", "NetBird", "OpenVPN", "OpenConnect", "OpenFortiVPN", "SocksProxy"];
 export type VpnDriver = { kind: string; label: string; modes: string[]; missing: Record<string, string> };
 export type VpnDrivers = { drivers: VpnDriver[]; privileged: boolean; elevate: string; os: string; browser: string };
+export type InstallCommand = { argv: string[]; elevate: boolean; note?: string };
+export type InstallPlan = { installable: boolean; note?: string; commands?: InstallCommand[]; manual?: string[] };
+export type InstallStatus = { running: boolean; kind?: string; mode?: string; log?: string[]; err?: string; done: boolean };
 export type LogLine = { time: string; text: string };
 
 export type CheckResult = { reachable: boolean; latencyMs: number; error: string; path: PathHop[] | string[] | null };

@@ -5,6 +5,10 @@ each release's section becomes its notes on GitHub.
 
 ## [Unreleased]
 
+### Added
+
+- **One-click install of missing VPN clients.** The VPN page offers an Install button wherever a client binary is missing: Homebrew on macOS, apt/dnf/pacman/zypper on Linux (through the existing sudo flow), winget on Windows. The exact commands are shown before anything runs, with a live log.
+
 ### Changed
 
 - **Smaller app bundle.** The topology map (elkjs) and the code editor (CodeMirror) now load on demand instead of at startup; the JavaScript the browser fetches on first load drops from ~3.9 MB to ~1.6 MB minified (~1.2 MB to ~0.5 MB gzipped).

@@ -22,6 +22,28 @@ The **VPN** page lists what can run on this machine (missing binaries, privilege
 offers vendor presets: "Cisco AnyConnect", "ocserv", "FortiGate" … map to the right kind
 and protocol.
 
+## Installing the clients
+
+Where a mode reports a missing binary, the VPN page offers an **Install** button. It
+shows the exact commands first, runs them after your confirmation and streams their
+output; the table refreshes when the install is done. The mapping:
+
+| Client | macOS (Homebrew) | Debian-family (apt) | Fedora/RHEL (dnf) | Arch (pacman) | openSUSE (zypper) | Windows (winget) |
+|---|---|---|---|---|---|---|
+| WireGuard system (`wg-quick`, `wg`) | `wireguard-tools` | ✓ | ✓ | ✓ | ✓ | `WireGuard.WireGuard` |
+| OpenVPN | `openvpn` | ✓ | ✓ | ✓ | ✓ | `OpenVPN.OpenVPN` |
+| OpenConnect userspace | `openconnect`, `ocproxy` | ✓ both | `openconnect` only¹ | `openconnect` only¹ | `openconnect` only¹ | — |
+| OpenConnect system | `openconnect` | ✓ | ✓ | ✓ | ✓ | — |
+| OpenFortiVPN | `openfortivpn` | ✓² | ✓ | ✓ | ✓ | — |
+| Tailscale, NetBird, SOCKS | embedded in opsdeck — nothing to install | | | | | |
+
+¹ ocproxy is not packaged there: build it from its upstream source, then reload the page.
+² Needs a recent openfortivpn (one with `--cookie-on-stdin`; Ubuntu 24.04 or newer).
+
+Linux installs need root and run through the elevation set in App settings (the same
+sudo askpass flow as the VPN clients themselves); Homebrew and winget need none. On an
+unrecognized distribution the page shows copyable manual commands instead.
+
 ## Modes
 
 **userspace** (default where available) — the TCP/IP stack runs inside opsdeck (gVisor

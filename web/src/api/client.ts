@@ -5,6 +5,8 @@ import type {
   KeyIssued,
   LogLine,
   VpnDrivers,
+  InstallPlan,
+  InstallStatus,
   PendingCode,
   VpnCodes,
   MergeRequest,
@@ -452,6 +454,9 @@ export const api = {
   networkLog: (ws: string, name: string, lines = 300) => arr(get<LogLine[]>(`${W(ws)}/networks/${e(name)}/log?lines=${lines}`)),
   networkCode: (ws: string, name: string, code: string) => post<NetworkStatus[]>(`${W(ws)}/networks/${e(name)}/code`, { code }),
   vpnDrivers: () => get<VpnDrivers>(`/api/vpn/drivers`),
+  vpnInstallPlan: (kind: string, mode: string) => get<InstallPlan>(`/api/vpn/install?kind=${e(kind)}&mode=${e(mode)}`),
+  vpnInstallStart: (kind: string, mode: string) => post<InstallStatus>(`/api/vpn/install`, { kind, mode }),
+  vpnInstallStatus: () => get<InstallStatus>(`/api/vpn/install`),
   vpnCodes: () => arr(get<PendingCode[]>(`/api/vpn/codes`)),
   vpnCodesTest: (c: VpnCodes) => post<{ code: string; source: string }>(`/api/vpn/codes/test`, c),
 

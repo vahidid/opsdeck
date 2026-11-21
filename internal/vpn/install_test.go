@@ -12,6 +12,8 @@ import (
 
 func TestInstallPlanMatrix(t *testing.T) {
 	elevate := []string{"sudo", "-A"}
+	origRelease := osReleasePath
+	defer func() { osReleasePath = origRelease }()
 	tests := []struct {
 		name        string
 		goos        string
@@ -168,7 +170,10 @@ func TestPlanInstallAlreadyInstalledAndEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Installable || !strings.Contains(plan.Note, "inside opsdeck") {
+	// non-root: Missing reports the CAP_NET_ADMIN message and the plan
+	// explains there is nothing to install; as root it is "already installed".
+	// Either way there is nothing to download.
+	if plan.Installable || (!strings.Contains(plan.Note, "inside opsdeck") && !strings.Contains(plan.Note, "already installed")) {
 		t.Fatalf("netbird plan = %+v", plan)
 	}
 
